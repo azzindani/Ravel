@@ -307,7 +307,19 @@ empty. The graph was built per-chunk; the *graph* part never closed.
    documents why: Indonesian is heavily affixed, and `simple` indexes `dikenakan` and
    `dikenai` as unrelated terms. Vera's `0001_init.sql` still says `simple` — a real
    divergence between Vera's two schemas, and the `indonesian` one is correct.
-4. **Vera has two schemas.** `migrations/0001_init.sql` (halfvec 4096, domains/clusters,
+4. ~~**Vera has two schemas.**~~ **Resolved (fifth pass) — and in the direction this
+   document argued for.** `migrations/0001_init.sql` has been deleted and
+   `dev_tools/pre_embed/schema.sql` is now the single source of truth, applied by
+   `ingest.py`. `migrations/README.md` gives the reason, and it is the argument for
+   generating a schema rather than maintaining one: *"It described a system that was
+   never built — halfvec(4096), a domains table, chunks partitioned by
+   HASH(cluster_id), NOT NULL provenance. The live corpus is halfvec(1024), has no
+   domains table, is not partitioned, and has nullable source_url. Keeping a schema file
+   that contradicts the database in every particular is worse than having none: it is
+   the first thing someone reads."* `src/bundle/schema.py` now generates the surviving
+   schema from Ravel's manifest, so the two cannot drift. Original note follows.
+
+   **Vera has two schemas.** `migrations/0001_init.sql` (halfvec 4096, domains/clusters,
    `simple` FTS) and `pipelines/pre_embed/schema.sql` (parameterised dims, `corpus_meta`,
    `ingest_progress`, pgvector `sparsevec` BM25, `indonesian` FTS). The second is the one
    with working code behind it. `BUNDLE.md` §2 says Ravel owns the schema — it must

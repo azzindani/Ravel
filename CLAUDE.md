@@ -237,7 +237,7 @@ parsing as a stateless service.
 - [x] Text-layer quality gate: clean/damaged/absent routing — `src/extract/quality.py`
 - [x] URI substrate (`file://`, `hf://`, `s3://`) — `src/uris.py`
 - [~] Embedder plugin interface + manifest + preflight — `src/embed/`; local (transformers/vLLM) and API backends still to write
-- [ ] Bundle writer: parquet shards + manifest + generated schema
+- [~] Bundle writer: manifest + generated schema — `src/bundle/`; parquet shard writer still to build
 - [ ] Clustering: domain anchors, k-means, assignment, generation stamping
 - [ ] Loader: preflight, `COPY`, post-load verification
 - [ ] Enrichment: NER, entities, KG edges, signals sidecar
