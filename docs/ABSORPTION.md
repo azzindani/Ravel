@@ -3,7 +3,7 @@
 A survey of what already exists, measured rather than assumed. `MIGRATION.md` says *how*
 to port; this says *what is there, what shape it is in, and what it is worth.*
 
-Surveyed 2026-09-12 across `Vera/pipelines/pre_embed`, `notebooks/docling`,
+Surveyed 2026-09-12 across `Vera/dev_tools/pre_embed`, `notebooks/docling`,
 `notebooks/preprocess`, `notebooks/ner`, `06_ID_Legal`.
 
 **Second pass, 2026-09-13**, over the rest of the workspace — 35 areas, not the 5 above.
@@ -11,6 +11,11 @@ It added §§10–14, put the two sections that were numbered out of order back 
 and added four rows to §3. It also closes `OPEN_QUESTIONS.md` on the encoder. Two findings change plans rather than decorate them: the embedding run that
 produced the incumbent's vectors **never applied its instruction** (§11), and the
 labelled eval set this project is measured against **does not exist in any form** (§13).
+**Fifth pass, same day**, over `Vera/dev_tools/` — which four passes of sweeping
+`AI_Workspace` never opened. It **retracts §13**: the labelled eval set exists, is
+hand-written, and is better designed than anything proposed here. It also supplied the
+check in §19.2 that the freshly written `src/embed/preflight.py` was missing.
+
 **Fourth pass, same day**, over `80_Project_E2E` — the production lineage, which no
 earlier pass had opened. It added §18 and corrected two more findings: §15's OCR
 attribution (the blamed config postdates the damage by five months) and §7's claim that
@@ -466,7 +471,37 @@ Noted rather than built.
 
 ---
 
-## 13. There is no eval set — not a partial one, none
+## 13. ~~There is no eval set~~ — wrong; it is in Vera, hand-labelled
+
+> **RETRACTED by the fifth pass. This section was wrong, twice over, and the error was
+> mine rather than the evidence's.**
+>
+> `Vera/dev_tools/eval/queries.json` holds **50 labelled cases across 12 question
+> shapes** — Indonesian, hand-written, with `source` naming the clause that was read for
+> each. Its own README states the method: *"Every label was written by opening the clause
+> in the corpus and phrasing the question the way a person would ask it, deliberately
+> avoiding the clause's distinctive wording so nothing leaks."* That is the precise
+> opposite of the template generator §18.4 warns about, and it is better eval design than
+> anything this document proposed.
+>
+> The shapes include `hard_negative` (with `must_not_rank_first`), `out_of_domain` (where
+> the correct answer is EMPTY), `multi_tier` (a parent law *and* its implementing rule),
+> `exact_ref` (scored mechanically against `answer_regulation`), and `underspecified`
+> (kept deliberately, because users ask those). `dev_tools/eval/audit.py` exists to find
+> bad labels by checking where each labelled target actually ranks.
+>
+> **Why I got it wrong:** the search was exhaustive over `AI_Workspace` and never ran
+> over `Vera/dev_tools/`, while the claim made was about the whole workspace. Passes 3
+> and 4 each narrowed this section; none of them widened where it looked. An absence
+> claim is only as strong as its search, and this one asserted more than it had covered.
+>
+> What survives below: the QAI notebooks really are English-medical toys, and §18.4's
+> template generator really is circular. Those are still worth knowing. **"There is no
+> eval set" is not.** The set's own caveat is the one that matters now — it says
+> **STILL NEEDS DOMAIN REVIEW**, because whether a clause genuinely answers a question is
+> a lawyer's judgement, and a wrong label silently moves every dial `EVAL.md` gates.
+
+
 
 `EVAL.md` §6 pointed at the QAI generation notebooks as the seed for the labelled set.
 They are not one, and anyone starting there loses a day:
@@ -490,12 +525,11 @@ wrong language, for the wrong instrument type. The conclusion is unchanged and t
 is worth stating precisely: an eval set for Indonesian *regulations* cannot be bootstrapped
 from case-law summaries, because the query shapes have nothing in common.
 
-This matters more than its size suggests. `EVAL.md` is the mechanism by which a variant is
-promoted, and `MIGRATION.md` §4 step 2 requires the incumbent's score *before* anything
-replaces it. Both rest on a set that has to be built from zero, by hand, in a language and
-domain where synthetic labels are least trustworthy. **It is the critical path**, it is
-unstarted, and it is the one item on `CLAUDE.md`'s tracker that no amount of GPU time
-shortens. `EVAL.md` §6 now says so.
+~~This matters more than its size suggests... it is the critical path, it is unstarted~~ —
+see the retraction above. The eval set is **started and usable**, and the real remaining
+work is domain review of 50 existing labels rather than authorship of a set from zero.
+That is a materially smaller and different job, and one a lawyer can do without touching
+the pipeline.
 
 ---
 
@@ -845,7 +879,79 @@ and nothing in a notebook says whether it ever ran.
 
 ---
 
-## 19. The decision this forces: rebuild or salvage?
+## 19. Fifth pass: Vera's side, and a gate that could only pass
+
+Four passes swept `AI_Workspace` and never opened `Vera/dev_tools/`, which is where the
+Ravel-adjacent work actually continued. Two things there are worth more than anything in
+the notebooks, and one of them retracts §13 (see the retraction in place).
+
+### 19.1 What §11 cost, measured
+
+`dev_tools/pre_embed/reembed.py` opens by stating the consequence this document could
+only describe in the abstract:
+
+> *The corpus was embedded through a backend whose output does not match the model.
+> Measured on 39 eval queries over a 5,102-chunk pool: the stored space ranks the right
+> answer at **median 857** and scores **2.6% Recall@5**, against **median 1** for the
+> reference implementation. The dense arm has therefore carried **weight 0.0** since it
+> was measured.*
+
+§11 said an unapplied instruction produces "no error — only quietly worse results". This
+is how much worse: **median rank 857 against a reference median of 1**, and a retrieval
+arm switched off entirely. It is the strongest single justification in this document for
+the manifest rule, and it was measured independently, on the serving side, by someone who
+did not have §11 in front of them.
+
+`reembed.py` also shows the right shape for the repair, and Ravel should copy it rather
+than reinvent it: it writes `dense_v2` **alongside** `dense`, validates, and swaps only
+after review, so a crash at 80% leaves a corpus that still serves. Its work queue is
+`WHERE dense_v2 IS NULL`, which makes the run resumable and idempotent for free. That is
+`EXECUTION.md` §3's "idempotent and keyed by content hash" expressed in SQL, and it is
+also the answer to §18.5's missing quarter-million rows: a re-run that continues rather
+than restarts never has to explain what happened to the gap.
+
+### 19.2 The gate that could only pass — now a check in `src/embed/`
+
+`dev_tools/pre_embed/dense_probe.py` names the failure directly:
+
+> *This is the check whose ABSENCE cost the dense arm. The ingest pipeline's round-trip
+> gate compared the serving backend **against itself**, scored 0.999992, and certified a
+> vector space that ranks the right answer at median 32. **A gate that can only pass is
+> worse than no gate: it buys confidence.***
+
+This landed the same day `src/embed/preflight.py` was written, and the new code had the
+same hole: `preflight(embedder, embedder, samples)` scored cosine 1.000000 and reported
+three green checks. A cosine floor is necessary and not sufficient — identical inputs
+through identical code agree perfectly however wrong that code is.
+
+`check_independent_backends` now refuses a round trip whose two sides are the same object
+or the same class, and `preflight(..., allow_same_backend=True)` is an explicit escape
+hatch whose report says the run *does not certify the vector space*. `ReferenceHashEmbedder`
+exists so the honest case has something to compare against, mirroring what the real check
+compares: the model's reference implementation against whatever backend serves it.
+
+The general lesson, which is `CLAUDE.md` §15 in a sharper form: a validator must not only
+avoid replaying the construction, it must be **capable of failing**. Both of this
+project's worst measured defects — the unapplied instruction and the self-comparing gate
+— passed every check that existed at the time.
+
+### 19.3 Smaller findings
+
+- **`Vera/dev_tools/pre_embed/` no longer exists**; it is `Vera/dev_tools/pre_embed/`.
+  Every reference in these documents has been repointed. The directory has also grown
+  files no earlier pass saw: `dense_probe.py`, `reembed.py`, `chunking.py` and
+  `test_chunking.py`.
+- **`eval_arms.py` is honest about its own bias**, and says so in its docstring: its
+  auto-built query set favours the lexical arms because a regulation's `about` field
+  shares wording with its body. It is kept because the bias is identical across arms, so
+  it remains a valid A/B for the one question it asks — last-token versus mean pooling.
+  That is the right way to use a circular set, and the contrast with §18.4's template
+  generator is instructive: the problem is never that a set is synthetic, it is that a
+  synthetic set gets used for a question its construction already answers.
+
+---
+
+## 20. The decision this forces: rebuild or salvage?
 
 **Both, in this order.**
 

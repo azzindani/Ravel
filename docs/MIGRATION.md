@@ -8,7 +8,7 @@ What Ravel absorbs, from where, and the rules for porting it.
 
 | Source | Contains | Becomes |
 |---|---|---|
-| `Vera/pipelines/pre_embed/` | `ingest.py`, `batching.py`, `sparse.py`, `sample.py`, `eval_arms.py`, `query.py`, `schema.sql` | the seed of `ravel/` — Vera keeps only the Rust engine |
+| `Vera/dev_tools/pre_embed/` | `ingest.py`, `batching.py`, `sparse.py`, `sample.py`, `eval_arms.py`, `query.py`, `schema.sql` | the seed of `ravel/` — Vera keeps only the Rust engine |
 | `notebooks/docling/` | SmolDocling runners (plain, vLLM), ID regulation parsers v1/v2, downloader, cleaner | `ravel/extract/` + `ravel/chunk/id_regulation` |
 | `notebooks/preprocess/` | parallel SmolDocling, spell correction (CPU), translation (GPU), markdown formatting, QAI generation, dataset filter | `ravel/extract/cleanup/` + `ravel/enrich/` |
 | `notebooks/ner/` | four NER iterations, category hierarchy, concurrent GPU inference | `ravel/enrich/ner/` |
@@ -50,7 +50,7 @@ workflow around it.
 
 ## 3. Vera's `pre_embed` hand-off
 
-`Vera/pipelines/pre_embed/` moves to Ravel and Vera keeps only `crates/` (the Rust
+`Vera/dev_tools/pre_embed/` moves to Ravel and Vera keeps only `crates/` (the Rust
 engine) plus its own docs. After the move:
 
 - Vera's `PRE_EMBEDDING.md` becomes a **pointer** to Ravel, not a spec. Its content is

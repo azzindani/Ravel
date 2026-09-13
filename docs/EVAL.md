@@ -125,6 +125,16 @@ ID_Legal is the first corpus and has no labeled set yet. Path:
    > `"Generate a question related to: {context}"`, and their `data/` output directory is
    > empty.
    >
+   > **Correction (fifth pass): the set exists.** `Vera/dev_tools/eval/queries.json`
+   > holds 50 hand-labelled Indonesian cases across 12 question shapes, written by
+   > opening the clause and phrasing the question while *deliberately avoiding its
+   > wording* so nothing leaks. Start there, not from zero. It carries its own caveat —
+   > **STILL NEEDS DOMAIN REVIEW** — and that review is a lawyer's job, not a retrieval
+   > engineer's: a wrong label silently moves every dial this document gates.
+   > `Vera/dev_tools/eval/audit.py` finds suspect labels by checking where each target
+   > actually ranks; a target no arm ever surfaces is a bad label before it is a bad
+   > engine. The rest of this note stands as a warning about what *not* to generate.
+   >
    > **And do not use the one that *is* Indonesian and legal.**
    > `id-reg-qa-generation-v*` generates at real scale — 64 shards, 10 pairs per row —
    > from 10 question templates filled with the same metadata the index is keyed on,

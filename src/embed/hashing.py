@@ -31,7 +31,7 @@ from embed.spec import (
     render_query,
 )
 
-__all__ = ["HashEmbedder", "spec_for"]
+__all__ = ["HashEmbedder", "RawHashEmbedder", "ReferenceHashEmbedder", "spec_for"]
 
 
 def spec_for(
@@ -108,3 +108,18 @@ class RawHashEmbedder(HashEmbedder):
 
     def embed_queries(self, batch: list[str]) -> list[list[float]]:
         return [self._vector(t) for t in batch]
+
+
+@dataclass(slots=True)
+class ReferenceHashEmbedder(HashEmbedder):
+    """A second, independent implementation of the same declared space.
+
+    Stands in for what the real round trip compares: the model's own reference
+    implementation (transformers) against whatever backend serves it (TEI, vLLM, an API).
+    It computes the same vectors by the same rules, but it is a **different class**, so
+    `check_independent_backends` accepts the pair and the cosine floor means something.
+
+    ! Without a type like this there is nothing to compare against, and the temptation is
+    to pass the same embedder twice. That scores 1.0 and certifies nothing — the exact
+    gate whose absence cost Vera's dense arm.
+    """

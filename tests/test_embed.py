@@ -18,6 +18,8 @@ from embed import (
     Pooling,
     PreflightError,
     RawHashEmbedder,
+    ReferenceHashEmbedder,
+    check_independent_backends,
     check_instruction_is_applied,
     check_spec_pair,
     cosine,
@@ -172,7 +174,7 @@ def test_no_instruction_declared_is_not_a_failure() -> None:
     rather than defaulted into by omission."""
     spec = spec_for()
 
-    report = preflight(HashEmbedder(spec), HashEmbedder(spec), SAMPLES)
+    report = preflight(HashEmbedder(spec), ReferenceHashEmbedder(spec), SAMPLES)
 
     assert report.passed, report.describe()
 
@@ -181,11 +183,49 @@ def test_no_instruction_declared_is_not_a_failure() -> None:
 
 
 def test_matching_embedders_round_trip() -> None:
+    """Two *different* implementations of the same declared space agree."""
     spec = spec_for(dim=32)
 
-    report = preflight(HashEmbedder(spec), HashEmbedder(spec), SAMPLES)
+    report = preflight(HashEmbedder(spec), ReferenceHashEmbedder(spec), SAMPLES)
 
     assert report.passed, report.describe()
+
+
+def test_a_backend_compared_against_itself_fails() -> None:
+    """! The check whose absence cost Vera's dense arm. Its ingest round-trip gate
+    compared the serving backend against itself, scored 0.999992, and certified a space
+    that ranked the right answer at median 32 — later median 857 and 2.6% Recall@5
+    against a reference median of 1, after which the arm carried weight 0.0.
+
+    A gate that can only pass is worse than no gate: it buys confidence. Identical inputs
+    through identical code give cosine 1.0 however wrong that code is."""
+    spec = spec_for(dim=32)
+    one = HashEmbedder(spec)
+
+    assert not preflight(one, one, SAMPLES).passed
+    assert not preflight(HashEmbedder(spec), HashEmbedder(spec), SAMPLES).passed
+
+
+def test_same_backend_may_be_allowed_but_says_it_certifies_nothing() -> None:
+    """The escape hatch exists for determinism smoke tests, and is required to be
+    explicit — and the report says plainly that the run proves nothing about the space."""
+    spec = spec_for(dim=32)
+    one = HashEmbedder(spec)
+
+    report = preflight(one, one, SAMPLES, allow_same_backend=True)
+
+    assert report.passed
+    assert "does not certify" in report.describe()
+
+
+def test_independence_is_about_implementation_not_configuration() -> None:
+    """Two instances of one class are one code path, however their specs differ."""
+    ok, detail = check_independent_backends(
+        HashEmbedder(spec_for()), HashEmbedder(spec_for(dim=16))
+    )
+
+    assert not ok
+    assert "HashEmbedder" in detail
 
 
 def test_mismatched_padding_side_is_reported_by_name() -> None:
@@ -201,7 +241,7 @@ def test_round_trip_is_skipped_not_faked_when_specs_disagree() -> None:
     """! Comparing vectors from two different spaces produces a number. Reporting that
     number as a cosine result would be worse than reporting nothing."""
     build = HashEmbedder(spec_for(dim=8))
-    query = HashEmbedder(spec_for(dim=8, model="other/model"))
+    query = ReferenceHashEmbedder(spec_for(dim=8, model="other/model"))
 
     report = preflight(build, query, SAMPLES)
     cosine_check = next(c for c in report.checks if c[0] == "cosine round trip")
@@ -214,7 +254,7 @@ def test_preflight_over_no_samples_fails() -> None:
     """A preflight that checked nothing must not report success."""
     spec = spec_for()
 
-    report = preflight(HashEmbedder(spec), HashEmbedder(spec), [])
+    report = preflight(HashEmbedder(spec), ReferenceHashEmbedder(spec), [])
 
     assert not report.passed
 

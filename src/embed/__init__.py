@@ -6,10 +6,11 @@ loader checks before a bundle is allowed into a database, and the thing whose ab
 the incumbent corpus its reproducibility (`ABSORPTION.md` §11, §18.2).
 """
 
-from embed.hashing import HashEmbedder, RawHashEmbedder, spec_for
+from embed.hashing import HashEmbedder, RawHashEmbedder, ReferenceHashEmbedder, spec_for
 from embed.preflight import (
     PreflightError,
     PreflightReport,
+    check_independent_backends,
     check_instruction_is_applied,
     check_spec_pair,
     cosine,
@@ -38,6 +39,8 @@ __all__ = [
     "PreflightError",
     "PreflightReport",
     "RawHashEmbedder",
+    "ReferenceHashEmbedder",
+    "check_independent_backends",
     "check_instruction_is_applied",
     "check_spec_pair",
     "cosine",

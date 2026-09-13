@@ -27,6 +27,7 @@ from embed.spec import EmbedderSpec, InstructionStyle, render_document, render_q
 __all__ = [
     "PreflightError",
     "PreflightReport",
+    "check_independent_backends",
     "check_instruction_is_applied",
     "check_spec_pair",
     "cosine",
@@ -90,6 +91,34 @@ def check_instruction_is_applied(
             f"applied (ABSORPTION.md §11)"
         )
     return True, f"instruction applied to both sides ({spec.instruction_style})"
+
+
+def check_independent_backends(build: object, query: object) -> tuple[bool, str]:
+    """The two sides of a round trip must be different implementations.
+
+    ! This is the check whose absence cost Vera's dense arm, and it is the reason the
+    cosine floor alone is not enough. The ingest pipeline's round-trip gate compared the
+    serving backend **against itself**, scored 0.999992, and certified a vector space
+    that ranked the right answer at median 32 — later measured at median 857 and 2.6%
+    Recall@5 against a reference median of 1, after which the arm carried weight 0.0.
+
+    A gate that can only pass is worse than no gate: it buys confidence. Identical inputs
+    through identical code produce cosine 1.0 no matter how wrong that code is, so what
+    the round trip has to compare is the **serving path against the model's reference
+    implementation** — two ways of computing what the manifest declares.
+    """
+    if build is query:
+        return False, (
+            "build and query are the same object — a round trip against itself scores "
+            "1.0 and certifies nothing (see the docstring)"
+        )
+    if type(build) is type(query):
+        return False, (
+            f"both sides are {type(build).__name__} — the round trip would compare a "
+            f"backend against itself. Compare the serving path against the model's "
+            f"reference implementation, or pass allow_same_backend=True and say why."
+        )
+    return True, f"{type(build).__name__} vs {type(query).__name__}"
 
 
 def check_spec_pair(build: EmbedderSpec, query: EmbedderSpec) -> tuple[bool, str]:
@@ -168,12 +197,28 @@ def preflight(
     samples: Sequence[str],
     *,
     min_cosine: float = DEFAULT_MIN_COSINE,
+    allow_same_backend: bool = False,
 ) -> PreflightReport:
-    """Run every check. Call before a long build and before `ravel load`."""
+    """Run every check. Call before a long build and before `ravel load`.
+
+    `allow_same_backend` disables the independence check. It exists because there are
+    honest uses — verifying determinism, or a smoke test — and it defaults to False
+    because the dishonest use is what shipped a broken corpus.
+    """
     checks: list[tuple[str, bool, str]] = []
 
     ok, detail = check_instruction_is_applied(build.spec)
     checks.append(("instruction is applied (build side)", ok, detail))
+
+    if allow_same_backend:
+        checks.append((
+            "backends are independent",
+            True,
+            "skipped by allow_same_backend — this run does not certify the vector space",
+        ))
+    else:
+        ok, detail = check_independent_backends(build, query)
+        checks.append(("backends are independent", ok, detail))
 
     ok, detail = check_spec_pair(build.spec, query.spec)
     checks.append(("build and query specs agree", ok, detail))

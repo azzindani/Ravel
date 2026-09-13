@@ -105,7 +105,7 @@ Expands to four variants, ordered so shared work runs once. Sensible discipline:
 - **Always keep a baseline arm** (`token512`) in the matrix. Without it, results drift
   with every other change and you lose the ability to say whether things got better.
 
-`Vera/pipelines/pre_embed/eval_arms.py` is the seed of this; `sample.py` is the seed of
+`Vera/dev_tools/pre_embed/eval_arms.py` is the seed of this; `sample.py` is the seed of
 sampling.
 
 ---
