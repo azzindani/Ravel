@@ -246,6 +246,8 @@ parsing as a stateless service.
 - [ ] MCP server: parser authoring tools (inspect, preview, diff, save)
 - [ ] HTTP service + two Docker images (`ravel-job`, `ravel-service`)
 - [ ] Remote URI backends: R2 working state, HF datasets for published bundles
+- [x] CI: ruff, hermetic suite on 3 platforms, generated SQL against real pgvector, routing over the 158 sample PDFs, CLI from an installed wheel
+- [ ] Gate the two checks CI does not yet enforce: `ruff format --check` (34 files would reflow) and `mypy src` (40 errors under the strict settings `pyproject.toml` already declares)
 - [ ] Rebuild `06_ID_Legal` end-to-end and beat it on the eval set
 
 ---

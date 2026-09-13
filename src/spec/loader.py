@@ -29,11 +29,27 @@ class RegistryError(RuntimeError):
 
 
 def registry_root(explicit: Path | str | None = None) -> Path:
-    """Where profiles live: argument, then environment, then the project default."""
+    """Where profiles live: argument, then environment, then a checkout, then the default.
+
+    ! The working-directory branch is not a convenience. `parents[2]` resolves to the
+    repository root when `src/` is on the path and to `<venv>/Lib/` when Ravel is installed
+    from a wheel — so an installed `ravel profiles list` looked for
+    `<venv>/Lib/registry/profiles` and refused. The registry is data in git, reviewed
+    alongside the code (`CLAUDE.md` §12), which means the copy an operator wants is almost
+    always the one in the checkout they are standing in.
+
+    Ordered so an explicit choice always wins: the argument, then `RAVEL_REGISTRY`, then
+    `./registry` if it looks like one, then the packaged path. Nothing here searches
+    upward — a registry found two directories above the one you are in is a surprise, and
+    profiles decide how documents are parsed.
+    """
     if explicit:
         return Path(explicit)
     if env := os.environ.get(ENV_VAR):
         return Path(env)
+    local = Path.cwd() / "registry"
+    if (local / PROFILES_DIR).is_dir():
+        return local
     return Path(__file__).resolve().parents[2] / "registry"
 
 

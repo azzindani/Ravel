@@ -1,5 +1,7 @@
 # Ravel
 
+[![CI](https://github.com/azzindani/Ravel/actions/workflows/ci.yml/badge.svg)](https://github.com/azzindani/Ravel/actions/workflows/ci.yml)
+
 **Unravel documents into threads; ravel the threads into a corpus.** The offline
 compiler that turns raw source documents into a versioned, verifiable corpus bundle
 that [Vera](../Vera) serves.

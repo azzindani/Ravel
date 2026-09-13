@@ -49,7 +49,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from bundle.manifest import BundleManifest
-from bundle.schema import render_schema
+from bundle.schema import render_indexes, render_schema
 
 __all__ = [
     "BUNDLE_VERSION",
@@ -387,9 +387,22 @@ class BundleWriter:
         if self._sealed:
             raise BundleLayoutError(f"{self.root} has already been sealed")
 
-        schema = render_schema(self.manifest, provenance_complete=self.provenance_complete)
+        # ! Two files, and the split is not cosmetic. `schema.sql` creates the tables;
+        # `indexes.sql` is applied after the load, because index maintenance during `COPY`
+        # turns a 20-minute load into a six-hour one (`BUNDLE.md` §6). Emitting one file
+        # would leave the ordering to whoever applies it, and the natural thing to do with
+        # a file called schema.sql is to apply all of it first.
+        schema = render_schema(
+            self.manifest,
+            provenance_complete=self.provenance_complete,
+            with_indexes=False,
+        )
         (self.root / "schema.sql").write_text(schema, encoding="utf-8", newline="\n")
         self.record("schema.sql", 0)
+        (self.root / "indexes.sql").write_text(
+            render_indexes(self.manifest), encoding="utf-8", newline="\n"
+        )
+        self.record("indexes.sql", 0)
 
         chunk_rows = self.rows_of("chunks")
         vector_rows = self.rows_of("vectors")

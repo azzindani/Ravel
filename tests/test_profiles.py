@@ -345,3 +345,56 @@ def test_case_insensitivity_remains_the_default(idreg: Profile) -> None:
     """Only markers that collide with ordinary words need the stricter rule."""
     assert idreg.structural("bab i") is not None
     assert idreg.structural("BAB I") is not None
+
+
+# -- where the registry is found ------------------------------------------------------
+
+
+def test_a_checkout_registry_is_found_from_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """! Found from a CI job, and only once the CLI ran from an installed wheel.
+
+    The packaged fallback resolves `parents[2]`, which is the repository root when `src/`
+    is on the path and `<venv>/Lib/` when Ravel is installed — so `ravel profiles list`
+    refused with "no profile registry at <venv>/Lib/registry/profiles". The registry is
+    data in git reviewed alongside the code, so the copy an operator wants is almost
+    always the one in the checkout they are standing in.
+    """
+    from spec import registry_root
+
+    (tmp_path / "registry" / "profiles").mkdir(parents=True)
+    monkeypatch.delenv("RAVEL_REGISTRY", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert registry_root() == tmp_path / "registry"
+
+
+def test_an_explicit_registry_always_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Argument, then RAVEL_REGISTRY, then the checkout. A profile decides how documents
+    are parsed, so an explicit choice must never lose to something that was merely
+    nearby."""
+    from spec import registry_root
+
+    (tmp_path / "registry" / "profiles").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setenv("RAVEL_REGISTRY", str(tmp_path / "from-env"))
+    assert registry_root() == tmp_path / "from-env"
+    assert registry_root(tmp_path / "explicit") == tmp_path / "explicit"
+
+
+def test_nothing_searches_upward(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """! A registry found two directories above the one you are standing in is a surprise,
+    and the surprise is that documents parse differently than you expected."""
+    from spec import registry_root
+
+    (tmp_path / "registry" / "profiles").mkdir(parents=True)
+    nested = tmp_path / "a" / "b"
+    nested.mkdir(parents=True)
+    monkeypatch.delenv("RAVEL_REGISTRY", raising=False)
+    monkeypatch.chdir(nested)
+
+    assert registry_root() != tmp_path / "registry"

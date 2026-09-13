@@ -1,0 +1,155 @@
+name: Release
+
+# Tag-triggered release of the `ravel` wheel and sdist.
+#
+# ! A wheel, ✗ a container image. `docker/` builds the job image from the same
+# source; publishing a second artifact from here would give two things called
+# v0.1.0 that nobody diffs. What a release adds is something an operator can
+# `uv tool install` on a Vast box in one line, without a checkout.
+#
+# ! Also ✗ PyPI, for now. Ravel is operator infrastructure for one corpus, not a
+# library anyone should `pip install ravel` by that name. Attaching the wheel to
+# the GitHub release makes it installable —
+#   uv tool install https://github.com/azzindani/Ravel/releases/download/v0.1.0/ravel-0.1.0-py3-none-any.whl
+# — without claiming a name on a public index.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (dry run; no release is published)"
+        required: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never interrupt a publish half-way
+
+env:
+  UV_HTTP_TIMEOUT: 60
+
+permissions:
+  contents: write # required to create the release
+
+jobs:
+  # ! Gate the build on the same checks CI runs. A tag must never ship something
+  # that would have failed on main — and a release is exactly when nobody looks.
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/samples
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked --all-extras --no-extra extract --no-extra mcp
+      - run: uv run ruff check src tests tools
+      - run: uv run pytest -q
+
+  # ! The version in the tag and the version in pyproject.toml must agree.
+  # Nothing enforces that otherwise, and a wheel called 0.0.1 attached to a
+  # release called v0.2.0 is the kind of thing that is discovered months later by
+  # someone trying to work out which build a corpus came from — the exact
+  # question ABSORPTION.md §18.2 could not answer about the incumbent.
+  version:
+    name: tag matches pyproject
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /pyproject.toml
+      - name: Compare
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python3 -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "tag=$tag  pyproject=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match pyproject version $pkg" >&2
+            exit 1
+          fi
+
+  build:
+    name: build
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # ! Full history. hatchling reads nothing from it today, but a shallow
+          # checkout is how a future version scheme silently produces 0.0.0.
+          fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/samples
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      # ! Install the built wheel into a clean environment and run the CLI from
+      # it. A wheel that builds can still be missing a package — `packages` in
+      # pyproject.toml is a hand-maintained list, and a stage added without a
+      # line there imports fine from a checkout and is absent from the artifact.
+      - name: The artifact actually runs
+        run: |
+          uv venv /tmp/release-check
+          VIRTUAL_ENV=/tmp/release-check uv pip install dist/*.whl
+          /tmp/release-check/bin/ravel version
+          /tmp/release-check/bin/ravel profiles list
+          for pkg in canon sources extract chunk enrich embed cluster bundle load runtime variants evaluate; do
+            /tmp/release-check/bin/python -c "import $pkg" || { echo "::error::$pkg is missing from the wheel" >&2; exit 1; }
+          done
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ravel-dist
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: [build, version]
+    runs-on: ubuntu-latest
+    # Only a real tag publishes. workflow_dispatch builds and stops, so the
+    # release path can be exercised without creating a release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ravel-dist
+          path: dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true

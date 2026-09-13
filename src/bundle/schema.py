@@ -120,6 +120,24 @@ CREATE TABLE IF NOT EXISTS chunks (
 
     body                TEXT NOT NULL,
 
+    -- ! Provenance and lineage, as hard columns. These are in the chunk parquet and were
+    -- NOT in the schema this was modelled on, because the pipeline that built that corpus
+    -- never carried them — which is the same reason all 748,558 of its rows have no
+    -- source_url (ABSORPTION.md §3). `CLAUDE.md` §5.3 calls provenance the product, and a
+    -- column that exists in the bundle and not in the database is a product that does not
+    -- arrive. Ravel writes and Vera reads, so the wider schema is the one that wins.
+    doc_id              TEXT NOT NULL DEFAULT '',
+    token_count         INTEGER,
+    source_sha256       TEXT NOT NULL DEFAULT '',
+    locator_page        INTEGER,
+    locator_section     TEXT,
+    heading_path        TEXT,
+
+    chunker             TEXT NOT NULL DEFAULT '',
+    chunker_version     TEXT NOT NULL DEFAULT '',
+    config_hash         TEXT NOT NULL DEFAULT '',
+    profile             TEXT,
+
     {source_url_column}
     source_title        TEXT NOT NULL,
 

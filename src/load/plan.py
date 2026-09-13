@@ -23,6 +23,13 @@ the partial load exists and the only remedy is a truncate. Verifying inside the
 transaction makes "load nothing" the literal behaviour: the count mismatch raises, the
 transaction rolls back, and the database is exactly as it was.
 
+**3. `corpus_meta` is stamped first, not last.** §6 ends with *"stamp manifest into
+corpus_meta"*, which reads naturally — the receipt goes on at the end. But the generated
+schema declares `chunks.corpus_id REFERENCES corpus_meta(id)`, so a chunk inserted before
+that row exists is a foreign key violation on the very first row of the load. Neither file
+was wrong on its own; the contradiction existed only where they met, and nothing executed
+both until `tools/ci_bundle_check.py` did.
+
 The index build is the one thing that is *not* in the transaction, deliberately: it is
 idempotent (`CREATE INDEX IF NOT EXISTS`), it is the slowest step by far, and holding a
 transaction open across it serves no purpose once the data is committed and verified.
@@ -39,23 +46,32 @@ __all__ = ["Step", "load_plan", "copy_from", "quote_literal", "quote_ident"]
 #: Columns a chunk shard carries, in parquet order. Named here rather than derived from
 #: the file so a shard with an unexpected column set fails at COPY with a column list to
 #: compare against, instead of loading shifted.
-CHUNK_COLUMNS = (
-    "id",
-    "doc_id",
-    "body",
-    "token_count",
-    "source_title",
-    "source_url",
-    "source_sha256",
-    "locator_page",
-    "locator_section",
-    "heading_path",
-    "identifier",
-    "chunker",
-    "chunker_version",
-    "config_hash",
-    "profile",
+#: `(staging column, SQL type, destination column in `chunks`)`, in parquet order.
+#:
+#: ! One table, so the three things that must agree cannot drift apart: what the shard
+#: holds, what the staging table declares, and what the merge writes. They were three
+#: separate lists until a real Postgres ran them together and every one of them turned out
+#: to name columns the others did not have.
+_STAGED: tuple[tuple[str, str, str], ...] = (
+    ("id", "TEXT", "id"),
+    ("doc_id", "TEXT", "doc_id"),
+    ("body", "TEXT", "body"),
+    ("token_count", "INTEGER", "token_count"),
+    ("part_n", "INTEGER", "chunk_no"),
+    ("source_title", "TEXT", "source_title"),
+    ("source_url", "TEXT", "source_url"),
+    ("source_sha256", "TEXT", "source_sha256"),
+    ("locator_page", "INTEGER", "locator_page"),
+    ("locator_section", "TEXT", "locator_section"),
+    ("heading_path", "TEXT", "heading_path"),
+    ("identifier", "TEXT", "identifier"),
+    ("chunker", "TEXT", "chunker"),
+    ("chunker_version", "TEXT", "chunker_version"),
+    ("config_hash", "TEXT", "config_hash"),
+    ("profile", "TEXT", "profile"),
 )
+
+CHUNK_COLUMNS: tuple[str, ...] = tuple(source for source, _, _ in _STAGED)
 
 
 def quote_ident(name: str) -> str:
@@ -96,15 +112,52 @@ class Step:
 
 
 def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
-    """A `COPY` statement naming its columns.
+    """A `COPY ... FROM STDIN` statement naming its columns, and the file that feeds it.
 
     ! Always an explicit column list. `COPY chunks FROM ...` with no list binds by
     position, so adding a column to the schema silently shifts every value in every row
     one place — a corpus that loads without error and is wrong in every field after the
     insertion point.
+
+    ! `FROM STDIN`, never `FROM '<path>'`. Postgres `COPY` reads text, CSV or its own
+    binary format from a *server-side* file, and a bundle holds parquet — so a statement
+    naming a `.parquet` path is not a slow load or a permissions problem, it is a syntax
+    the server has no reader for. The executor streams each shard through `cursor.copy()`,
+    converting rows as it goes, which is also what makes a bundle on object storage
+    loadable by a database that cannot see the filesystem it came from.
+
+    The source file is carried as a comment above the statement and in `Step.inputs`, so a
+    printed plan still says which shard each `COPY` consumes.
     """
     names = ", ".join(quote_ident(c) for c in columns)
-    return f"COPY {quote_ident(table)} ({names}) FROM {quote_literal(source)}"
+    return (
+        f"-- from {source}\n"
+        f"COPY {quote_ident(table)} ({names}) FROM STDIN WITH (FORMAT text);"
+    )
+
+
+def _merge(corpus_id: str, *, with_vectors: bool) -> str:
+    """The one pass that moves staged rows into `chunks`.
+
+    Every staged column is carried across. A column that reaches the staging table and
+    stops there is provenance the bundle paid to produce and the database never receives —
+    and nothing downstream can tell the difference between "not captured" and "not
+    loaded".
+    """
+    targets = [target for _, _, target in _STAGED]
+    sources = [f"c.{quote_ident(source)}" for source, _, _ in _STAGED]
+    if with_vectors:
+        targets.append("dense")
+        sources.append("v.embedding")
+
+    into = ", ".join(quote_ident(c) for c in ["corpus_id", *targets])
+    select = ", ".join([quote_literal(corpus_id), *sources])
+    join = (
+        "FROM chunks_stage c JOIN vectors_stage v ON v.chunk_id = c.id;"
+        if with_vectors
+        else "FROM chunks_stage c;"
+    )
+    return f"INSERT INTO chunks ({into})\nSELECT {select}\n{join}"
 
 
 def load_plan(
@@ -140,15 +193,35 @@ def load_plan(
             note="Generated from the manifest; every dimension is a variable.",
         ),
         Step(
+            name="stamp corpus_meta",
+            sql=_corpus_meta_insert(document),
+            note=(
+                "! Before the rows, not after. `chunks.corpus_id` REFERENCES "
+                "corpus_meta(id), so inserting a chunk against a recipe that is not "
+                "there yet is a foreign key violation — the load fails on its first row. "
+                "It also reads better: the recipe exists before anything claims to have "
+                "been built by it."
+            ),
+        ),
+        Step(
             name="stage",
             sql=(
-                "CREATE UNLOGGED TABLE chunks_stage (LIKE chunks INCLUDING DEFAULTS);\n"
+                "CREATE UNLOGGED TABLE chunks_stage (\n"
+                + ",\n".join(
+                    f"    {quote_ident(column):<20} {sql_type}"
+                    for column, sql_type, _ in _STAGED
+                )
+                + "\n);\n"
                 "CREATE UNLOGGED TABLE vectors_stage (chunk_id TEXT, embedding "
                 f"halfvec({int(document['dense']['dim'])}));"
             ),
             note=(
-                "UNLOGGED: staging tables are rebuilt from the bundle on any failure, so "
-                "WAL for them is work whose only product is recovery nobody would use."
+                "! Declared from the bundle's columns, never `LIKE chunks`. `LIKE` copies "
+                "NOT NULL constraints onto columns the COPY does not supply — `corpus_id` "
+                "among them, which the merge assigns — so the first row of the load fails "
+                "a constraint the bundle was never asked to satisfy. UNLOGGED because "
+                "staging is rebuilt from the bundle on any failure, so WAL for it is work "
+                "whose only product is a recovery nobody would use."
             ),
         ),
         Step(
@@ -176,14 +249,7 @@ def load_plan(
         steps.append(
             Step(
                 name="merge",
-                sql=(
-                    "INSERT INTO chunks (id, corpus_id, body, source_title, source_url, "
-                    "identifier, dense)\n"
-                    "SELECT c.id, "
-                    f"{quote_literal(corpus_id)}, c.body, c.source_title, c.source_url, "
-                    "c.identifier, v.embedding\n"
-                    "FROM chunks_stage c JOIN vectors_stage v ON v.chunk_id = c.id;"
-                ),
+                sql=_merge(corpus_id, with_vectors=True),
                 note=(
                     "One write per row. An UPDATE would write a second version of every "
                     "row and leave the first as a dead tuple — see the module docstring."
@@ -213,13 +279,7 @@ def load_plan(
         steps.append(
             Step(
                 name="merge",
-                sql=(
-                    "INSERT INTO chunks (id, corpus_id, body, source_title, source_url, "
-                    "identifier)\n"
-                    "SELECT id, "
-                    f"{quote_literal(corpus_id)}, body, source_title, source_url, identifier\n"
-                    "FROM chunks_stage;"
-                ),
+                sql=_merge(corpus_id, with_vectors=False),
                 note="Text-only bundle: no vectors were written.",
             )
         )
@@ -257,16 +317,6 @@ def load_plan(
             note=(
                 "! Before the commit, so 'fail any check -> load nothing' is the literal "
                 "behaviour rather than an instruction to the operator."
-            ),
-        )
-    )
-    steps.append(
-        Step(
-            name="stamp corpus_meta",
-            sql=_corpus_meta_insert(document),
-            note=(
-                "The recipe, in the database, so a live corpus can answer 'what built "
-                "you?' without the bundle present. Vera reads this row at startup."
             ),
         )
     )

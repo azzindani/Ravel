@@ -319,9 +319,24 @@ def test_vectors_are_merged_by_insert_rather_than_update(built) -> None:
 def test_every_copy_names_its_columns() -> None:
     """! Positional `COPY` binds by order, so adding a schema column silently shifts every
     value one place — a corpus that loads without error and is wrong in every field."""
-    statement = copy_from("chunks", ("id", "body"), "/tmp/part.parquet")
+    statement = copy_from("chunks", ("id", "body"), "chunks/part-00000.parquet")
 
     assert '"id", "body"' in statement
+
+
+def test_a_copy_reads_from_stdin_not_from_a_parquet_path() -> None:
+    """! Postgres `COPY` reads text, CSV or its own binary format from a server-side file.
+    A bundle holds parquet, so `FROM '<path>.parquet'` is not a slow load — it is a format
+    the server has no reader for, and the statement fails at the first shard.
+
+    The file still has to be named somewhere a reader can see it, so it is a comment and a
+    `Step.inputs` entry rather than part of the statement.
+    """
+    statement = copy_from("chunks", ("id",), "chunks/part-00000.parquet")
+
+    assert "FROM STDIN" in statement
+    assert "'chunks/part-00000.parquet'" not in statement
+    assert "-- from chunks/part-00000.parquet" in statement
 
 
 def test_identifiers_and_literals_are_quoted() -> None:

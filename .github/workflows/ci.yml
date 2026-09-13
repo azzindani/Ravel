@@ -1,0 +1,236 @@
+name: CI
+
+# Two stages, mirroring the phase split:
+#   fast — lint, and the hermetic suite on all three platforms
+#   full — the generated SQL executed against a real Postgres, and the routing
+#          guard run over the 158 sample PDFs
+#
+# The `full` stages run on Linux only. One is testing SQL semantics against a
+# Postgres server, which behaves the same whichever OS drove the client; the
+# other reads PDFs, which do not change by platform either. Paying three times
+# for one answer buys nothing.
+#
+# ! Windows is in the fast matrix and is not optional. Ravel is developed on a
+# Windows workstation and runs on Linux GPU boxes, and the failures that only
+# appear on one of them — CRLF in a parquet round-trip, a missing tz database,
+# a console codepage that cannot print a step note — are exactly the ones a
+# Linux-only gate would hand to whoever is least equipped to fix them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref. A new push supersedes the old one instead of queueing behind
+# it, so a busy branch does not sit waiting on stale jobs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Fail fast on a network hiccup rather than hanging the job for minutes.
+  UV_HTTP_TIMEOUT: 60
+  FORCE_COLOR: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  # Formatting and lint are platform-independent, so checking once is enough.
+  # Running them on all three would only add ways for line endings to bite.
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/samples
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # --locked so CI fails on an out-of-date uv.lock rather than silently
+      # resolving different versions than the developer had.
+      - run: uv sync --locked --all-extras --no-extra extract --no-extra mcp
+      - run: uv run ruff check src tests tools
+
+      # ! No `ruff format --check`, and no mypy, deliberately — see the note at
+      # the bottom of this file. A check that is in the gate but allowed to fail
+      # is decorative, and one that is claimed in a README and not run is worse.
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      # ! Never cancel siblings. A Windows-only failure is exactly the thing this
+      # matrix exists to find, and fail-fast would hide whether Linux and macOS
+      # were fine.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      # The hermetic suite never opens samples/, and skipping 165 MB of PDFs on
+      # three runners per push is the difference between a gate people wait for
+      # and one they route around.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/samples
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        # The heavy extras are excluded deliberately: `extract` pulls docling and
+        # torch (~2 GB) for a suite that imports neither. The samples job installs
+        # the one library it actually needs.
+        run: uv sync --locked --all-extras --no-extra extract --no-extra mcp
+
+      - name: Test
+        run: uv run pytest -q
+
+  # The stage that would have caught `COPY ... FROM '<path>.parquet'`. Everything
+  # in tests/test_load.py asserts things about strings, and a string that looks
+  # like SQL is not SQL — the load plan, the generated DDL and both guard blocks
+  # had never been executed by a database until this job existed.
+  integration:
+    name: integration (postgres + pgvector)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ravel
+          POSTGRES_PASSWORD: ravel
+          POSTGRES_DB: ravel
+          # ! Locale pinned. Collation changes ORDER BY on text, and a corpus
+          # whose ranking differs between CI and the deployment is worse than one
+          # with no ranking test at all.
+          POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ravel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: host=localhost port=5432 dbname=ravel user=ravel password=ravel
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/samples
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked --extra load
+
+      - name: Execute the generated schema and load plan
+        run: uv run python tools/ci_bundle_check.py
+
+  # The other half of `CLAUDE.md` §12's cost. A profile can be widened by anyone,
+  # and a widened `match.content` pattern has no local symptom — it produces a
+  # plausible parse of a document it should never have seen. 144 of these 158
+  # PDFs are not regulations, and none of them may be claimed by id_regulation.
+  #
+  # Separate job because it needs the PDFs (165 MB) and PyMuPDF, and the default
+  # suite must stay hermetic and instant so that it is actually run.
+  samples:
+    name: routing (158 real PDFs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked
+      # ! pymupdf alone, not `--extra extract`. The routing guard reads page text
+      # and nothing else; the extra would drag in docling and torch for it.
+      - run: uv run --with pymupdf pytest -m samples -q
+
+  # The CLI is the primary face and must work with nothing else running
+  # (`INTERFACES.md` §1). A package that imports cleanly can still ship a console
+  # script that does not, and that failure reaches the operator, not the test
+  # suite.
+  cli:
+    name: cli runs from an installed wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/samples
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build and install the wheel
+        run: |
+          uv build --wheel
+          uv venv /tmp/venv
+          VIRTUAL_ENV=/tmp/venv uv pip install dist/*.whl
+
+      - name: It runs, and it can see the registry
+        run: |
+          /tmp/venv/bin/ravel version
+          /tmp/venv/bin/ravel profiles list
+          /tmp/venv/bin/ravel --help
+
+      - name: It refuses a bundle that is not one
+        # ! A gate that cannot fail proves nothing. `bundle verify` on an empty
+        # directory must exit non-zero and say why.
+        run: |
+          mkdir -p /tmp/not-a-bundle
+          # `if`, not `cmd && { fail }`: these steps run under `bash -e`, where a
+          # failing AND-OR list still exits the script — so the correct refusal
+          # would fail the step. An `if` condition is exempt from -e.
+          if out=$(/tmp/venv/bin/ravel bundle verify /tmp/not-a-bundle 2>&1); then
+            echo "expected a refusal, got success:" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "$out"
+          echo "$out" | grep -q "unsealed build directory"
+
+# ------------------------------------------------------------------------------
+# What this gate does NOT enforce yet, stated rather than implied
+# ------------------------------------------------------------------------------
+# `ruff format --check` — would reformat 34 of 82 files. Several carry deliberate
+#   hand-wrapping that the formatter collapses (a vocabulary literal was manually
+#   re-wrapped once already after `ruff format` put it on one line). Adopting it
+#   is a decision and a reformat commit, not a line in a workflow.
+#
+# `mypy src` — 40 errors under the `strict` settings pyproject.toml already
+#   declares: 15 no-any-return, 10 import-untyped, 4 attr-defined, 4
+#   unused-ignore, 3 call-overload, 2 no-untyped-def, 2 import-not-found (the
+#   optional `pymupdf` path, which wants a per-module override rather than a fix).
+#
+# Both are real gaps and both are tracked in CLAUDE.md. They are absent here
+# rather than present-and-non-blocking on purpose: this project's own load
+# preflight refuses to treat a skipped check as a passed one, and a CI file
+# should not hold itself to a lower standard than the code it gates.
