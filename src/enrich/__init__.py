@@ -8,6 +8,7 @@ re-ingesting a corpus.
 
 from enrich.entities import Reference, ReferenceKind, extract_references, reference_counts
 from enrich.factors import Factors, compute_factors
+from enrich.graph import CitationGraph, GraphMetrics, build_graph
 from enrich.sparse import K1, TOKEN_RE, B, Bm25Vectorizer, TokeniserDrift, tokenize
 
 __all__ = [
@@ -17,6 +18,9 @@ __all__ = [
     "extract_references",
     "reference_counts",
     "Bm25Vectorizer",
+    "CitationGraph",
+    "GraphMetrics",
+    "build_graph",
     "Factors",
     "K1",
     "TOKEN_RE",

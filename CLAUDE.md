@@ -237,10 +237,10 @@ parsing as a stateless service.
 - [x] Text-layer quality gate: clean/damaged/absent routing — `src/extract/quality.py`
 - [x] URI substrate (`file://`, `hf://`, `s3://`) — `src/uris.py`
 - [~] Embedder plugin interface + manifest + preflight — `src/embed/`; local (transformers/vLLM) and API backends still to write
-- [~] Bundle writer: manifest + generated schema — `src/bundle/`; parquet shard writer still to build
-- [ ] Clustering: domain anchors, k-means, assignment, generation stamping
-- [ ] Loader: preflight, `COPY`, post-load verification
-- [~] Enrichment: BM25 + ranking factors + profile-driven reference extraction — `src/enrich/`; NER and whole-corpus KG metrics still to build
+- [x] Bundle writer: manifest, generated schema, parquet shards, inventory — `src/bundle/`
+- [x] Clustering: anchors, spherical k-means, streamed assignment, generations — `src/cluster/`
+- [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
+- [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`; NER still to build
 - [ ] Variant harness: config hashing, matrix runs, cache reuse
 - [ ] Eval: labeled ID regulation set; score and promote a variant
 - [ ] MCP server: parser authoring tools (inspect, preview, diff, save)

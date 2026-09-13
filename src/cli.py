@@ -32,12 +32,27 @@ app = typer.Typer(
 canon_app = typer.Typer(help="Inspect and validate canonical documents.", no_args_is_help=True)
 sources_app = typer.Typer(help="Discover and hash source documents.", no_args_is_help=True)
 profiles_app = typer.Typer(help="Inspect the document profile registry.", no_args_is_help=True)
+bundle_app = typer.Typer(help="Inspect and verify corpus bundles.", no_args_is_help=True)
 app.add_typer(canon_app, name="canon")
 app.add_typer(sources_app, name="sources")
 app.add_typer(profiles_app, name="profiles")
+app.add_typer(bundle_app, name="bundle")
 
 WORKSPACE = Annotated[Path, typer.Option("--workspace", "-w", help="Where artifacts go.")]
 CorpusArg = Annotated[str, typer.Argument(help="Corpus id from corpora/.")]
+
+# ! Force UTF-8 on the streams before anything writes to them.
+#
+# Windows' legacy console is cp1252, and rich's legacy-console renderer writes through it
+# character by character. A single character outside that codepage — U+2192 in a step note,
+# a typographic dash in a check's detail — raises UnicodeEncodeError *mid-render*, so the
+# command dies with a traceback after printing half its output. The text was correct; the
+# terminal could not spell it. `errors="replace"` degrades to a question mark on a console
+# that cannot show the glyph, which is the right trade for a tool that has to run on a
+# Windows workstation and a Linux GPU box with the same code (`STACK.md` §1).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 err = Console(stderr=True)
 out = Console()
@@ -317,6 +332,132 @@ def status(corpus_id: CorpusArg, workspace: WORKSPACE = Path(".")) -> None:
         out.print(table)
         for entry in ledger.failures("extract", limit=10):
             err.print(f"[yellow]{entry.status.value}[/yellow] {entry.detail}")
+
+
+BundleArg = Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)]
+
+
+@bundle_app.command("show")
+def bundle_show(path: BundleArg) -> None:
+    """The recipe and the inventory of a sealed bundle.
+
+    Two hashes, two questions: the recipe answers "are these two bundles the same build?",
+    the inventory answers "did this one arrive intact?".
+    """
+    from bundle import read_bundle
+
+    document = read_bundle(path)
+    dense = document["dense"]
+    inventory = document.get("inventory", {})
+
+    table = RichTable(show_header=False, box=None)
+    table.add_row("corpus", f"{document['corpus_id']}  [dim]run {document['run_id']}[/dim]")
+    table.add_row("recipe", f"[dim]{document['manifest_sha256']}[/dim]")
+    table.add_row("chunks", f"{document['chunk_count']:,}")
+    table.add_row(
+        "dense",
+        f"{dense['model']} @ {dense['model_version']} · {dense['dim']}d · "
+        f"{dense['pooling']} · {dense['padding_side']} pad",
+    )
+    sparse = document.get("sparse")
+    if sparse:
+        table.add_row(
+            "sparse",
+            f"{sparse['scheme']} · {sparse['dim']}d · fitted over "
+            f"{sparse['fit_docs']:,} docs",
+        )
+    clustering = document.get("clustering") or {}
+    if clustering:
+        table.add_row(
+            "clustering",
+            f"{clustering.get('algo', '?')} · k={clustering.get('k', '?')} · "
+            f"generation {clustering.get('generation', '?')}",
+        )
+    table.add_row("files", f"{inventory.get('files', 0):,}")
+    if not document.get("provenance_complete", True):
+        table.add_row("provenance", "[yellow]incomplete — results are not citable[/yellow]")
+    out.print(table)
+
+    counts = RichTable(show_header=True, header_style="bold")
+    counts.add_column("file", overflow="fold")
+    counts.add_column("rows", justify="right")
+    for name, rows in sorted(inventory.get("counts", {}).items()):
+        counts.add_row(name, f"{rows:,}" if rows else "—")
+    out.print(counts)
+
+
+@bundle_app.command("verify")
+def bundle_verify(
+    path: BundleArg,
+    target_dim: Annotated[
+        int, typer.Option("--dim", help="Width of the target dense column.")
+    ] = 0,
+    tolerance: Annotated[
+        float, typer.Option("--tolerance", help="Share of failed documents allowed.")
+    ] = 0.0,
+    allow_skipped: Annotated[
+        bool,
+        typer.Option("--allow-skipped", help="Pass when a check could not run at all."),
+    ] = False,
+    allow_incomplete_provenance: Annotated[
+        bool, typer.Option("--allow-incomplete-provenance")
+    ] = False,
+) -> None:
+    """Run the load preflight. Exits non-zero if the bundle must not load.
+
+    The canary needs a live query-side embedder and so is reported as skipped here; a
+    skipped check does not pass unless `--allow-skipped` says so.
+    """
+    import shutil
+
+    from load import preflight
+
+    report = preflight(
+        path,
+        target_dim=target_dim or None,
+        free_bytes=shutil.disk_usage(path).free,
+        failure_tolerance=tolerance,
+        allow_incomplete_provenance=allow_incomplete_provenance,
+    )
+    for check in report.checks:
+        style = {"ok": "green", "fail": "red", "skipped": "yellow"}[check.status.value]
+        out.print(f"[{style}]{check.status.value:<8}[/{style}] {check.name}: {check.detail}")
+
+    if report.failed:
+        err.print("[red]preflight failed — this bundle must not be loaded[/red]")
+        raise typer.Exit(1)
+    if report.skipped and not allow_skipped:
+        err.print(
+            f"[yellow]{len(report.skipped)} checks could not run "
+            f"({', '.join(c.name for c in report.skipped)}). A skipped check is not a "
+            f"passed one — supply its input, or accept the gap with "
+            f"--allow-skipped.[/yellow]"
+        )
+        raise typer.Exit(1)
+    out.print("[green]preflight passed[/green]")
+
+
+@bundle_app.command("plan")
+def bundle_plan(
+    path: BundleArg,
+    show_sql: Annotated[bool, typer.Option("--sql", help="Print each statement.")] = False,
+) -> None:
+    """Print the load procedure without running it.
+
+    A procedure you can read is a procedure someone can review before it runs against a
+    database holding a corpus that took GPU-days to build.
+    """
+    from bundle import read_bundle
+    from load import load_plan
+
+    steps = load_plan(read_bundle(path), path)
+    for i, step in enumerate(steps, 1):
+        marker = "" if step.transactional else "  [dim](outside the transaction)[/dim]"
+        out.print(f"[bold]{i:>2}. {step.name}[/bold]{marker}")
+        if step.note:
+            out.print(f"    [dim]{step.note}[/dim]")
+        if show_sql:
+            out.print(f"[dim]{step.sql}[/dim]")
 
 
 @canon_app.command("validate")

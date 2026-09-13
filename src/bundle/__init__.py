@@ -13,13 +13,40 @@ from bundle.manifest import (
     check_provenance,
     check_vocabulary_covers_corpus,
 )
-from bundle.schema import render_schema
+from bundle.schema import render_indexes, render_schema
+from bundle.writer import (
+    BUNDLE_VERSION,
+    BundleLayoutError,
+    BundleWriter,
+    iter_vectors,
+    read_bundle,
+    sha256_file,
+    vector_schema,
+    write_clusters,
+    write_domains,
+    write_edges,
+    write_signals,
+    write_vectors,
+)
 
 __all__ = [
+    "BUNDLE_VERSION",
+    "BundleLayoutError",
     "BundleManifest",
+    "BundleWriter",
     "ManifestError",
     "SparseSpec",
     "check_provenance",
     "check_vocabulary_covers_corpus",
+    "iter_vectors",
+    "read_bundle",
+    "render_indexes",
     "render_schema",
+    "sha256_file",
+    "vector_schema",
+    "write_clusters",
+    "write_domains",
+    "write_edges",
+    "write_signals",
+    "write_vectors",
 ]

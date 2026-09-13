@@ -11,8 +11,8 @@ It added §§10–14, put the two sections that were numbered out of order back 
 and added four rows to §3. It also closes `OPEN_QUESTIONS.md` on the encoder. Two findings change plans rather than decorate them: the embedding run that
 produced the incumbent's vectors **never applied its instruction** (§11), and the
 labelled eval set this project is measured against **does not exist in any form** (§13).
-**Fifth pass, same day**, over `Vera/dev_tools/` — which four passes of sweeping
-`AI_Workspace` never opened. It **retracts §13**: the labelled eval set exists, is
+**Fifth pass, same day**, over `Vera/dev_tools/` — which four passes of sweeping the
+notebook workspace never opened. It **retracts §13**: the labelled eval set exists, is
 hand-written, and is better designed than anything proposed here. It also supplied the
 check in §19.2 that the freshly written `src/embed/preflight.py` was missing.
 
@@ -518,7 +518,7 @@ Noted rather than built.
 > (kept deliberately, because users ask those). `dev_tools/eval/audit.py` exists to find
 > bad labels by checking where each labelled target actually ranks.
 >
-> **Why I got it wrong:** the search was exhaustive over `AI_Workspace` and never ran
+> **Why I got it wrong:** the search was exhaustive over the notebook workspace and never ran
 > over `Vera/dev_tools/`, while the claim made was about the whole workspace. Passes 3
 > and 4 each narrowed this section; none of them widened where it looked. An absence
 > claim is only as strong as its search, and this one asserted more than it had covered.
@@ -909,7 +909,7 @@ and nothing in a notebook says whether it ever ran.
 
 ## 19. Fifth pass: Vera's side, and a gate that could only pass
 
-Four passes swept `AI_Workspace` and never opened `Vera/dev_tools/`, which is where the
+Four passes swept the notebook workspace and never opened `Vera/dev_tools/`, which is where the
 Ravel-adjacent work actually continued. Two things there are worth more than anything in
 the notebooks, and one of them retracts §13 (see the retraction in place).
 
@@ -979,7 +979,81 @@ project's worst measured defects — the unapplied instruction and the self-comp
 
 ---
 
-## 20. The decision this forces: rebuild or salvage?
+## 20. Sixth pass: scaffolding Phase C, and two defects it found in this repo
+
+Written while building `src/cluster`, `src/bundle/writer.py` and `src/load`. Unlike every
+section above it, this one is not about the incumbent — it is about what implementing the
+design surfaced in the design.
+
+### 20.1 The routing metric is part of the recipe, and nothing was recording it
+
+Vera routes by cosine against the centroids. Fitting by Euclidean distance is the library
+default everywhere (`sklearn.KMeans`, `faiss.Kmeans`), and for unit-norm `x`
+
+    ||x - c||^2 = 1 - 2(x.c) + ||c||^2
+
+the `||c||^2` term does not vanish. A mean of unit vectors is not unit: a tight cluster's
+centroid has norm near 1, a diffuse one's is much shorter. Measured on three clusters with
+spreads 0.02 / 0.25 / 0.60, the fitted centroid norms were **0.988, 0.680, 0.372**, and
+Euclidean and cosine assignment **disagreed about 5.0% of rows**.
+
+Those rows load correctly, carry a valid `cluster_id`, and sit in a cluster the engine will
+not probe for them. No error, no count out of place, recall lower than it should be for
+reasons no log records. `CLUSTERING.md` never said which metric to use, so "whatever the
+library defaults to" was the live answer.
+
+Three consequences, all now structural:
+
+- `metric_for(normalize=...)` derives the metric from the embedder spec rather than taking
+  it as a free parameter set in a different file from the one that set `normalize`.
+- `Clustering.sha256()` hashes the metric alongside the centroids, so two identical
+  centroid sets under different metrics are two routing structures.
+- `Clustering.__post_init__` refuses non-unit centroids under cosine — the same defect one
+  level down, since `argmax(x @ C.T)` is cosine only when the rows of `C` have length 1.
+
+### 20.2 The generated schema built its indexes before the load
+
+`BUNDLE.md` §6 is explicit: *"Indexes are built after bulk load, not before — index
+maintenance during `COPY` is the classic way to turn a 20-minute load into a 6-hour one."*
+`bundle/schema.py` emitted four `CREATE INDEX` statements inline at the end of the `chunks`
+DDL, so any loader that applied `schema.sql` and then copied would have done exactly the
+thing the doc forbids.
+
+Nothing was wrong with either file in isolation. The schema generator was written before
+the loader existed, and the ordering constraint lives in the loader's document. Split into
+`render_schema(..., with_indexes=False)` and `render_indexes()`, so the load plan cannot
+apply them in the wrong order rather than being trusted not to.
+
+### 20.3 Smaller, and worth recording: the CLI died on a legacy Windows console
+
+`ravel bundle plan` printed half its output and then raised `UnicodeEncodeError` on `U+2192`
+in a step note. Windows' legacy console is cp1252 and rich's legacy renderer writes through
+it character by character, so one character outside the codepage kills the command
+mid-render. The text was correct; the terminal could not spell it.
+
+The general shape matters more than the character: this project is required to run the same
+code on a Windows workstation and a Linux GPU box (`STACK.md` §1), and a failure that only
+appears on one of them will be found by whoever is least equipped to fix it. Streams are now
+reconfigured to UTF-8 with `errors="replace"` before anything writes.
+
+### 20.4 What the citation graph makes computable
+
+With `enrich/graph.py` in place, the §6 finding stops being an observation and becomes a
+number: `coverage` — the share of citations whose target is actually in the corpus. The
+rest point outward, and they are recorded rather than resolved, because a phantom node for
+an instrument the corpus does not hold would accumulate rank it can never be returned for.
+That share is the most honest available answer to "what is missing from this collection":
+largely, it is written in what the collection cites.
+
+Two refusals are deliberate and both are `CLAUDE.md` §12 in a new place. An identifier held
+by two documents produces **no** edge — picking one arbitrarily puts a confident wrong edge
+in a graph whose whole value is that its edges are real. And no weights are fitted here;
+`kg_core.py` hardcodes twelve `kg_weights` in its constructor, and a number chosen in a
+constructor cannot be wrong, because nothing can disagree with it.
+
+---
+
+## 21. The decision this forces: rebuild or salvage?
 
 **Both, in this order.**
 
