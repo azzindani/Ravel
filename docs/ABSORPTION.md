@@ -3,8 +3,8 @@
 A survey of what already exists, measured rather than assumed. `MIGRATION.md` says *how*
 to port; this says *what is there, what shape it is in, and what it is worth.*
 
-Surveyed 2026-09-12 across `Vera/pipelines/pre_embed`, `AI_Workspace/20_Docling`,
-`AI_Workspace/20_Lab_Data_Preprocess`, `AI_Workspace/21_Lab_NER`, `06_ID_Legal`.
+Surveyed 2026-09-12 across `Vera/pipelines/pre_embed`, `notebooks/docling`,
+`notebooks/preprocess`, `notebooks/ner`, `06_ID_Legal`.
 
 ---
 
@@ -47,10 +47,10 @@ The worst case — an unreproducible corpus whose inputs are gone — **did not 
 
 | Where | What |
 |---|---|
-| `Azzindani/ID_REG` (HF) | the source document zips; `batch-55-chunk-{2..5}.zip`, ~17 GB, are cached locally in `20_Docling/downloads/` |
+| `Azzindani/ID_REG` (HF) | the source document zips; `batch-55-chunk-{2..5}.zip`, ~17 GB, are cached locally in `notebooks/docling/downloads/` |
 | `Azzindani/ID_REG_KG_2511` (HF) | the enriched corpus matching the local SQLite |
-| `20_Docling/00_Input/` | 998 source PDFs, 5 GB — a working sample |
-| `20_Docling/02_cleaned_regulations/` | 79 SmolDocling markdown outputs |
+| `notebooks/docling/00_Input/` | 998 source PDFs, 5 GB — a working sample |
+| `notebooks/docling/02_cleaned_regulations/` | 79 SmolDocling markdown outputs |
 
 `MIGRATION.md` §4 step 1 is therefore satisfied, and it independently validates
 `INTERFACES.md` §5: the cloud-to-cloud substrate is not a proposal, it is where the
@@ -186,8 +186,8 @@ empty. The graph was built per-chunk; the *graph* part never closed.
 | `00_ID_REG_Parser_v1.ipynb` | **port the hierarchy, replace the metadata** | `ravel/chunk/id_regulation` | pasal/ayat/huruf + `full_reference` is right; the PMK-only regex is the bug |
 | `core/knowledge_graph/kg_core.py` | **port selectively** | `ravel/enrich/legal/` | entity + cross-ref extraction with positions and confidence; leave the ranking/boosting behind (that is Vera's job) |
 | `document_parser/extractors/*` (8) | **reference the shape, rewrite** | `ravel/extract/` | clean ABC, but `extract() → {text, page_count, metadata, method}` is far too thin for the canonical format — no blocks, no bbox, no reading order |
-| `21_Lab_NER/*.ipynb` (v1–v4) | **evaluate, then port one** | `ravel/enrich/ner/` | four iterations; v4 is the candidate, but check what v1–v3 handled that it dropped |
-| `20_Lab_Data_Preprocess/*` | **port as cleanups** | `ravel/extract/cleanup/` | spell correction, markdown formatting, dataset filter |
+| `notebooks/ner/*.ipynb` (v1–v4) | **evaluate, then port one** | `ravel/enrich/ner/` | four iterations; v4 is the candidate, but check what v1–v3 handled that it dropped |
+| `notebooks/preprocess/*` | **port as cleanups** | `ravel/extract/cleanup/` | spell correction, markdown formatting, dataset filter |
 | `00_ID_REG_Clean_v1.ipynb` | **port with review** | `ravel/extract/cleanup/` | `reorder_pasal1_definitions` is a genuinely smart domain rule |
 | `00_ID_REG_Parser_v2.ipynb` | **drop** | — | PMK-hardcoded, plus the `r`-deletion landmine (§4) |
 | `document_parser/{parser,storage}.py` | **drop** | — | session-scoped upload handling for a chat UI, not corpus building |
@@ -224,7 +224,7 @@ empty. The graph was built per-chunk; the *graph* part never closed.
 
 ## 10. Measured on the real PDFs (2026-09-12)
 
-`tools/structure_eval.py` over 56 documents / ~1,400 pages from `20_Docling/00_Input`:
+`tools/structure_eval.py` over 56 documents / ~1,400 pages from `notebooks/docling/00_Input`:
 
 | | typography | pattern + layout |
 |---|---:|---:|

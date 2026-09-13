@@ -64,7 +64,7 @@ dictionary, and a synonym/vocabulary expansion table (`06_ID_Legal` already has
 > statistics used offline for analysis and for chunk quality scoring.
 
 ### LLM-derived signals
-Summaries, hypothetical questions (`20_Lab_Data_Preprocess` has QAI generation
+Summaries, hypothetical questions (`notebooks/preprocess` has QAI generation
 notebooks), plain-language restatements.
 
 **Hard rule:** LLM output is a signal, never a body, never provenance. It may be indexed
@@ -93,7 +93,7 @@ input, not a ranking column, which is why it is separate tables rather than a JS
 cannot back up with a citation, and the whole system's premise is that everything traces
 to a source.
 
-`AI_Workspace/21_Lab_NER` has four NER iterations to absorb — port them as enrichers
+`notebooks/ner` has four NER iterations to absorb — port them as enrichers
 behind one interface, with the model named and versioned in config.
 
 **None of this section is speculative.** The incumbent corpus already carries 20 KG scalar

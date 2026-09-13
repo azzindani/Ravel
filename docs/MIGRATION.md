@@ -9,11 +9,11 @@ What Ravel absorbs, from where, and the rules for porting it.
 | Source | Contains | Becomes |
 |---|---|---|
 | `Vera/pipelines/pre_embed/` | `ingest.py`, `batching.py`, `sparse.py`, `sample.py`, `eval_arms.py`, `query.py`, `schema.sql` | the seed of `ravel/` — Vera keeps only the Rust engine |
-| `AI_Workspace/20_Docling/` | SmolDocling runners (plain, vLLM), ID regulation parsers v1/v2, downloader, cleaner | `ravel/extract/` + `ravel/chunk/id_regulation` |
-| `AI_Workspace/20_Lab_Data_Preprocess/` | parallel SmolDocling, spell correction (CPU), translation (GPU), markdown formatting, QAI generation, dataset filter | `ravel/extract/cleanup/` + `ravel/enrich/` |
-| `AI_Workspace/21_Lab_NER/` | four NER iterations, category hierarchy, concurrent GPU inference | `ravel/enrich/ner/` |
-| `AI_Workspace/21_Text_Embedding/` | Qwen3 embedding runners, MiniLM encode/rerank | `ravel/embed/` |
-| `AI_Workspace/40_Lab_LLM_RAG/` | end-to-end RAG knowledge base notebooks | reference only — the design it validated |
+| `notebooks/docling/` | SmolDocling runners (plain, vLLM), ID regulation parsers v1/v2, downloader, cleaner | `ravel/extract/` + `ravel/chunk/id_regulation` |
+| `notebooks/preprocess/` | parallel SmolDocling, spell correction (CPU), translation (GPU), markdown formatting, QAI generation, dataset filter | `ravel/extract/cleanup/` + `ravel/enrich/` |
+| `notebooks/ner/` | four NER iterations, category hierarchy, concurrent GPU inference | `ravel/enrich/ner/` |
+| `notebooks/embedding/` | Qwen3 embedding runners, MiniLM encode/rerank | `ravel/embed/` |
+| `notebooks/rag/` | end-to-end RAG knowledge base notebooks | reference only — the design it validated |
 | `06_ID_Legal/document_parser/` | eight extractors (pdf, docx, html, image, csv, json, url, text), context builder, storage | `ravel/extract/` fallback extractors |
 | `06_ID_Legal/VOCABULARY_EXPANSION_GUIDE.md` | domain vocabulary and expansion approach | `ravel/enrich/vocab/` |
 | `06_Nanonets_OCRs/`, `06_QwenVL/` | OCR and VLM experiments | OCR extractor implementations |
@@ -76,8 +76,8 @@ project.
 Order:
 
 1. **Sources: confirmed present.** `Azzindani/ID_REG` on Hugging Face holds the source
-   zips (~17GB cached locally in `20_Docling/downloads/`), plus 998 PDFs in
-   `20_Docling/00_Input/`. The worst case — lost sources — did not happen.
+   zips (~17GB cached locally in `notebooks/docling/downloads/`), plus 998 PDFs in
+   `notebooks/docling/00_Input/`. The worst case — lost sources — did not happen.
    See `ABSORPTION.md` §2.
 2. **Load the incumbent as a baseline bundle.** The existing 748,558-chunk corpus lives
    in `Vera/.test/ID_REG_DB_2511/id_regulations.db` and loads via
@@ -107,7 +107,7 @@ to do for the baseline.
   arrive as files.
 - **Serving, API, UI** — ID_Legal's `api/`, `conversation/`, Gradio notebooks. Vera
   serves; agents converse.
-- **Fine-tuning** — `AI_Workspace/30_*`. A fine-tuned embedder could become an embedder
+- **Fine-tuning** — `notebooks/finetune/`. A fine-tuned embedder could become an embedder
   plugin, but training it is not Ravel's job.
 - **ID_Legal's `config.py`** (47KB). Read it for the domain knowledge encoded in it —
   regulation hierarchies, vocabulary, patterns — and re-express that as corpus config and

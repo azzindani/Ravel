@@ -12,7 +12,7 @@ tables, entities), then weave those threads into one searchable fabric.
 
 ## Why it exists
 
-`06_ID_Legal` was built piece by piece — notebooks in `AI_Workspace`, hand-run cells,
+`06_ID_Legal` was built piece by piece — notebooks, hand-run cells,
 ad-hoc cleanup. It produced a corpus that works, and that **cannot be rebuilt,
 re-embedded, or compared against an alternative**. Every chunking idea since has been
 untestable, because there is no way to build variant B and score it against variant A.

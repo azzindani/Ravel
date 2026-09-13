@@ -8,7 +8,7 @@ the output contract see `BUNDLE.md`.
 ## 1. The problem Ravel solves
 
 `06_ID_Legal` proved a hybrid legal search engine works. It also proved the way it was
-built does not scale as a practice: notebooks in `AI_Workspace`, cells run by hand,
+built does not scale as a practice: notebooks, cells run by hand,
 cleanup applied ad hoc. The resulting corpus has three defects that have nothing to do
 with its quality:
 

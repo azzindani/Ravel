@@ -6,7 +6,7 @@ description: >
   definition exists so that defect cannot recur.
 
 sources:
-  root: D:/AI_Workspace/20_Docling/00_Input
+  root: sources/id_legal
   include: ["**/*.pdf"]
 
 provenance:

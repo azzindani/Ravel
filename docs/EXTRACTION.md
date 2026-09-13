@@ -78,7 +78,7 @@ Rules:
 4. **Bounded queues everywhere.** An unbounded prefetch queue in front of a slow GPU is
    just an OOM with extra steps.
 5. **vLLM for the VLM path** when available — continuous batching is a large win for
-   variable-length page inputs. `AI_Workspace/20_Docling` already has a vLLM SmolDocling
+   variable-length page inputs. `notebooks/docling` already has a vLLM SmolDocling
    notebook to port.
 6. **Sort work by cost before batching.** Grouping similar-sized pages cuts padding
    waste substantially.
@@ -138,7 +138,7 @@ Cleanup operates on canonical blocks and is a pure function:
 - de-hyphenate line breaks
 - normalize whitespace, quotes, ligatures
 - fix encoding damage
-- spell/OCR correction (a model pass; `20_Lab_Data_Preprocess` has both CPU and GPU
+- spell/OCR correction (a model pass; `notebooks/preprocess` has both CPU and GPU
   variants to absorb)
 
 Cleanup output is written as a **new canonical document with a cleanup id and version in
@@ -150,7 +150,7 @@ applied one level deeper.
 
 ## 6. Absorbing the notebooks
 
-`AI_Workspace/20_Docling` and `20_Lab_Data_Preprocess` contain the working logic:
+`notebooks/docling` and `notebooks/preprocess` contain the working logic:
 SmolDocling runners (plain, vLLM, parallel), ID regulation parsers v1/v2, cleaners, and
 markdown formatting. Porting rules in `MIGRATION.md`; the short version is that a
 notebook becomes an extractor class behind the router interface, with its parameters

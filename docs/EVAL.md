@@ -117,7 +117,7 @@ ID_Legal is the first corpus and has no labeled set yet. Path:
 
 1. Mine real questions from ID_Legal's existing conversation logs if any exist.
 2. Generate candidates with an LLM from known regulations
-   (`AI_Workspace/20_Lab_Data_Preprocess` has QAI generation notebooks), then **review
+   (`notebooks/preprocess` has QAI generation notebooks), then **review
    every one by hand**. Unreviewed synthetic labels measure the generator, not the corpus.
 3. Write the exact-citation and negative arms by hand — they are cheap and they are the
    two arms that catch real failures.
