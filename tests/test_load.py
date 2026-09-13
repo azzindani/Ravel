@@ -12,6 +12,7 @@ three green checks against cosine 1.000000 (`CLAUDE.md` §15).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -379,3 +380,40 @@ def test_a_text_only_bundle_plans_a_load_without_vectors(tmp_path: Path) -> None
 
     assert "copy vectors" not in names
     assert "merge" in names
+
+
+# -- the machine-readable report -----------------------------------------------------
+
+
+def test_the_json_report_survives_a_narrow_terminal(built, tmp_path: Path) -> None:
+    """! The defect this exists for. CI grepped the *rendered* report for a phrase and
+    went red while the command was behaving correctly: rich reflows prose to the terminal
+    width, and at the runner's 80 columns the line broke between "build" and "directory".
+
+    Anything that acts on a preflight result reads `--json`, which no renderer touches.
+    """
+    import json as json_module
+    import subprocess
+    import sys as sys_module
+
+    empty = tmp_path / "not-a-bundle"
+    empty.mkdir()
+    result = subprocess.run(
+        [sys_module.executable, "-m", "cli", "bundle", "verify", str(empty), "--json"],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "COLUMNS": "40",
+            "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
+        },
+    )
+
+    report = json_module.loads(result.stdout)
+
+    assert result.returncode == 1
+    assert report["passed"] is False
+    assert report["failed"] == ["manifest"]
+    assert "unsealed build directory" in report["checks"][0]["detail"], (
+        "the message is intact in JSON however narrow the terminal is"
+    )

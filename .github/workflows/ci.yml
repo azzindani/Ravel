@@ -209,19 +209,33 @@ jobs:
 
       - name: It refuses a bundle that is not one
         # ! A gate that cannot fail proves nothing. `bundle verify` on an empty
-        # directory must exit non-zero and say why.
+        # directory must exit non-zero AND name the check that refused it —
+        # otherwise a traceback would pass this step just as well.
+        #
+        # ! Asserted against `--json`, never against the human report. The first
+        # version of this step grepped the rendered output for "unsealed build
+        # directory" and went red on the runner while passing locally: rich
+        # reflows prose to the terminal width, and at the runner's 80 columns the
+        # line broke between "build" and "directory". The command was correct;
+        # the assertion was reading a soft-wrap position.
         run: |
           mkdir -p /tmp/not-a-bundle
           # `if`, not `cmd && { fail }`: these steps run under `bash -e`, where a
           # failing AND-OR list still exits the script — so the correct refusal
           # would fail the step. An `if` condition is exempt from -e.
-          if out=$(/tmp/venv/bin/ravel bundle verify /tmp/not-a-bundle 2>&1); then
+          if out=$(/tmp/venv/bin/ravel bundle verify /tmp/not-a-bundle --json); then
             echo "expected a refusal, got success:" >&2
             echo "$out" >&2
             exit 1
           fi
           echo "$out"
-          echo "$out" | grep -q "unsealed build directory"
+          echo "$out" | /tmp/venv/bin/python -c "
+          import json, sys
+          report = json.load(sys.stdin)
+          assert report['passed'] is False, report
+          assert report['failed'] == ['manifest'], report['failed']
+          print('refused by the manifest check, as it must be')
+          "
 
 # ------------------------------------------------------------------------------
 # What this gate enforces, and what it does not

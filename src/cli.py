@@ -9,6 +9,7 @@ idiom, it keeps the annotation honest, and it does not trip B008.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -487,11 +488,18 @@ def bundle_verify(
     allow_incomplete_provenance: Annotated[
         bool, typer.Option("--allow-incomplete-provenance")
     ] = False,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Emit the report as JSON instead of a table.")
+    ] = False,
 ) -> None:
     """Run the load preflight. Exits non-zero if the bundle must not load.
 
     The canary needs a live query-side embedder and so is reported as skipped here; a
     skipped check does not pass unless `--allow-skipped` says so.
+
+    `--json` is for anything that has to *act* on the result. The human report goes
+    through rich, which reflows prose to the terminal width — so a caller grepping it for
+    a phrase is matching against a soft-wrap position, not against the message.
     """
     import shutil
 
@@ -504,6 +512,30 @@ def bundle_verify(
         failure_tolerance=tolerance,
         allow_incomplete_provenance=allow_incomplete_provenance,
     )
+
+    if as_json:
+        # ! Written with `typer.echo`, deliberately not through the rich console. Machine
+        # -readable output must not pass through a renderer that wraps at the terminal
+        # width: CI grepped the human report for "unsealed build directory" and the gate
+        # went red because rich broke the line between "build" and "directory" at 80
+        # columns. The command was right; the assertion was reading prose.
+        typer.echo(
+            json.dumps(
+                {
+                    "bundle": str(report.bundle),
+                    "passed": report.passed(allow_skipped=allow_skipped),
+                    "failed": [c.name for c in report.failed],
+                    "skipped": [c.name for c in report.skipped],
+                    "checks": [
+                        {"name": c.name, "status": c.status.value, "detail": c.detail}
+                        for c in report.checks
+                    ],
+                },
+                indent=2,
+            )
+        )
+        raise typer.Exit(0 if report.passed(allow_skipped=allow_skipped) else 1)
+
     for check in report.checks:
         style = {"ok": "green", "fail": "red", "skipped": "yellow"}[check.status.value]
         out.print(f"[{style}]{check.status.value:<8}[/{style}] {check.name}: {check.detail}")
