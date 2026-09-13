@@ -48,6 +48,12 @@ Ravel's authoring analog is **INSPECT → PROPOSE → PREVIEW → SAVE**.
 Read-mostly, one write. Same return contract as Vera's tools: `success` first, plus
 `token_estimate`, `progress`, and on failure `error` + `hint`.
 
+**Seven tools, and the eighth is the ceiling.** The house standard (`STANDARDS.md` §8)
+caps a server at **8 tools** for the 8 GB / 9B target this project develops against:
+every schema sits in the KV cache for the whole conversation, and selection accuracy
+falls off past eight. The table above complies with one slot spare. That is a budget, not
+a coincidence — a ninth tool means merging two existing ones, not raising the cap.
+
 ### The hard boundary
 
 > **MCP is authoring-time only. A bulk build must never depend on an MCP server being

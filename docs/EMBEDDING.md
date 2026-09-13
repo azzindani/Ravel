@@ -19,8 +19,10 @@ class Embedder(Protocol):
     dim: int                 # 1024 | 2560 | 4096 | …
     modality: str            # "text" | "omni"
     pooling: str             # "last_token" | "mean" | "cls"
+    padding_side: str        # "left" | "right" — not cosmetic; see §3
     normalize: bool          # L2
-    doc_instruction: str     # applied to documents ("" for Qwen3)
+    instruction_style: str   # "none" | "prefix" | "chat_system"
+    doc_instruction: str     # applied to documents ("" for Qwen3 text)
     query_instruction: str   # applied to queries — recorded, used by Vera
 
     def embed_documents(self, batch: list[Input]) -> np.ndarray: ...
@@ -65,8 +67,23 @@ The manifest records, and the loader verifies:
    instruction-aware: the instruction goes on queries, never on documents, and the query
    instruction must be identical to the one the corpus was built against.
 3. `pooling` and `normalize`.
-4. `dtype` and storage precision (fp32 compute → fp16/halfvec storage).
-5. `provider` + `provider_pin` when an API was used — routing across hosts can change
+4. `padding_side`, whenever `pooling` is `last_token`. With left padding the last token
+   is `hidden[:, -1]`; with right padding it is at `attention_mask.sum(1) - 1`. Read the
+   wrong end and you pool a PAD embedding — a well-formed vector, silently meaningless,
+   for every text in the batch shorter than the longest. The two local Qwen3 encoders
+   disagree on this (`ABSORPTION.md` §11): the text one is loaded `padding_side='left'`,
+   the VL one `padding_side='right'`. It is a property of the tokenizer as loaded, not of
+   the model, so it cannot be recovered from the checkpoint afterwards — it has to be
+   recorded at build time.
+5. `instruction_style`, because "the instruction string" is not always a string.
+   Qwen3 text takes a prefix (`Instruct: {task}
+Query: {query}`); Qwen3-VL takes a
+   **system turn in a chat template**, and normalizes it by appending `.` when it does not
+   already end in punctuation. A manifest that records only `query_instruction: str`
+   cannot tell Vera which of those to reproduce, and the two do not produce the same
+   vector.
+6. `dtype` and storage precision (fp32 compute → fp16/halfvec storage).
+7. `provider` + `provider_pin` when an API was used — routing across hosts can change
    serving config.
 
 **Round-trip preflight (mandatory before a large run):** embed the same sample with the

@@ -19,6 +19,14 @@ transfer to 8B.
 0.6B (~1.2GB) and SmolDocling-256M both fit comfortably. So the split is forced: local
 development is 0.6B/1024, production bundles are 8B/4096 on rented GPU (`STACK.md` §5).
 
+**The local half is settled outright (2026-09-13).** Qwen3-Embedding-0.6B is on disk at
+1.2 GB and its `hidden_size` is 1024 — which is also the incumbent corpus's dimension, so
+the baseline in `ABSORPTION.md` §1 was built with this exact model and is reproducible
+here without renting anything. Qwen3-Reranker-0.6B sits beside it. See `ABSORPTION.md`
+§10 for the full inventory, and §11 for the reason the incumbent's vectors should not be
+trusted to be what their dimension suggests: the run that made them never applied its
+instruction.
+
 **Still open:** whether chunker sweeps run at 0.6B (cheap, local, fast iteration) or must
 run at 8B to be trustworthy.
 

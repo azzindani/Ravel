@@ -115,7 +115,28 @@ identity:
     - KEPUTUSAN PRESIDEN
     - KEPUTUSAN MENTERI
     - INSTRUKSI PRESIDEN
+    # Measured against the incumbent's 31 distinct type values, not added on spec
+    # (ABSORPTION.md §12). These are the decision instruments the list did not cover:
+    # 168 rows. The ~90-type vocabulary in the dataset-filter notebook was checked and
+    # deliberately NOT imported wholesale — POJK, PERKAP, PERJA and the rest are real
+    # Indonesian instruments that do not occur in this corpus, and every entry here
+    # widens a substring match that `identity.title` trusts completely.
+    #
+    # ! SURAT EDARAN is excluded on purpose, though 169 rows carry it. A circular
+    # letter is administrative guidance, not a binding instrument under UU 12/2011,
+    # so it does not belong in a list feeding the exact-citation path. That judgment
+    # is pinned by a negative case in `test_document_type_is_general_not_one_ministry`.
+    - KEPUTUSAN GUBERNUR
+    - KEPUTUSAN WALIKOTA
+    - KEPUTUSAN BUPATI
+    - KEPUTUSAN KEPALA
     - UNDANG-UNDANG
+    # ! Extraction damage, listed on purpose. 432 rows spell it with a space because
+    # the hyphen was lost on the page, and the alternation is `re.escape`d literals —
+    # so without this entry those documents match no type at all and land in `Unknown`.
+    # It maps to the same abbreviation as the hyphenated form, so the two spellings
+    # converge on one identifier instead of splitting the corpus in half.
+    - UNDANG UNDANG
 
   # The short forms Indonesian citations actually use. A query says "UU 28/2007",
   # never "UNDANG-UNDANG NOMOR 28 TAHUN 2007", so this is what `identifier` carries
@@ -138,8 +159,13 @@ identity:
     PERATURAN DAERAH: Perda
     KEPUTUSAN PRESIDEN: Keppres
     KEPUTUSAN MENTERI: Kepmen
+    KEPUTUSAN GUBERNUR: Kepgub
+    KEPUTUSAN WALIKOTA: Kepwali
+    KEPUTUSAN BUPATI: Kepbup
+    KEPUTUSAN KEPALA: Kepka
     INSTRUKSI PRESIDEN: Inpres
     UNDANG-UNDANG: UU
+    UNDANG UNDANG: UU
 
   # {types} expands to an alternation of the list above.
   title: '(?P<type>{types})\s+(?P<body>[A-Z][A-Z\s.''-]{{0,80}}?)?\s*NOMOR\s+(?P<number>[\w./-]+)\s+TAHUN\s+(?P<year>\d{{4}})(?:\s+TENTANG\s+(?P<about>.+?))?$'

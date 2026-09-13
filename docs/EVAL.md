@@ -116,9 +116,15 @@ ID_Legal.
 ID_Legal is the first corpus and has no labeled set yet. Path:
 
 1. Mine real questions from ID_Legal's existing conversation logs if any exist.
-2. Generate candidates with an LLM from known regulations
-   (`notebooks/preprocess` has QAI generation notebooks), then **review
-   every one by hand**. Unreviewed synthetic labels measure the generator, not the corpus.
+2. Generate candidates with an LLM from known regulations, then **review every one by
+   hand**. Unreviewed synthetic labels measure the generator, not the corpus.
+
+   > **Do not expect a head start from the QAI notebooks.** They look like the seed of
+   > this set and are not (`ABSORPTION.md` §13): all three run `flan-t5-large` over 4–20
+   > rows of an **English medical** dataset with the prompt
+   > `"Generate a question related to: {context}"`, and their `data/` output directory is
+   > empty. There is no Indonesian legal question set anywhere in the workspace. This
+   > step starts from zero, and it is the long pole in `EVAL.md` — budget for it.
 3. Write the exact-citation and negative arms by hand — they are cheap and they are the
    two arms that catch real failures.
 4. Freeze v1 of the set before the first variant sweep. A set that changes with the
