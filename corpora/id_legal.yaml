@@ -1,0 +1,45 @@
+id: id_legal
+title: Indonesian regulations
+description: >
+  The corpus 06_ID_Legal was built from, rebuilt properly. The incumbent has
+  748,558 chunks and no source_url on any of them (ABSORPTION.md §3); this
+  definition exists so that defect cannot recur.
+
+sources:
+  root: D:/AI_Workspace/20_Docling/00_Input
+  include: ["**/*.pdf"]
+
+provenance:
+  # ! Where the exact hashed bytes authoritatively live. NOT a portal search URL
+  # constructed from parsed metadata — that is precisely what CHUNKING.md §4
+  # forbids, and a link that was never verified is not provenance.
+  base_url: hf://datasets/Azzindani/ID_REG/
+  note: >
+    Source PDFs as published in the Azzindani/ID_REG dataset. Each chunk carries
+    the sha256 of the file it came from, so a citation resolves to bytes that can
+    be checked rather than to a page that may have been revised.
+
+extract:
+  profile: id_regulation
+  extractors: [native, text]
+  native_text_ratio: 0.9
+  shard_target_mb: 64
+
+  # ! Measured, not guessed. The first full run averaged 5,425 blocks per document
+  # and held ~5 GB resident to seal a single 41 MB shard, because the size target
+  # estimates compressed parquet while the buffer holds pydantic objects. 250k
+  # blocks caps that at roughly 250 MB — this corpus has to run on an 8 GB Kaggle
+  # box, and a shard is only a checkpoint, so more of them costs nothing.
+  shard_max_blocks: 250000
+
+  failure_tolerance: 0.15
+
+chunk:
+  # The profile declares pasal as its deepest citable unit, so `unit` splits there
+  # and reads ayat/huruf/angka from the same profile. Nothing about Indonesian law
+  # is in the chunker itself.
+  chunker: unit
+  max_tokens: 512
+  min_tokens: 24
+  carry_parent: true
+  shard_target_mb: 128

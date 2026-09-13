@@ -1,0 +1,185 @@
+id: id_regulation
+version: "1.0"
+title: Indonesian laws and regulations
+description: >
+  Undang-Undang, Peraturan Pemerintah, Peraturan Daerah, Peraturan Bupati and the
+  rest of the Indonesian regulatory hierarchy. Source-agnostic: the same profile
+  applies to a born-digital PDF, a scraped HTML page, or an OCR transcript, because
+  it reads canonical blocks rather than a file format.
+
+# When this profile applies. The router scores every profile and picks the best
+# match; `content` patterns are tried against the first few hundred lines.
+match:
+  mime:
+    - application/pdf
+    - text/html
+    - text/plain
+    - text/markdown
+  content:
+    - '(?i)\b(?:undang-undang|peraturan\s+(?:pemerintah|daerah|menteri|bupati|gubernur|presiden|walikota))\b'
+    - '(?i)\bdengan\s+rahmat\s+tuhan\s+yang\s+maha\s+esa\b'
+    - '(?i)^\s*MEMUTUSKAN\s*:'
+  min_hits: 1
+
+# ---------------------------------------------------------------------------
+# Structure. A line matching one of these *as a whole* announces a structural
+# unit. Ordered outermost-first; levels are fixed so two documents chunked at
+# different depths still produce comparable heading paths.
+#
+# ! `marker_only` is set on pasal deliberately. Amending regulations are full of
+# lines like "Pasal 9 dihapus." and "Pasal 12 diubah sehingga berbunyi:" — prose
+# that opens with a marker. Treating those as headings splits a document at every
+# amendment clause.
+# ---------------------------------------------------------------------------
+structure:
+  max_line_chars: 120
+  max_title_chars: 80
+  prose_tail: [".", ":", ";", ","]
+
+  units:
+    - name: buku
+      level: 2
+      pattern: '^BUKU\s+(?:[IVXLCDM]+|KE\w+)\b'
+    - name: bab
+      level: 3
+      pattern: '^BAB\s+(?:[IVXLCDM]+|\d+)\b'
+    - name: bagian
+      level: 4
+      pattern: '^BAGIAN\s+(?:KESATU|PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KEDELAPAN|KESEMBILAN|KESEPULUH|KESEBELAS|KEDUA\s+BELAS|KETIGA\s+BELAS|[IVXLCDM]+|\d+)\b'
+    - name: paragraf
+      level: 5
+      pattern: '^PARAGRAF\s+(?:KESATU|PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|[IVXLCDM]+|\d+)\b'
+    - name: pasal
+      level: 6
+      pattern: '^PASAL\s+\d+[A-Z]?\b'
+      marker_only: true
+
+  # Non-hierarchical sections that are still headings. `Pembukaan` and `Pengesahan`
+  # account for 82,313 rows of the incumbent corpus — structure, not noise.
+  sections:
+    - name: menimbang
+      level: 3
+      pattern: '^MENIMBANG\s*:?\s*$'
+    - name: mengingat
+      level: 3
+      pattern: '^MENGINGAT\s*:?\s*$'
+    - name: memutuskan
+      level: 3
+      pattern: '^MEMUTUSKAN\s*:?\s*$'
+    - name: menetapkan
+      level: 3
+      pattern: '^MENETAPKAN\s*:?\s*$'
+    - name: penjelasan
+      level: 2
+      pattern: '^PENJELASAN(\s+ATAS)?\b'
+      # ! Case-sensitive, because `penjelasan` is also an ordinary Indonesian word.
+      # Matched case-insensitively, sentences like "Penjelasan realisasi ini karena
+      # disesuaikan dengan kegiatan yang sudah ..." became headings: 2,310 chunks
+      # located themselves at `Penjelasan` and 1,112 more at that sentence. The annex
+      # heading is always set in capitals; the sentence never is.
+      ignorecase: false
+
+  # Sub-unit markers inside a body. Not headings — the chunker uses them to split
+  # within a legal unit.
+  subunits:
+    ayat: '^\((\d+)\)\s+'
+    huruf: '^([a-z])\.\s+'
+    angka: '^(\d+)\.\s+'
+
+# ---------------------------------------------------------------------------
+# Identity. These are the patterns whose absence caused 10.66% `Unknown`
+# regulation_type and 8.62% `Unknown` enacting_body in the incumbent corpus: the
+# old parser matched only PERATURAN MENTERI KEUANGAN.
+# Ordered longest-first so "PERATURAN DAERAH KABUPATEN" wins over "PERATURAN DAERAH".
+# ---------------------------------------------------------------------------
+identity:
+  types:
+    - UNDANG-UNDANG DASAR
+    - PERATURAN PEMERINTAH PENGGANTI UNDANG-UNDANG
+    - PERATURAN DAERAH KABUPATEN
+    - PERATURAN DAERAH PROVINSI
+    - PERATURAN DAERAH KOTA
+    - PERATURAN PRESIDEN
+    - PERATURAN PEMERINTAH
+    - PERATURAN MENTERI
+    - PERATURAN GUBERNUR
+    - PERATURAN WALIKOTA
+    - PERATURAN WALI KOTA
+    - PERATURAN BUPATI
+    - PERATURAN BADAN
+    - PERATURAN LEMBAGA
+    - PERATURAN KOMISI
+    - PERATURAN BANK INDONESIA
+    - PERATURAN MAHKAMAH AGUNG
+    - PERATURAN DAERAH
+    - KEPUTUSAN PRESIDEN
+    - KEPUTUSAN MENTERI
+    - INSTRUKSI PRESIDEN
+    - UNDANG-UNDANG
+
+  # The short forms Indonesian citations actually use. A query says "UU 28/2007",
+  # never "UNDANG-UNDANG NOMOR 28 TAHUN 2007", so this is what `identifier` carries
+  # into Vera's exact-match bypass.
+  abbreviations:
+    UNDANG-UNDANG DASAR: UUD
+    PERATURAN PEMERINTAH PENGGANTI UNDANG-UNDANG: Perppu
+    PERATURAN DAERAH KABUPATEN: Perda Kab.
+    PERATURAN DAERAH PROVINSI: Perda Prov.
+    PERATURAN DAERAH KOTA: Perda Kota
+    PERATURAN PRESIDEN: Perpres
+    PERATURAN PEMERINTAH: PP
+    PERATURAN MENTERI: Permen
+    PERATURAN GUBERNUR: Pergub
+    PERATURAN WALIKOTA: Perwali
+    PERATURAN WALI KOTA: Perwali
+    PERATURAN BUPATI: Perbup
+    PERATURAN BANK INDONESIA: PBI
+    PERATURAN MAHKAMAH AGUNG: Perma
+    PERATURAN DAERAH: Perda
+    KEPUTUSAN PRESIDEN: Keppres
+    KEPUTUSAN MENTERI: Kepmen
+    INSTRUKSI PRESIDEN: Inpres
+    UNDANG-UNDANG: UU
+
+  # {types} expands to an alternation of the list above.
+  title: '(?P<type>{types})\s+(?P<body>[A-Z][A-Z\s.''-]{{0,80}}?)?\s*NOMOR\s+(?P<number>[\w./-]+)\s+TAHUN\s+(?P<year>\d{{4}})(?:\s+TENTANG\s+(?P<about>.+?))?$'
+  # ! `NOMOR` and `TAHUN` are required, and an issuing-body segment may sit between
+  # the type and the number ("PERATURAN BUPATI **SUBANG** NOMOR 3 TAHUN 2018").
+  # Without that segment the pattern matched nothing on real documents; with the
+  # keywords optional it matched the wrong tokens.
+  #
+  # The separator after NOMOR is deliberately loose (`NOMOR :`, `NOMOR:`, `NOMOR109`,
+  # `NOMOR :   44`) because OCR spacing is not a property of the document. Measured on
+  # 931 real regulations, that alone recovered 37 documents AND corrected 21 more that
+  # were citing the regulation they implement: `25_juklak_perda_17_2011` reads
+  # `PERATURAN BUPATI CIAMIS NOMOR : 25 TAHUN 2012` in its title and
+  # `PERATURAN DAERAH KABUPATEN CIAMIS NOMOR 17 TAHUN 2011` two lines later, and the
+  # stricter separator skipped the first to match the second.
+  #
+  # The body segment is NOT widened past 60 characters or allowed digits and slashes.
+  # Doing so gains six more documents and lets the pattern step over a document's own
+  # NOMOR to reach a later one. An identifier that is wrong is worse than one that is
+  # absent, because the exact-match path trusts it completely.
+  citation: '(?P<type>{types})(?:\s+[A-Z][A-Za-z\s.''-]{{0,60}}?)?\s*NOMOR\s*:?\s*(?P<number>[\w./-]+)\s+TAHUN\s+(?P<year>\d{{4}})'
+  cross_ref: 'Pasal\s+(?P<pasal>\d+[A-Z]?)(?:\s+ayat\s+\((?P<ayat>\d+)\))?(?:\s+huruf\s+(?P<huruf>[a-z]))?'
+  flags: [ignorecase]
+
+# ---------------------------------------------------------------------------
+# Cleanup. Stored, not applied at extraction — a chunker decides whether to drop.
+# ---------------------------------------------------------------------------
+cleanup:
+  # 30,520 rows of the incumbent corpus are exactly this string: thousands of
+  # near-identical vectors that distort ranking and answer no query.
+  boilerplate:
+    - '^\s*cukup\s+jelas\.?\s*$'
+  min_indexable_chars: 40
+
+# Per-extractor overrides. Absent keys fall back to the extractor's defaults.
+extract:
+  native:
+    # Measured: structural markers here are 2.7% bold at 1.0x body size, so
+    # typography is not the signal. The structurer owns heading assignment and
+    # demotes typographic guesses; these thresholds only affect `attrs`.
+    heading_size_ratio: 1.12
+    heading_max_chars: 120
+    running_page_share: 0.5

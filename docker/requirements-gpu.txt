@@ -1,0 +1,14 @@
+# Accelerators for the `gpu` environment (rented Linux box) — STACK.md §1, §5.
+#
+# ! Installed as a SEPARATE layer, after the project. These are never in
+# pyproject.toml: vLLM pins torch exactly and caps fastapi, so including it would
+# let an optional accelerator pin the whole project. Install order matters — let
+# vLLM win on torch here, because on this box vLLM is the reason torch exists.
+#
+#   uv pip install -e ".[extract,embed,cluster,load]"
+#   uv pip install -r docker/requirements-gpu.txt
+#
+# Python: vLLM resolves on 3.14; faiss-gpu-cu12 does NOT (max cp313, verified
+# 2026-09-12). GPU k-means therefore runs through torch, not faiss-gpu.
+
+vllm>=0.29 ; sys_platform == "linux"

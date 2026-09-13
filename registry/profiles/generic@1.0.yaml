@@ -1,0 +1,92 @@
+id: generic
+version: "1.0"
+title: Generic structured document
+description: >
+  The fallback when no corpus profile matches. Recognizes numbered and titled
+  sections common to reports, standards, manuals and scraped articles, in English
+  or Indonesian. Deliberately conservative: it is better to leave a heading
+  undetected than to split a document on a line that was prose.
+
+  Its real job is to prove the engine is not Indonesian-specific. Everything the
+  `id_regulation` profile does, this does with different data and no code changes.
+
+match:
+  mime:
+    - application/pdf
+    - text/html
+    - text/plain
+    - text/markdown
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+  content: []
+  min_hits: 0          # matches anything; lowest priority by construction
+  priority: -100
+
+structure:
+  max_line_chars: 120
+  max_title_chars: 90
+  prose_tail: [".", ":", ";", ",", "?", "!"]
+
+  units:
+    # 1.  /  1.2  /  1.2.3  — depth follows the dot count, capped by the engine.
+    - name: numbered_1
+      level: 2
+      pattern: '^(\d+)\.?\s+(?=[A-Z“"(])'
+    - name: numbered_2
+      level: 3
+      pattern: '^(\d+\.\d+)\.?\s+'
+    - name: numbered_3
+      level: 4
+      pattern: '^(\d+\.\d+\.\d+)\.?\s+'
+    # Word-led sections, English and Indonesian.
+    - name: chapter
+      level: 2
+      pattern: '^(?:CHAPTER|BAB)\s+(?:[IVXLCDM]+|\d+)\b'
+    - name: part
+      level: 2
+      pattern: '^(?:PART|BAGIAN)\s+(?:[IVXLCDM]+|\d+)\b'
+    - name: section
+      level: 3
+      pattern: '^(?:SECTION|PASAL|ARTICLE)\s+\d+[A-Z]?\b'
+      marker_only: true
+    - name: appendix
+      level: 2
+      pattern: '^(?:APPENDIX|ANNEX|LAMPIRAN)\s+(?:[IVXLCDM]+|[A-Z]|\d+)?\b'
+
+  sections:
+    - name: abstract
+      level: 2
+      pattern: '^(?:ABSTRACT|ABSTRAK|RINGKASAN)\s*:?\s*$'
+    - name: introduction
+      level: 2
+      pattern: '^(?:INTRODUCTION|PENDAHULUAN)\s*:?\s*$'
+    - name: conclusion
+      level: 2
+      pattern: '^(?:CONCLUSION|KESIMPULAN|PENUTUP)\s*:?\s*$'
+    - name: references
+      level: 2
+      pattern: '^(?:REFERENCES|BIBLIOGRAPHY|DAFTAR\s+PUSTAKA)\s*:?\s*$'
+
+  subunits:
+    letter: '^([a-z])[.)]\s+'
+    roman: '^\(([ivx]+)\)\s+'
+    bullet: '^[-•*]\s+'
+
+identity:
+  types: []
+  flags: [ignorecase]
+
+cleanup:
+  boilerplate:
+    - '^\s*(?:page\s+\d+(?:\s+of\s+\d+)?|halaman\s+\d+)\s*$'
+    - '^\s*[-–—]{3,}\s*$'
+  min_indexable_chars: 24
+
+extract:
+  native:
+    # With no corpus patterns to lean on, typography is the only signal there is —
+    # so the generic profile keeps the extractor's heading guesses instead of
+    # demoting them.
+    heading_size_ratio: 1.15
+    heading_max_chars: 100
+    running_page_share: 0.5
+  trust_typography: true
