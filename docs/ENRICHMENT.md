@@ -93,7 +93,14 @@ input, not a ranking column, which is why it is separate tables rather than a JS
 cannot back up with a citation, and the whole system's premise is that everything traces
 to a source.
 
-`notebooks/ner` has four NER iterations to absorb — port them as enrichers
+> **Corrected (`ABSORPTION.md` §17):** those four iterations are not NER. All run
+> `pipeline("zero-shot-classification")` with ModernBERT over the BBC News dataset —
+> English, general-domain topic labelling. `bert-base-indonesian-NER` (§10) is the real
+> candidate: 19 entity types including **LAW** and **REG**, 423 MB, a 512-token window
+> that makes it a chunk-level model. What survives from the notebooks is the
+> `ConcurrentGPUClassifier` pattern, which belongs in `ravel/runtime/`.
+
+~~`notebooks/ner` has four NER iterations to absorb~~ — port them as enrichers
 behind one interface, with the model named and versioned in config.
 
 **None of this section is speculative.** The incumbent corpus already carries 20 KG scalar

@@ -240,7 +240,7 @@ parsing as a stateless service.
 - [~] Bundle writer: manifest + generated schema — `src/bundle/`; parquet shard writer still to build
 - [ ] Clustering: domain anchors, k-means, assignment, generation stamping
 - [ ] Loader: preflight, `COPY`, post-load verification
-- [ ] Enrichment: NER, entities, KG edges, signals sidecar
+- [~] Enrichment: BM25 sparse arm + ingest-time ranking factors — `src/enrich/`; NER, entities and KG edges still to build
 - [ ] Variant harness: config hashing, matrix runs, cache reuse
 - [ ] Eval: labeled ID regulation set; score and promote a variant
 - [ ] MCP server: parser authoring tools (inspect, preview, diff, save)

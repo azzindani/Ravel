@@ -167,6 +167,50 @@ identity:
     UNDANG-UNDANG: UU
     UNDANG UNDANG: UU
 
+  # ---------------------------------------------------------------------------
+  # How binding each instrument is. The Art 7 ladder of UU 12/2011, with Art 8
+  # instruments — a governor's, regent's or mayor's own regulation — BELOW the
+  # Perda they implement.
+  #
+  # ! An earlier version of this table in Vera put PERATURAN BUPATI above
+  # PERATURAN DAERAH KOTA, inverting legislation and the regulation implementing
+  # it. Fitted against both, Recall@5 was identical (57.5% in-sample, 47.5%
+  # leave-one-out at n=40), and a coarse national-vs-local split did as well as
+  # either. So the fine ordering is NOT evidence-backed here, and it is still
+  # correct: a table stating something legally false is wrong whether or not the
+  # eval set is strong enough to notice. No claim is made that it helps.
+  #
+  # Unlisted types resolve to None, never 0 — "the profile does not know" and
+  # "ranked lowest" are different claims.
+  authority:
+    UNDANG-UNDANG DASAR: 9
+    UNDANG-UNDANG: 8
+    UNDANG UNDANG: 8
+    PERATURAN PEMERINTAH PENGGANTI UNDANG-UNDANG: 8
+    PERATURAN PEMERINTAH: 7
+    PERATURAN PRESIDEN: 6
+    KEPUTUSAN PRESIDEN: 6
+    INSTRUKSI PRESIDEN: 5
+    PERATURAN MENTERI: 5
+    KEPUTUSAN MENTERI: 5
+    PERATURAN BANK INDONESIA: 5
+    PERATURAN MAHKAMAH AGUNG: 5
+    PERATURAN BADAN: 4
+    PERATURAN LEMBAGA: 4
+    PERATURAN KOMISI: 4
+    PERATURAN DAERAH PROVINSI: 4
+    PERATURAN GUBERNUR: 3
+    KEPUTUSAN GUBERNUR: 3
+    PERATURAN DAERAH KABUPATEN: 3
+    PERATURAN DAERAH KOTA: 3
+    PERATURAN DAERAH: 3
+    PERATURAN BUPATI: 2
+    KEPUTUSAN BUPATI: 2
+    PERATURAN WALIKOTA: 2
+    PERATURAN WALI KOTA: 2
+    KEPUTUSAN WALIKOTA: 2
+    KEPUTUSAN KEPALA: 1
+
   # {types} expands to an alternation of the list above.
   title: '(?P<type>{types})\s+(?P<body>[A-Z][A-Z\s.''-]{{0,80}}?)?\s*NOMOR\s+(?P<number>[\w./-]+)\s+TAHUN\s+(?P<year>\d{{4}})(?:\s+TENTANG\s+(?P<about>.+?))?$'
   # ! `NOMOR` and `TAHUN` are required, and an issuing-body segment may sit between

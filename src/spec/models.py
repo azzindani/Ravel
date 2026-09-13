@@ -126,6 +126,19 @@ class IdentitySpec(Base):
     reuse (`ABSORPTION.md` §4).
     """
 
+    authority: dict[str, int] = Field(default_factory=dict)
+    """Document type → its rank in the legal hierarchy, highest first.
+
+    ! Data, not a model. Indonesian regulation is a strict ladder set by UU 12/2011, so
+    "how binding is this instrument" is a lookup — and a lookup that belongs in the
+    registry rather than in a scorer, because the ladder is a property of the corpus and
+    a different jurisdiction has a different one (`CLAUDE.md` §12).
+
+    Vera's `SCORING.md` consumes this as one of six ranking factors, normalised as
+    `authority = rank / 10`. Ravel's job is to compute it at ingest, where it is free,
+    rather than leaving the engine to re-derive it per query from a string comparison.
+    """
+
     title: str | None = None
     citation: str | None = None
     cross_ref: str | None = None
@@ -343,6 +356,18 @@ class Profile:
     def abbreviate(self, document_type: str) -> str:
         """Short form of a document type, or the type unchanged when none is declared."""
         return self.abbreviations.get(document_type.upper(), document_type)
+
+    def authority_of(self, document_type: str | None) -> int | None:
+        """Where this instrument sits in the legal hierarchy, or None if unranked.
+
+        ! None, never 0. An unranked type means "the profile does not know", and a
+        scorer must be able to tell that apart from "ranked lowest" — otherwise every
+        unrecognised document silently becomes the least authoritative thing in the
+        corpus, which is a claim the profile never made.
+        """
+        if not document_type:
+            return None
+        return self.spec.identity.authority.get(document_type.upper())
 
     def cite(self, text: str) -> str | None:
         """The document's own citation in short form, or None.
