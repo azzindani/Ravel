@@ -6,11 +6,16 @@ touching `chunks` (`CLAUDE.md` §5.4). That is what makes a weight refit cheap: 
 re-ingesting a corpus.
 """
 
+from enrich.entities import Reference, ReferenceKind, extract_references, reference_counts
 from enrich.factors import Factors, compute_factors
 from enrich.sparse import K1, TOKEN_RE, B, Bm25Vectorizer, TokeniserDrift, tokenize
 
 __all__ = [
     "B",
+    "Reference",
+    "ReferenceKind",
+    "extract_references",
+    "reference_counts",
     "Bm25Vectorizer",
     "Factors",
     "K1",

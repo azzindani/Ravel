@@ -266,7 +266,23 @@ tool. Character positions mean mentions can be mapped back to spans, which is wh
 `ENRICHMENT.md` §4 wants for `mentions`.
 
 **Two caveats:** `kg_pagerank` and `kg_degree_centrality` are **NULL** — graph-wide
-metrics were designed, columned, and never computed. And `kg_citation_impact_json` is
+metrics were designed, columned, and never computed.
+
+> **Sixth pass — the mechanism, and it is simpler than "never computed".**
+> `core/knowledge_graph/relationship_graph.py` implements both correctly: `nx.pagerank`
+> at line 162, `nx.degree_centrality` at 206, over a real `nx.DiGraph`.
+> `community_detection.py` adds betweenness. None of it is wrong. It is just never
+> reached — grepping the whole of `06_ID_Legal` for `RelationshipGraph`,
+> `add_document` or `build_graph` outside the module itself returns **only
+> `tests/unit/test_knowledge_graph.py`**, which builds two-node graphs from fixtures.
+> Nothing ever constructed the graph from the corpus.
+>
+> That is a phase error, not an oversight, and `CLAUDE.md` §3 names it: the graph is a
+> **whole-corpus** artifact that cannot start until every cross-reference exists, exactly
+> as clustering cannot start until every vector does. Bolted onto a per-chunk enrichment
+> pass, there is no point at which it is complete, so it was never run. Ravel's answer is
+> `src/enrich/entities.py`, which produces edges and deliberately stops there.
+ And `kg_citation_impact_json` is
 empty. The graph was built per-chunk; the *graph* part never closed.
 
 ---
@@ -281,7 +297,7 @@ empty. The graph was built per-chunk; the *graph* part never closed.
 | `pre_embed/ingest.py` | **port the invariants, rewrite the code** | manifest / queue / preflight | `corpus_meta`, `ingest_progress`, round-trip gate, `indexable` and `truncated_at_source` flags are all Ravel concepts already |
 | `id-reg-smoldocling-tesseract-v2-rtx3090-16.ipynb` | **port the runtime** | `ravel/runtime/gpu.py` | `AggressiveConverterPool`, VRAM checks, `GPUMonitor`, memory cleanup — hard-won operational knowledge |
 | `00_ID_REG_Parser_v1.ipynb` | **port the hierarchy, replace the metadata** | `ravel/chunk/id_regulation` | pasal/ayat/huruf + `full_reference` is right; the PMK-only regex is the bug |
-| `core/knowledge_graph/kg_core.py` | **port selectively** | `ravel/enrich/legal/` | entity + cross-ref extraction with positions and confidence; leave the ranking/boosting behind (that is Vera's job) |
+| `core/knowledge_graph/kg_core.py` | **port the shape, not the patterns** | `src/enrich/entities.py` | Verdict measured by the sixth pass rather than inherited. Positions and confidence are worth keeping and are kept. The patterns are not: the regulation regex requires `No.` and Indonesian legal text writes `Nomor`, so over eight realistic inline citations it caught **3** — every abbreviated `UU No. 40 Tahun 2007`, none of the spelled-out `Undang-Undang Nomor 40 Tahun 2007`, `Peraturan Pemerintah Nomor 24 Tahun 2018`, `Peraturan Daerah Kabupaten … Nomor 16 Tahun 2022`. Its seven-way type alternation also omits every regional instrument, which is ~60% of the corpus. Five regexes, five weight tables and twelve `kg_weights` all hardcoded in `__init__` — the §4 defect one layer down. Ravel reads the profile's `identity.citation` and `identity.cross_ref` instead, and gets 28 types for free |
 | `document_parser/extractors/*` (8) | **reference the shape, rewrite** | `ravel/extract/` | clean ABC, but `extract() → {text, page_count, metadata, method}` is far too thin for the canonical format — no blocks, no bbox, no reading order |
 | `notebooks/ner/*.ipynb` (v1–v4) | ~~evaluate, then port one~~ → **drop the task, keep the concurrency** | `ravel/runtime/` | Corrected by the third pass (§17). All four run `pipeline("zero-shot-classification")` with ModernBERT-base over the **BBC News** dataset — English, general-domain, and **not NER at all**. There is nothing here to port into `enrich/ner`. The `ConcurrentGPUClassifier` (thread-local pipelines, double-checked locking) is real and belongs in the runtime; `bert-base-indonesian-NER` (§10) is the actual NER candidate |
 | `notebooks/preprocess/*` | **port as cleanups** | `ravel/extract/cleanup/` | spell correction, markdown formatting, dataset filter |
