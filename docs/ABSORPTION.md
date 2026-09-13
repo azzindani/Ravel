@@ -11,6 +11,13 @@ It added §§10–14, put the two sections that were numbered out of order back 
 and added four rows to §3. It also closes `OPEN_QUESTIONS.md` on the encoder. Two findings change plans rather than decorate them: the embedding run that
 produced the incumbent's vectors **never applied its instruction** (§11), and the
 labelled eval set this project is measured against **does not exist in any form** (§13).
+**Fourth pass, same day**, over `80_Project_E2E` — the production lineage, which no
+earlier pass had opened. It added §18 and corrected two more findings: §15's OCR
+attribution (the blamed config postdates the damage by five months) and §7's claim that
+the tf-idf vocabulary was lost (it was fragmented, not lost). It confirmed §11 in the file
+that actually built the corpus. The rule it produced: **date the artifact before believing
+the code** — lab notebooks outnumber production code and look exactly like it.
+
 **Third pass, same day**, over the 547 archived notebooks and the extraction outputs
 themselves. It added §§15–17 and **corrected two of its own earlier verdicts** (§17): the
 NER notebooks are not NER, and the claim that nothing legal existed anywhere was too
@@ -264,7 +271,7 @@ empty. The graph was built per-chunk; the *graph* part never closed.
 | Source | Verdict | Target | Why |
 |---|---|---|---|
 | `06_ID_Legal/core/legal_vocab.py` | **port as data** | `ravel/enrich/vocab/` | 23 domain synonym sets, `LEGAL_DOMAINS`, `INDONESIAN_STOPWORDS`, `REGULATION_TYPE_PATTERNS`. Pure data, zero risk, fixes §4's root cause |
-| `pre_embed/sparse.py` | **port near-verbatim** | `ravel/enrich/sparse.py` | `Bm25Vectorizer` with the vocabulary saved and hashed — directly fixes the 20K-dim tf-idf whose vocab was lost |
+| `pre_embed/sparse.py` | **port near-verbatim** | `ravel/enrich/sparse.py` | `Bm25Vectorizer` with the vocabulary saved and hashed. ~~Fixes the 20K-dim tf-idf whose vocab was lost~~ — corrected by the fourth pass (§18): the vocabulary was **not** lost, it was **fragmented**. `embed.py` calls `fit_transform` per 1,000-row chunk, so the corpus has ~1,000 different vocabularies and ~1,000 different IDF weightings, each persisted beside its own shard. One vocabulary fitted over the whole corpus is still the fix; the defect being repaired is worse than the one recorded, because fragmentation looks healthy |
 | `pre_embed/batching.py` | **port as-is** | `ravel/runtime/batching.py` | byte-aware batching; already `EXTRACTION.md` §3 rule 2 |
 | `pre_embed/ingest.py` | **port the invariants, rewrite the code** | manifest / queue / preflight | `corpus_meta`, `ingest_progress`, round-trip gate, `indexable` and `truncated_at_source` flags are all Ravel concepts already |
 | `id-reg-smoldocling-tesseract-v2-rtx3090-16.ipynb` | **port the runtime** | `ravel/runtime/gpu.py` | `AggressiveConverterPool`, VRAM checks, `GPUMonitor`, memory cleanup — hard-won operational knowledge |
@@ -362,6 +369,14 @@ Three consequences:
 ## 11. The embedding run that never applied its instruction
 
 This is the finding that most changes what `EMBEDDING.md` has to record.
+
+> **Confirmed and re-attributed by the fourth pass (§18.2).** The file examined below
+> is a lab notebook. The run that actually built the shipped corpus is
+> `Indonesian_Regulation_RAG/Vast/Embed_20251011/embed.py` — identified by its
+> `max_features=20000`, which is the incumbent's tf-idf width, and Qwen3-Embedding-0.6B
+> at 1024 dims. **The finding holds there too**, so it is now confirmed independently in
+> two files rather than inferred from one. Two *supporting* details below are lab-only
+> and are not true of production — see §18.2.
 
 `notebooks/embedding/00_Qwen3_Text_Embedding_v2.ipynb` builds the vectors. It defines the
 instruction helper Qwen3 documents:
@@ -499,7 +514,15 @@ Recorded so the sweep is not repeated:
 
 ---
 
-## 15. The corpus was damaged by its own extractor, on purpose, with the alarms off
+## 15. The corpus was damaged by its own extractor, with the alarms off
+
+> **Attribution corrected by the fourth pass (§18). Read this section with §18.3.**
+> The damage measured here is real and the mechanism is real, but the configuration
+> blamed below is dated **2025-12-27** and the damaged outputs are dated **2025-07-21**.
+> `force_full_page_ocr=True` cannot have caused damage five months before it was
+> written. The production lineage is `Indonesian_Regulation_Extract/Docling_v*/smol.py`,
+> which never sets it. What that lineage does instead is in §18.3, and it is a subtler
+> fault with the same signature.
 
 The third pass went looking for where §3's character damage came from. It is not a
 mystery and it is not the documents' fault. Two lines in
@@ -650,7 +673,166 @@ Newly surveyed, nothing to absorb:
 
 ---
 
-## 18. The decision this forces: rebuild or salvage?
+## 18. Fourth pass: the production lineage, which no earlier pass had opened
+
+`80_Project_E2E` was never surveyed. It holds the four subprojects the incumbent corpus
+was actually built by — `Indonesian_Regulation_{Extract,RAG,UI}` and
+`Indonesian_Legal_QA` — so three earlier findings were resting on lab notebooks that
+resemble the production code without being it. Two of them needed correcting.
+
+### 18.1 What actually ran, and when
+
+Dates settle most of this, so they come first.
+
+| Artifact | Dated | OCR config | Instruction |
+|---|---|---|---|
+| `Docling_v20250727/Smoldocling_VAST.AI_v1.ipynb` | 2025-07-20 | `do_ocr=True` only | — |
+| **damaged outputs in `02_cleaned_regulations`** | **2025-07-21** | — | — |
+| `Docling_v20250727/smol.py`, `smol_fix.py` | 2025-07-22/27 | `do_ocr=True` only | — |
+| `Vast/Embed_20250816/embed.py` | 2025-08-16 | — | defined, never called |
+| **`Docling_v20251018/smol.py`** | 2025-10-18 | `do_ocr=True` only | — |
+| **`Vast/Embed_20251011/embed.py`** | **2025-10-11** | — | **defined, never called** |
+| shipped corpus `ID_REG_DB_2511` | 2025-11 | — | — |
+| `notebooks/docling/id-reg-smoldocling-tesseract-*` | **2025-12-26/27** | **`force_full_page_ocr=True`**, `lang=["ind"]`, logging disabled | — |
+
+`Embed_20251011/embed.py` is identifiable as the run behind the shipped corpus without
+guessing: it sets `max_features=20000`, which is the incumbent's tf-idf width to the
+digit, and embeds with Qwen3-Embedding-0.6B at 1024 dims, which is its vector width.
+
+### 18.2 §11 holds — in the file that actually built the corpus
+
+`Embed_20251011/embed.py`, 1,719 lines, defines `get_detailed_instruct` at line 321 and
+**never calls it**. It also has the seam where the call belongs:
+
+```python
+def prepare_texts(self, contents):
+    return contents
+```
+
+A named hook for exactly this transformation, implemented as a pass-through. Documents go
+`contents = df_clean['Content'].tolist()` straight into `embed_dataset`. So the corpus
+side of an instruction-aware model was embedded with no instruction, in production, and
+§11's conclusion is now confirmed in two independent files.
+
+Two supporting details in §11 are **lab-only and do not apply to production**: the dead
+`max_length = 8196` (production plumbs `8192` correctly through `self.max_length`) and the
+missing space in `Query:{query}` (production has `Query: {query}`). The headline is right;
+those two sentences describe a notebook that did not ship.
+
+And the run recorded metadata — `embedding_model`, `embedding_dimension`,
+`chunk_size_config` — with **no pooling, no normalize, no instruction, no padding_side, no
+model revision**. That is a stronger argument for `EMBEDDING.md` §3 than the original: a
+manifest was written, and it omitted precisely the fields that decide whether the vectors
+can be reproduced.
+
+### 18.3 §15 is misattributed — the real fault is quieter
+
+`force_full_page_ocr=True` and the disabled-logging block are real, and they are dated
+**2025-12-27**. The damaged markdown that motivated §15 is dated **2025-07-21**, and the
+corpus shipped in November. A December configuration did not damage a July output.
+
+All three production extractors — `Docling_v20250727/smol.py`, its `smol_fix.py`, and
+`Docling_v20251018/smol.py` — configure OCR with exactly one line:
+
+```python
+pipeline_options.do_ocr = True
+```
+
+No `ocr_options`, and therefore **no OCR language**. Docling falls back to its default
+engine and its default language, and Indonesian is never requested. The later December
+notebooks set `lang=["ind"]` explicitly — they read as an attempt to fix this, which then
+overcorrected into forcing full-page OCR.
+
+So the mechanism in §15 is wrong in an instructive way. The damage is not a loud,
+deliberate misconfiguration; it is an **unset default**. Nobody chose to OCR Indonesian
+with the wrong language — nobody chose anything, and the default chose badly. That is a
+worse failure mode for Ravel to design against, and it is what
+`CLAUDE.md` §6's manifest rule answers: a setting that is never recorded is a setting
+nobody can review. The corrected lesson is not "do not force full-page OCR" but **"an
+extractor must record the OCR engine and language it used, because the damage from
+getting them wrong is indistinguishable from a bad scan."**
+
+Also worth keeping: "smol" in these filenames is a leftover. Neither `smol.py` nor
+`Smoldocling_VAST.AI_v1.ipynb` references `VlmPipeline` or any SmolDocling option; both
+run docling's **standard** PDF pipeline. The corpus was never VLM-extracted, which removes
+a suspect §15 left open.
+
+### 18.4 §13: the eval trap, and where the real seed is
+
+`Indonesian_Legal_QA/` and `Kaggle_Process/id-reg-qa-generation-v*` are the Indonesian
+legal question sets earlier passes said did not exist. Both change §13 — neither rescues
+it.
+
+**The generator is circular and must not be used.** `id-reg-qa-generation-v3-p1.ipynb`
+builds QA at real scale (64 parquet files, 10 pairs per row) from **10 Indonesian question
+templates and 10 answer templates**:
+
+```
+"Apa bunyi lengkap {article} dalam {reg_name} Nomor {reg_number} Tahun {year}?"
+  -> answer: "{reg_name} Nomor {reg_number} Tahun {year} ... {article} menyebutkan
+              bahwa:\n\n{content}"
+```
+
+Every question is filled from the same metadata fields the index is keyed on, and the
+answer is the chunk verbatim. A retriever doing exact-citation matching scores **100% by
+construction** and has been told nothing about whether it can find anything. This is the
+circularity `tools/structure_eval.py` already labels in its own oracle arm, and
+`CLAUDE.md` §15 in one sentence: a validator that replays the construction certifies the
+construction. It would look like a 750,000-pair eval set and measure a string format.
+
+Credit where due: it skips rows containing `cukup jelas`, which is the same boilerplate
+rule the profile carries.
+
+**The real seed is `Indonesian_Legal_QA/`, and it is a `Krawl` job.** Six scrapers for
+**hukumonline.com/klinik**, extracting `## PERTANYAAN` and `## INTISARI JAWABAN`. These
+are questions real people asked, answered by lawyers who cite the regulation — which is
+exactly the non-circular thing the templates cannot be, and the exact-citation arm
+`EVAL.md` §4 needs. **No data survived** — 888 KB of notebooks, no output — and collection
+belongs to `Krawl` per `CLAUDE.md` §7.9.
+
+So §13's conclusion stands: there is no eval set. What is now known is the shape of the
+trap and the address of the source.
+
+### 18.5 Smaller findings
+
+- **The `vProd` run was abandoned.** `processing_progress.json` reports
+  `total_records: 994602` with `completed_chunks: [1, 2]` — 2,000 records of a million,
+  last touched 2025-08-16. `ID_REG_Embedding_vProd.ipynb` is a false lead for anyone
+  reconstructing the corpus; `Embed_20251011` is not.
+- **994,602, not 748,558.** The extraction produced ~995K records and the corpus holds
+  748,558. A quarter of the rows did not survive chunk-to-corpus, and nothing on disk says
+  which or why.
+- **The incumbent is no longer on disk.** `Vera/.test/ID_REG_DB_2511/` and the local
+  `Qwen3-Embedding-0.6B` copy are gone; only `runs/` remains. Every measurement in §§1, 3
+  and 12 was taken while it was present and is recorded here, but **it cannot currently be
+  re-queried**, and `MIGRATION.md` §4 step 2 wants it scored. §2 still holds — the sources
+  are on Hugging Face — so this costs a rebuild, not the corpus.
+- `10_Dataset_HF` — three notebooks. `00_Jsonl_to_Parquet_v1.ipynb` is nine lines of
+  `pd.read_json(lines=True).to_parquet()`: the whole corpus into RAM, no sharding, no row
+  groups. Nothing to absorb, and it is the pattern `EXECUTION.md` §4 forbids.
+- `40_Lab_LLM_RAG` — eleven notebooks building a `networkx` knowledge graph over the
+  regulations. Same KG work already surveyed in §6; the graph metrics there
+  (`kg_pagerank`, `kg_degree_centrality`) are the ones that were columned and never
+  computed.
+- `10_Model_HF` (147 GB) and `00_Github_Remote` (empty) — a model store and nothing.
+  Inventory only.
+
+### 18.6 What this pass says about the survey itself
+
+Four passes, and each corrected the one before: pass 3 overturned two of pass 2's
+verdicts, pass 4 overturned two of pass 3's. The common cause is not carelessness, it is
+that **lab notebooks outnumber production code and look exactly like it**. `20_Docling`
+holds eleven plausible ID_REG notebooks; the one that built the corpus is in a different
+tree entirely, named `embed.py`, and is identifiable only by matching a hyperparameter to
+a column width.
+
+The rule this produces is worth more than any single finding above: **date the artifact
+before believing the code.** A configuration cannot explain an output older than itself,
+and nothing in a notebook says whether it ever ran.
+
+---
+
+## 19. The decision this forces: rebuild or salvage?
 
 **Both, in this order.**
 

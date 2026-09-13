@@ -123,8 +123,27 @@ ID_Legal is the first corpus and has no labeled set yet. Path:
    > this set and are not (`ABSORPTION.md` §13): all three run `flan-t5-large` over 4–20
    > rows of an **English medical** dataset with the prompt
    > `"Generate a question related to: {context}"`, and their `data/` output directory is
-   > empty. There is no Indonesian legal question set anywhere in the workspace. This
-   > step starts from zero, and it is the long pole in `EVAL.md` — budget for it.
+   > empty.
+   >
+   > **And do not use the one that *is* Indonesian and legal.**
+   > `id-reg-qa-generation-v*` generates at real scale — 64 shards, 10 pairs per row —
+   > from 10 question templates filled with the same metadata the index is keyed on,
+   > answered with the chunk verbatim (`ABSORPTION.md` §18.4):
+   >
+   > ```
+   > "Apa bunyi lengkap {article} dalam {reg_name} Nomor {reg_number} Tahun {year}?"
+   > ```
+   >
+   > Exact-citation retrieval scores **100% on this by construction**. It would look like
+   > a 750,000-pair set and would measure a string format. A question that contains its
+   > own answer's address is not a query.
+   >
+   > **The non-circular seed is `hukumonline.com/klinik`** — real questions from real
+   > people, answered by lawyers who cite the regulation, which is exactly the
+   > exact-citation arm §4 needs. Scrapers for it exist and no data survived; collection
+   > is `Krawl`'s job (`CLAUDE.md` §7.9).
+   >
+   > This step starts from zero, and it is the long pole in `EVAL.md` — budget for it.
 3. Write the exact-citation and negative arms by hand — they are cheap and they are the
    two arms that catch real failures.
 4. Freeze v1 of the set before the first variant sweep. A set that changes with the
