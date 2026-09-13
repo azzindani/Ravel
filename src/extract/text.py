@@ -22,6 +22,7 @@ from pathlib import Path
 
 from canon import BlockType, CanonicalDoc, Extraction, Source
 from extract.base import BlockBuilder, ExtractionFailed, Probe, registry
+from extract.quality import Thresholds, score_text
 from sources import guess_mime, sha256_file
 
 #: Tags whose content never belongs in a corpus.
@@ -219,13 +220,23 @@ class TextExtractor:
         )
 
 
-def probe_text(path: Path) -> Probe:
+def probe_text(path: Path, *, thresholds: Thresholds | None = None) -> Probe:
     mime = guess_mime(path)
     try:
+        # ! `errors="replace"` makes the U+FFFD signal in `score_text` do double duty
+        # here: every replacement character is a byte this file claimed was UTF-8 and
+        # was not. That is encoding damage, and it is the same verdict either way —
+        # the text is present and untrustworthy.
         raw = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return Probe(mime=mime, pages=None, text_ratio=0.0, chars=0)
-    return Probe(mime=mime, pages=None, text_ratio=1.0 if raw.strip() else 0.0, chars=len(raw))
+    return Probe(
+        mime=mime,
+        pages=None,
+        text_ratio=1.0 if raw.strip() else 0.0,
+        chars=len(raw),
+        quality=score_text(raw, thresholds=thresholds),
+    )
 
 
 registry.register(TextExtractor())

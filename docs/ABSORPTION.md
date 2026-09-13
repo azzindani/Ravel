@@ -641,6 +641,19 @@ So the expensive path covers **~20% of the corpus, not 8%** — still a minority
 the main path, but two and a half times the budget §9 implied. `EXTRACTION.md` now
 specifies the probe as a quality score, with these three signatures as its basis.
 
+**This is now code, and it reproduces the table exactly.** `src/extract/quality.py`
+scores a text layer into those three classes, and `Probe` carries the verdict plus the
+reasons that produced it; re-run over the same 300 PDFs with the same seed it returns
+241 / 40 / 19 — 80.3% / 13.3% / 6.3%, to the digit. The measurement above is therefore no
+longer a number in a document that someone has to trust, it is a default in a module that
+can be re-run, and `Probe.native_ok` is the gate extractors should use instead of
+`text_ratio >= x`, which is the gate that let the incumbent corpus in.
+
+One threshold is worth stating because it decides three of those documents:
+`max_unbroken_run = 24`, so a 25-letter run with no space is damage. Indonesian's longest
+words in real legal use sit below it — `mempertanggungjawabkan` is 22 — and
+`PENGESAHANPERJANJIANANTARAPEMERINTAHREPUBLIKIN` is 45.
+
 A fourth class surfaced while measuring and is not in the table: PyMuPDF emitted
 `non-page object in page tree` and `cannot find XObject resource` on several files. Structurally
 malformed PDFs are rare enough not to plan around and common enough that the probe must

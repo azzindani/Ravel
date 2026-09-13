@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from canon import Block, BlockType, CanonicalDoc
+from extract.quality import TextLayer, TextQuality
 
 
 class ExtractionFailed(RuntimeError):
@@ -34,8 +35,27 @@ class Probe:
     mime: str
     pages: int | None
     text_ratio: float
-    """Share of pages carrying an extractable text layer. 1.0 = born-digital."""
+    """Share of pages carrying an extractable text layer. 1.0 = born-digital.
+
+    ! Coverage, not quality. 13.3% of real source PDFs score 1.0 here and carry a text
+    layer that is damaged (`ABSORPTION.md` §16) — usually somebody else's old OCR, baked
+    in. Route on `layer`, not on this.
+    """
     chars: int
+    quality: TextQuality | None = None
+    """The three-way verdict. `None` when the file was never opened (wrong mime, or the
+    PDF would not parse), which `layer` reports as `ABSENT`."""
+
+    @property
+    def layer(self) -> TextLayer:
+        """What to do with this file: extract it, or re-read the page."""
+        return self.quality.layer if self.quality else TextLayer.ABSENT
+
+    @property
+    def native_ok(self) -> bool:
+        """! The gate extractors should use. `text_ratio >= x` is the gate that let the
+        incumbent corpus in."""
+        return self.layer is TextLayer.CLEAN
 
 
 @runtime_checkable

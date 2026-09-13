@@ -49,6 +49,13 @@ cheap router picks per document (and, for PDFs, per page):
   > error. The probe therefore scores the extracted text as well as counting it: control
   > characters, U+FFFD, and runs of 25+ letters with no space were the three signatures
   > that separated the classes, and the third was the most common (8.7%).
+  >
+  > Implemented in `src/extract/quality.py`; `probe()` returns the verdict on
+  > `Probe.quality` and **`Probe.native_ok` is the gate to route on**. The thresholds are
+  > a `Thresholds` dataclass rather than constants, and their defaults reproduce the
+  > measurement above exactly. `DAMAGED` is not a degraded yes — it routes to OCR like
+  > `ABSENT`, because bytes that are present and wrong are worse than bytes that are
+  > missing and known to be.
 - **SmolDocling** — the default for anything where structure matters. It detects
   headings, subheadings, lists and tables and emits markdown, which is exactly the
   canonical format's shape. This is the reason the pipeline can chunk on legal units at

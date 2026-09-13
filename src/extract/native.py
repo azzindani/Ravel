@@ -21,6 +21,7 @@ from typing import Any
 
 from canon import BlockType, CanonicalDoc, Extraction, Source
 from extract.base import BlockBuilder, ExtractionFailed, Probe, registry
+from extract.quality import Thresholds, score_text
 from sources import guess_mime, sha256_file
 
 # A line must exceed the body size by this factor to be a heading on size alone.
@@ -202,8 +203,12 @@ class NativeExtractor:
         )
 
 
-def probe(path: Path) -> Probe:
-    """Cheap look: does this PDF have a usable text layer? (EXTRACTION.md §2)"""
+def probe(path: Path, *, thresholds: Thresholds | None = None) -> Probe:
+    """Cheap look: does this PDF have a usable text layer, and is it worth using?
+
+    (`EXTRACTION.md` §2.) Returns coverage *and* a quality verdict — see
+    `extract.quality` for why the second one is not optional.
+    """
     import pymupdf
 
     mime = guess_mime(path)
@@ -219,14 +224,25 @@ def probe(path: Path) -> Probe:
         pages = pdf.page_count
         if not pages:
             return Probe(mime=mime, pages=0, text_ratio=0.0, chars=0)
-        chars = 0
+        parts: list[str] = []
         with_text = 0
         for page in pdf:
             text = page.get_text("text").strip()
-            chars += len(text)
+            parts.append(text)
             # A handful of stray characters is OCR bleed, not a text layer.
             with_text += len(text) > 32
-    return Probe(mime=mime, pages=pages, text_ratio=with_text / pages, chars=chars)
+
+    # ! Scored on the joined text, not per page. Space loss and control characters are
+    # properties of a document's extraction, and a single clean page does not redeem
+    # the rest — `ABSORPTION.md` §16 measured the classes this way.
+    joined = "\n".join(parts)
+    return Probe(
+        mime=mime,
+        pages=pages,
+        text_ratio=with_text / pages,
+        chars=len(joined.strip()),
+        quality=score_text(joined, pages=pages, thresholds=thresholds),
+    )
 
 
 registry.register(NativeExtractor())
