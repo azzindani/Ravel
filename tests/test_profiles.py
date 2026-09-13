@@ -78,7 +78,9 @@ def test_duplicate_unit_names_are_rejected() -> None:
     with pytest.raises(ValueError, match="duplicate structural unit"):
         ProfileSpec.model_validate(
             {
-                "id": "x", "version": "1.0", "title": "X",
+                "id": "x",
+                "version": "1.0",
+                "title": "X",
                 "structure": {
                     "units": [
                         {"name": "a", "level": 1, "pattern": "^A"},

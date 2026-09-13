@@ -169,6 +169,13 @@ def human_bytes(n: int) -> str:
 
 
 __all__ = [
-    "ScanReport", "SourceFile", "guess_mime", "human_bytes", "read_manifest",
-    "scan", "sha256_file", "walk", "write_manifest",
+    "ScanReport",
+    "SourceFile",
+    "guess_mime",
+    "human_bytes",
+    "read_manifest",
+    "scan",
+    "sha256_file",
+    "walk",
+    "write_manifest",
 ]

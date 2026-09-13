@@ -65,9 +65,7 @@ def registry() -> Registry:
 
 
 @pytest.mark.parametrize("path", _by_family(FOREIGN), ids=lambda p: p.stem[:40])
-def test_foreign_documents_never_route_to_id_regulation(
-    registry: Registry, path: Path
-) -> None:
+def test_foreign_documents_never_route_to_id_regulation(registry: Registry, path: Path) -> None:
     """A contract, resume, invoice or US federal document is not an Indonesian
     regulation. `generic` may claim it, or nothing may — but never `id_regulation`,
     because a false positive there is a chunk that cites a pasal that does not exist."""
@@ -78,8 +76,7 @@ def test_foreign_documents_never_route_to_id_regulation(
     chosen = registry.route(mime="application/pdf", sample=sample)
 
     assert chosen is None or chosen.id != "id_regulation", (
-        f"{path.name} was claimed by id_regulation on this text:\n"
-        f"{sample[:300]!r}"
+        f"{path.name} was claimed by id_regulation on this text:\n{sample[:300]!r}"
     )
 
 

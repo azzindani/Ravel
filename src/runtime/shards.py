@@ -121,9 +121,8 @@ class ShardWriter:
         return sealed
 
     def _would_exceed(self, size: int, units: int) -> bool:
-        return (
-            self._pending_bytes + size > self.target_bytes
-            or (self.max_blocks > 0 and self._pending_blocks + units > self.max_blocks)
+        return self._pending_bytes + size > self.target_bytes or (
+            self.max_blocks > 0 and self._pending_blocks + units > self.max_blocks
         )
 
     def _full(self) -> bool:

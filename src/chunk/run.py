@@ -263,9 +263,7 @@ class Chunking:
                     except Exception as exc:  # noqa: BLE001 — one document must not kill a run
                         report.failed += 1
                         report.errors.append((doc.source.path, f"{type(exc).__name__}: {exc}"))
-                        ledger.record(
-                            key, self._stage(), Status.FAILED, detail=str(exc)[:500]
-                        )
+                        ledger.record(key, self._stage(), Status.FAILED, detail=str(exc)[:500])
                         continue
 
                     if not chunks:

@@ -37,7 +37,10 @@ __all__ = ["as_local_path", "find", "is_local", "resolve", "split_suffix_variant
 
 def resolve(uri: str | os.PathLike[str]) -> tuple[AbstractFileSystem, str]:
     """`uri` to (filesystem, path). A bare path is `file://`, so callers need no branch."""
-    return url_to_fs(str(uri))
+    # fsspec ships no types, so this is where the Any stops: named once, at the
+    # boundary, rather than spreading into every caller's inferred signature.
+    fs, path = url_to_fs(str(uri))
+    return fs, str(path)
 
 
 def is_local(fs: AbstractFileSystem) -> bool:

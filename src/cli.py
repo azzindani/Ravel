@@ -226,9 +226,7 @@ def extract(
         summary.add_row("duplicate bytes", f"{report.duplicates:,}")
     summary.add_row("extracted", f"[bold]{report.extracted:,}[/bold]")
     summary.add_row("failed", f"{report.failed:,}  ({report.failure_rate:.1%})")
-    summary.add_row(
-        "deferred", f"{report.deferred:,}  [dim]no text layer · awaiting OCR[/dim]"
-    )
+    summary.add_row("deferred", f"{report.deferred:,}  [dim]no text layer · awaiting OCR[/dim]")
     summary.add_row("coverage", f"{report.coverage:.1%}")
     summary.add_row("shards", f"{report.shards:,}  ({report.bytes_written / 1e6:.1f} MB)")
     summary.add_row("elapsed", f"{report.seconds:.1f}s")
@@ -280,16 +278,12 @@ def chunk_cmd(
     import chunk as chunking
 
     spec = CorpusSpec.find(corpus_id)
-    run = chunking.Chunking(
-        spec, workspace=workspace, chunker=chunker or None, variant=variant
-    )
+    run = chunking.Chunking(spec, workspace=workspace, chunker=chunker or None, variant=variant)
     report = run.run(limit=limit, force=force)
 
     summary = RichTable(show_header=False, box=None)
     summary.add_row("corpus", f"{spec.id}  [dim]{report.variant}[/dim]")
-    summary.add_row(
-        "chunker", f"{run.entry.ref}  [dim]{run.config.config_hash}[/dim]"
-    )
+    summary.add_row("chunker", f"{run.entry.ref}  [dim]{run.config.config_hash}[/dim]")
     summary.add_row("documents", f"{report.documents:,}")
     summary.add_row("already done", f"{report.skipped_done:,}")
     if report.duplicates:
@@ -455,8 +449,7 @@ def bundle_show(path: BundleArg) -> None:
     if sparse:
         table.add_row(
             "sparse",
-            f"{sparse['scheme']} · {sparse['dim']}d · fitted over "
-            f"{sparse['fit_docs']:,} docs",
+            f"{sparse['scheme']} · {sparse['dim']}d · fitted over {sparse['fit_docs']:,} docs",
         )
     clustering = document.get("clustering") or {}
     if clustering:

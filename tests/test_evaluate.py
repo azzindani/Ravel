@@ -155,9 +155,7 @@ def test_a_small_set_is_reported_as_unreliable() -> None:
 def test_a_drifted_composition_is_reported() -> None:
     """A set that becomes 80% exact-citation measures the identifier path and is nearly
     blind to the embedder — while the headline number looks stable."""
-    skewed = QuerySet(
-        items=tuple(query(f"q{i}", QueryType.EXACT_CITATION) for i in range(100))
-    )
+    skewed = QuerySet(items=tuple(query(f"q{i}", QueryType.EXACT_CITATION) for i in range(100)))
 
     ok, detail = check_composition(skewed)
 
@@ -170,9 +168,7 @@ def test_the_holdout_is_stratified_and_seeded() -> None:
     rest (`EVAL.md` §4)."""
     kinds = (QueryType.FACTUAL, QueryType.EXACT_CITATION, QueryType.NEGATIVE)
     queries = QuerySet(
-        items=tuple(
-            query(f"{kind.value}-{i:03d}", kind) for kind in kinds for i in range(20)
-        )
+        items=tuple(query(f"{kind.value}-{i:03d}", kind) for kind in kinds for i in range(20))
     )
 
     sweep, held = queries.split(holdout=0.25, seed=1)

@@ -33,7 +33,9 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -51,7 +53,7 @@ from bundle import (  # noqa: E402
 from chunk.models import Chunk  # noqa: E402
 from chunk.store import write_chunks  # noqa: E402
 from embed import spec_for  # noqa: E402
-from load import load_plan, preflight  # noqa: E402
+from load import Step, load_plan, preflight  # noqa: E402
 
 DIM = 16
 CHUNKS = 3
@@ -105,9 +107,7 @@ def build_bundle(root: Path) -> Path:
     matrix = np.random.default_rng(0).normal(size=(CHUNKS, DIM)).astype(np.float32)
     writer.record(
         "vectors/part-00000.parquet",
-        write_vectors(
-            writer.shard_path("vectors", 0), [c.id for c in chunks], matrix, dim=DIM
-        ),
+        write_vectors(writer.shard_path("vectors", 0), [c.id for c in chunks], matrix, dim=DIM),
     )
     writer.write_reference(matrix[0], "Pasal 1")
     writer.write_failed([])
@@ -115,8 +115,21 @@ def build_bundle(root: Path) -> Path:
     return writer.root
 
 
-def step_sql(plan, name: str) -> str:
+def step_sql(plan: Sequence[Step], name: str) -> str:
     return next(step for step in plan if step.name == name).sql
+
+
+def one(row: tuple[Any, ...] | None, what: str) -> tuple[Any, ...]:
+    """A query that returned nothing when it must return something.
+
+    ! Not `row[0]` against an Optional. A missing row here means the statement
+    above did not do what this script claims it did, and an `IndexError` three
+    lines later names the wrong thing.
+    """
+    if row is None:
+        print(f"FAIL {what}: the query returned no rows", file=sys.stderr)
+        sys.exit(1)
+    return row
 
 
 def check(label: str, condition: bool, detail: str = "") -> None:
@@ -147,17 +160,24 @@ def main() -> int:
             version = conn.execute(
                 "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
             ).fetchone()
-            check("pgvector is installed", version is not None, version and version[0])
+            check(
+                "pgvector is installed",
+                version is not None,
+                str(version[0]) if version else "",
+            )
 
             conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
             conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
 
             # 1. the generated schema, at the manifest's dimensions.
             conn.execute(step_sql(plan, "schema"))
-            width = conn.execute(
-                "SELECT atttypmod FROM pg_attribute "
-                "WHERE attrelid = 'chunks'::regclass AND attname = 'dense'"
-            ).fetchone()
+            width = one(
+                conn.execute(
+                    "SELECT atttypmod FROM pg_attribute "
+                    "WHERE attrelid = 'chunks'::regclass AND attname = 'dense'"
+                ).fetchone(),
+                "the dense column exists",
+            )
             check("schema applies", True, f"dense column typmod {width[0]}")
 
             config = conn.execute(
@@ -179,11 +199,15 @@ def main() -> int:
 
             # 3. the recipe row, with every column the manifest is stricter about.
             conn.execute(step_sql(plan, "stamp corpus_meta"))
-            stamped = conn.execute(
-                "SELECT manifest_sha256, dense_padding_side, dense_instruction_style, "
-                "sparse_fit_docs FROM corpus_meta WHERE id = %s",
-                (CORPUS,),
-            ).fetchone()
+            stamped = one(
+                conn.execute(
+                    "SELECT manifest_sha256, dense_padding_side, "
+                    "dense_instruction_style, sparse_fit_docs "
+                    "FROM corpus_meta WHERE id = %s",
+                    (CORPUS,),
+                ).fetchone(),
+                "the corpus_meta row was stamped",
+            )
             check(
                 "corpus_meta carries the recipe",
                 stamped[0] == document["manifest_sha256"],
@@ -230,11 +254,14 @@ def main() -> int:
                 "'t', 'https://example/t')",
                 (CORPUS,),
             )
-            hit = conn.execute(
-                "SELECT tsv @@ plainto_tsquery(%s, 'menaati ketentuan') FROM chunks "
-                "WHERE id = 't1'",
-                (document["text_search_config"],),
-            ).fetchone()
+            hit = one(
+                conn.execute(
+                    "SELECT tsv @@ plainto_tsquery(%s, 'menaati ketentuan') "
+                    "FROM chunks WHERE id = 't1'",
+                    (document["text_search_config"],),
+                ).fetchone(),
+                "the test chunk was inserted",
+            )
             conn.rollback()
             check("the generated tsvector column indexes Indonesian text", bool(hit[0]))
 

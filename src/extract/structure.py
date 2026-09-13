@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from canon import Block, BlockType, CanonicalDoc
 from extract.base import BlockBuilder
 from spec import Profile
+from spec.models import Unit
 
 #: Block types that are furniture, never structure — a repeated page header reading
 #: "BAB II" is still a page header.
@@ -113,7 +114,7 @@ class Structurer:
             }
         )
 
-    def _unit_for(self, block: Block):  # noqa: ANN202 — spec.models.Unit | None
+    def _unit_for(self, block: Block) -> Unit | None:
         if block.type in NEVER_STRUCTURAL:
             return None
         return self.profile.structural(block.text)

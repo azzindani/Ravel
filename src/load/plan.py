@@ -43,9 +43,6 @@ from typing import Any
 
 __all__ = ["Step", "load_plan", "copy_from", "quote_literal", "quote_ident"]
 
-#: Columns a chunk shard carries, in parquet order. Named here rather than derived from
-#: the file so a shard with an unexpected column set fails at COPY with a column list to
-#: compare against, instead of loading shifted.
 #: `(staging column, SQL type, destination column in `chunks`)`, in parquet order.
 #:
 #: ! One table, so the three things that must agree cannot drift apart: what the shard
@@ -131,8 +128,7 @@ def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
     """
     names = ", ".join(quote_ident(c) for c in columns)
     return (
-        f"-- from {source}\n"
-        f"COPY {quote_ident(table)} ({names}) FROM STDIN WITH (FORMAT text);"
+        f"-- from {source}\nCOPY {quote_ident(table)} ({names}) FROM STDIN WITH (FORMAT text);"
     )
 
 

@@ -57,10 +57,16 @@ jobs:
       # resolving different versions than the developer had.
       - run: uv sync --locked --all-extras --no-extra extract --no-extra mcp
       - run: uv run ruff check src tests tools
+      - run: uv run ruff format --check src tests tools
 
-      # ! No `ruff format --check`, and no mypy, deliberately — see the note at
-      # the bottom of this file. A check that is in the gate but allowed to fail
-      # is decorative, and one that is claimed in a README and not run is worse.
+      # ! `src tools`, not `src`. tools/ is what this workflow runs against a live
+      # database, so a type error there is a job that fails after Postgres has
+      # started — the most expensive place in the gate to find one.
+      #
+      # tests/ is deliberately outside it: strict mypy over pytest fixtures and
+      # parametrize decorators is 106 errors of annotation ceremony, and none of
+      # them are a defect in something that ships.
+      - run: uv run mypy src tools
 
   test:
     name: test (${{ matrix.os }})
@@ -218,19 +224,14 @@ jobs:
           echo "$out" | grep -q "unsealed build directory"
 
 # ------------------------------------------------------------------------------
-# What this gate does NOT enforce yet, stated rather than implied
+# What this gate enforces, and what it does not
 # ------------------------------------------------------------------------------
-# `ruff format --check` — would reformat 34 of 82 files. Several carry deliberate
-#   hand-wrapping that the formatter collapses (a vocabulary literal was manually
-#   re-wrapped once already after `ruff format` put it on one line). Adopting it
-#   is a decision and a reformat commit, not a line in a workflow.
+# Enforced: ruff lint, ruff format, mypy --strict over src/ and tools/, the
+# hermetic suite on three platforms, the generated SQL against a real pgvector
+# server, profile routing over 158 real PDFs, and the CLI from an installed
+# wheel.
 #
-# `mypy src` — 40 errors under the `strict` settings pyproject.toml already
-#   declares: 15 no-any-return, 10 import-untyped, 4 attr-defined, 4
-#   unused-ignore, 3 call-overload, 2 no-untyped-def, 2 import-not-found (the
-#   optional `pymupdf` path, which wants a per-module override rather than a fix).
-#
-# Both are real gaps and both are tracked in CLAUDE.md. They are absent here
-# rather than present-and-non-blocking on purpose: this project's own load
-# preflight refuses to treat a skipped check as a passed one, and a CI file
-# should not hold itself to a lower standard than the code it gates.
+# Not enforced: mypy over tests/. Everything else this file could reasonably
+# check, it checks — and nothing here is marked `continue-on-error`, because a
+# check in the gate that is allowed to fail is decorative, and this project's own
+# load preflight refuses to call a skipped check a passed one.

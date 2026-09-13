@@ -44,7 +44,7 @@ remote  = ["huggingface-hub>=1.31", "s3fs>=2026.7"]
 ravel = "cli:app"
 
 [dependency-groups]
-dev = ["pytest>=9.0", "ruff>=0.15", "mypy>=1.18"]
+dev = ["pytest>=9.0", "ruff>=0.15", "mypy>=1.18", "types-PyYAML>=6.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -83,3 +83,12 @@ markers = [
 python_version = "3.14"
 mypy_path = "src"
 strict = true
+
+# ! Per module, never `ignore_missing_imports = true` globally. A global switch also
+# silences a typo in one of *our* module names, which is the one import error worth
+# having. These ship no stubs and no py.typed marker; PyYAML does ship stubs, so
+# `types-PyYAML` is a dev dependency rather than an entry here — a real type is always
+# worth more than a silenced one.
+[[tool.mypy.overrides]]
+module = ["fsspec.*", "pyarrow.*", "pymupdf.*", "docling.*", "psycopg.*"]
+ignore_missing_imports = true

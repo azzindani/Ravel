@@ -49,14 +49,23 @@ def doc() -> CanonicalDoc:
     blocks = [
         block(0, BlockType.PAGE_HEADER, "Lembaran Negara Republik Indonesia"),
         block(1, BlockType.HEADING, root, level=1, path=[root]),
-        block(2, BlockType.PARAGRAPH, "Menimbang bahwa ketentuan berikut berlaku.",
-              path=[root]),
+        block(
+            2, BlockType.PARAGRAPH, "Menimbang bahwa ketentuan berikut berlaku.", path=[root]
+        ),
         block(3, BlockType.HEADING, bab, level=2, path=[root, bab]),
         block(4, BlockType.HEADING, pasal, level=3, path=[root, bab, pasal]),
-        block(5, BlockType.PARAGRAPH, "(1) Wajib Pajak wajib menyelenggarakan pembukuan.",
-              path=[root, bab, pasal]),
-        block(6, BlockType.LIST_ITEM, "a. orang pribadi yang melakukan kegiatan usaha;",
-              path=[root, bab, pasal]),
+        block(
+            5,
+            BlockType.PARAGRAPH,
+            "(1) Wajib Pajak wajib menyelenggarakan pembukuan.",
+            path=[root, bab, pasal],
+        ),
+        block(
+            6,
+            BlockType.LIST_ITEM,
+            "a. orang pribadi yang melakukan kegiatan usaha;",
+            path=[root, bab, pasal],
+        ),
         block(7, BlockType.LIST_ITEM, "b. badan usaha tetap;", path=[root, bab, pasal]),
         block(8, BlockType.CAPTION, "Tarif Pajak Penghasilan", path=[root, bab, pasal]),
         block(9, BlockType.TABLE_REF, ref="t001", path=[root, bab, pasal]),

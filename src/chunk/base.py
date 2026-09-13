@@ -30,9 +30,7 @@ from spec import Profile
 #: Block types that carry document content. Page furniture and captions are excluded
 #: from bodies — a running header repeated on 400 pages is noise that would otherwise
 #: dominate keyword statistics for the whole corpus.
-BODY_TYPES = frozenset(
-    {BlockType.PARAGRAPH, BlockType.LIST_ITEM, BlockType.FORMULA}
-)
+BODY_TYPES = frozenset({BlockType.PARAGRAPH, BlockType.LIST_ITEM, BlockType.FORMULA})
 
 _WORD = re.compile(r"\w+|[^\w\s]")
 
@@ -289,9 +287,7 @@ class Builder:
             grid = render_table(table).strip()
             if not grid:
                 continue
-            anchor = next(
-                (b for b in self.doc.blocks if b.ref == table.id), None
-            )
+            anchor = next((b for b in self.doc.blocks if b.ref == table.id), None)
             blocks = [anchor] if anchor else []
             heading = PATH_SEP.join(anchor.heading_path) if anchor else ""
             locator = table.caption or heading or table.id

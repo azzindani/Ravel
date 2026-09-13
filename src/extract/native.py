@@ -63,7 +63,7 @@ def _lines(doc: Any) -> Iterator[Line]:
                     size=max(sizes),
                     bold=bold,
                     page=page_no,
-                    bbox=tuple(round(v, 2) for v in line["bbox"]),  # type: ignore[arg-type]
+                    bbox=tuple(round(v, 2) for v in line["bbox"]),
                 )
 
 
@@ -134,9 +134,7 @@ class NativeExtractor:
             # ! Do not return an empty document. A scanned PDF has no text layer and
             # belongs on the OCR path; silently emitting nothing is how a corpus
             # acquires content-free documents nobody notices (LOOPHOLES.md §2).
-            raise ExtractionFailed(
-                f"{path.name}: no text layer ({pages} pages) · route to OCR"
-            )
+            raise ExtractionFailed(f"{path.name}: no text layer ({pages} pages) · route to OCR")
 
         body = _body_size(lines)
         running = _running_bands(lines, pages)

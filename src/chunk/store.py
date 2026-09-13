@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Iterator
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -71,25 +72,25 @@ def _row(chunk: Chunk) -> dict[str, object]:
     }
 
 
-def _chunk(row: dict[str, object]) -> Chunk:
+def _chunk(row: dict[str, Any]) -> Chunk:
     return Chunk(
         id=str(row["id"]),
         doc_id=str(row["doc_id"]),
         body=str(row["body"]),
-        token_count=int(row["token_count"]),  # type: ignore[arg-type]
-        part=(int(row["part_n"]), int(row["part_of"])),  # type: ignore[arg-type]
-        block_ids=list(row["block_ids"] or []),  # type: ignore[arg-type]
+        token_count=int(row["token_count"]),
+        part=(int(row["part_n"]), int(row["part_of"])),
+        block_ids=list(row["block_ids"] or []),
         source_title=str(row["source_title"]),
         source_url=str(row["source_url"]),
         source_sha256=str(row["source_sha256"]),
-        locator_page=row["locator_page"],  # type: ignore[arg-type]
-        locator_section=row["locator_section"],  # type: ignore[arg-type]
-        heading_path=row["heading_path"],  # type: ignore[arg-type]
-        identifier=row["identifier"],  # type: ignore[arg-type]
+        locator_page=row["locator_page"],
+        locator_section=row["locator_section"],
+        heading_path=row["heading_path"],
+        identifier=row["identifier"],
         chunker=str(row["chunker"]),
         chunker_version=str(row["chunker_version"]),
         config_hash=str(row["config_hash"]),
-        profile=row["profile"],  # type: ignore[arg-type]
+        profile=row["profile"],
         attrs=json.loads(str(row["attrs"] or "{}")),
     )
 
@@ -97,7 +98,7 @@ def _chunk(row: dict[str, object]) -> Chunk:
 def write_chunks(chunks: Iterable[Chunk], path: str) -> int:
     table = pa.Table.from_pylist([_row(c) for c in chunks], schema=SCHEMA)
     pq.write_table(table, path, compression="zstd")
-    return table.num_rows
+    return int(table.num_rows)
 
 
 def read_chunks(path: str) -> list[Chunk]:

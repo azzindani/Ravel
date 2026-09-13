@@ -220,8 +220,9 @@ def test_identical_bytes_enter_the_corpus_once(corpus: CorpusSpec, tmp_path: Pat
     and counting it twice is how 931 documents became 1,862 in a real run — silently,
     with nothing overwritten and nothing raised."""
     root = Path(corpus.sources.root)
-    (root / "copy_of_1.md").write_text((root / "perbup_1.md").read_text(encoding="utf-8"),
-                                       encoding="utf-8")
+    (root / "copy_of_1.md").write_text(
+        (root / "perbup_1.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
     report = run(corpus, tmp_path / "ws")
 
     assert report.considered == 6
@@ -230,9 +231,7 @@ def test_identical_bytes_enter_the_corpus_once(corpus: CorpusSpec, tmp_path: Pat
     assert report.coverage == 1.0
 
 
-def test_a_new_generation_does_not_read_the_old_one(
-    corpus: CorpusSpec, tmp_path: Path
-) -> None:
+def test_a_new_generation_does_not_read_the_old_one(corpus: CorpusSpec, tmp_path: Path) -> None:
     """! `ShardWriter` resumes into a fresh shard index rather than overwriting, which
     is right for resume and wrong when the keys change. Bumping an extractor version
     appended new shards beside the stale ones and the next stage read every document

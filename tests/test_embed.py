@@ -292,7 +292,15 @@ def test_spec_travels_into_the_manifest() -> None:
     )
     m = EmbedderSpec.manifest(spec)
 
-    for required in ("fingerprint", "pooling", "padding_side", "normalize",
-                     "instruction_style", "doc_instruction", "query_instruction",
-                     "model_version", "dim"):
+    for required in (
+        "fingerprint",
+        "pooling",
+        "padding_side",
+        "normalize",
+        "instruction_style",
+        "doc_instruction",
+        "query_instruction",
+        "model_version",
+        "dim",
+    ):
         assert required in m, f"{required} missing from the manifest"

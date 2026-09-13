@@ -102,7 +102,8 @@ class OracleIndex:
 def _unit(matrix: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     np.maximum(norms, 1e-12, out=norms)
-    return matrix / norms
+    unit: np.ndarray = matrix / norms
+    return unit
 
 
 def top_k(

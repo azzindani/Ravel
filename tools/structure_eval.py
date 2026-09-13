@@ -47,10 +47,10 @@ from canon import BlockType, CanonicalDoc  # noqa: E402
 from extract import ExtractionFailed, NativeExtractor, probe  # noqa: E402
 from extract.structure import Structurer  # noqa: E402
 from spec import default_registry  # noqa: E402
+from spec.models import Unit  # noqa: E402
 from uris import as_local_path, find  # noqa: E402
 
 PASAL_NUMBER = re.compile(r"^PASAL\s+(\d+)", re.I)
-
 
 
 @dataclass
@@ -59,7 +59,10 @@ class Arm:
 
     name: str
     note: str
-    oracle: Callable[[str], object | None]
+    oracle: Callable[[str], Unit | None]
+    """! `Unit | None`, not `object | None`. The eval reads `truth.name` to break
+    results down per structural unit, and a widened type makes that attribute
+    unresolvable while the code keeps working — until a profile changes shape."""
     hits: int = 0
     misses: int = 0
     extra: int = 0
@@ -107,7 +110,7 @@ class Arm:
         runs: list[list[int]] = [[numbers[0]]]
         for previous, current in zip(numbers, numbers[1:], strict=False):
             if current < previous:
-                runs.append([current])       # a new section restarts the numbering
+                runs.append([current])  # a new section restarts the numbering
             else:
                 runs[-1].append(current)
 
@@ -148,9 +151,7 @@ class Arm:
                 ((u, n - self.missed_by_unit[u], n) for u, n in self.by_unit.items()),
                 key=lambda t: t[1] / t[2],
             )[:4]
-            print("  weakest units      " + "  ".join(
-                f"{u} {f/t:.0%}" for u, f, t in worst
-            ))
+            print("  weakest units      " + "  ".join(f"{u} {f / t:.0%}" for u, f, t in worst))
 
 
 def main() -> int:

@@ -109,8 +109,7 @@ def locator_path(profile: Profile, text: str) -> tuple[tuple[str, str], ...]:
         rf"\b({'|'.join(re.escape(n) for n in names)})\b\s*{_VALUE}", re.IGNORECASE
     )
     return tuple(
-        (match.group(1).lower(), match.group(2).lower())
-        for match in pattern.finditer(text)
+        (match.group(1).lower(), match.group(2).lower()) for match in pattern.finditer(text)
     )
 
 

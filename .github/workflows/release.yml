@@ -53,6 +53,8 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-extras --no-extra extract --no-extra mcp
       - run: uv run ruff check src tests tools
+      - run: uv run ruff format --check src tests tools
+      - run: uv run mypy src tools
       - run: uv run pytest -q
 
   # ! The version in the tag and the version in pyproject.toml must agree.

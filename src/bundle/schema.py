@@ -238,11 +238,7 @@ def render_schema(
         )
     )
 
-    sparse_column = (
-        f",\n    sparse              sparsevec({sparse.dim}),"
-        if sparse
-        else ","
-    )
+    sparse_column = f",\n    sparse              sparsevec({sparse.dim})," if sparse else ","
     sparse_desc = (
         f"{sparse.scheme} · {sparse.dim}d · k1={sparse.k1} b={sparse.b} · "
         f"vocab fitted over {sparse.fit_docs:,} docs"

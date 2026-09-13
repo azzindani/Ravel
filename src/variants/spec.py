@@ -248,9 +248,7 @@ def reuse_plan(variants: Sequence[VariantSpec]) -> dict[str, Any]:
     }
 
 
-def check_baseline_present(
-    variants: Iterable[VariantSpec], baseline: str
-) -> tuple[bool, str]:
+def check_baseline_present(variants: Iterable[VariantSpec], baseline: str) -> tuple[bool, str]:
     """Is the anchor arm in this sweep?
 
     ! `VARIANTS.md` §5: *"Always keep a baseline arm in the matrix. Without it, results

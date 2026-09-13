@@ -68,9 +68,7 @@ def test_the_same_profile_finds_structure_in_html_and_markdown(tmp_path: Path) -
     found = {}
     for name, body in (("doc.html", HTML), ("doc.md", MARKDOWN)):
         doc = structurer.apply(TextExtractor().extract(write(tmp_path, name, body), title="t"))
-        found[name] = {
-            b.attrs.get("unit") for b in doc.blocks if b.type is BlockType.HEADING
-        }
+        found[name] = {b.attrs.get("unit") for b in doc.blocks if b.type is BlockType.HEADING}
     assert "pasal" in found["doc.html"]
     assert "bab" in found["doc.html"]
     assert found["doc.html"] == found["doc.md"]
@@ -99,10 +97,10 @@ def test_unsupported_mime_is_refused(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("Undang­Undang", "UndangUndang"),      # soft hyphen, invisible on screen
-        ("a​b", "ab"),                            # zero-width space
-        ("café    x", "café x"),            # NFKC + nbsp collapse
-        ("&amp;lt;", "&lt;"),                          # unescaped ONCE, never twice
+        ("Undang­Undang", "UndangUndang"),  # soft hyphen, invisible on screen
+        ("a​b", "ab"),  # zero-width space
+        ("café    x", "café x"),  # NFKC + nbsp collapse
+        ("&amp;lt;", "&lt;"),  # unescaped ONCE, never twice
     ],
 )
 def test_normalize_repairs_transport_damage(raw: str, expected: str) -> None:

@@ -142,8 +142,7 @@ def test_identifiers_reach_the_stored_rows(corpus: CorpusSpec, workspace: Path) 
 
     assert report.identifier_rate > 0.5
     assert any(
-        c.identifier and c.identifier.startswith("Perbup ")
-        for c in _rows(workspace, "default")
+        c.identifier and c.identifier.startswith("Perbup ") for c in _rows(workspace, "default")
     )
 
 
@@ -161,9 +160,7 @@ def test_the_ledger_namespaces_the_stage_by_variant(
 def test_a_chunk_survives_parquet_unchanged(
     corpus: CorpusSpec, workspace: Path, tmp_path: Path
 ) -> None:
-    original = Chunking(corpus, workspace=workspace).chunks_for(
-        next(_docs(workspace))
-    )
+    original = Chunking(corpus, workspace=workspace).chunks_for(next(_docs(workspace)))
     path = str(tmp_path / "chunks.parquet")
     assert write_chunks(original, path) == len(original)
 
@@ -205,9 +202,7 @@ def test_a_reconfigured_variant_writes_a_new_generation(
     assert {c.config_hash for c in rows} == {narrow.config.config_hash}
 
 
-def test_forcing_a_rerun_does_not_duplicate_rows(
-    corpus: CorpusSpec, workspace: Path
-) -> None:
+def test_forcing_a_rerun_does_not_duplicate_rows(corpus: CorpusSpec, workspace: Path) -> None:
     run = Chunking(corpus, workspace=workspace)
     first = run.run()
     run.run(force=True)

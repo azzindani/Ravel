@@ -79,9 +79,9 @@ def test_every_type_survives_a_round_trip(
 @pytest.mark.parametrize(
     "text",
     [
-        "- Mengingat Undang-Undang Nomor 28",   # would re-parse as LIST_ITEM
-        "# not a heading",                       # would re-parse as HEADING
-        "$$ not a formula",                      # would re-parse as FORMULA
+        "- Mengingat Undang-Undang Nomor 28",  # would re-parse as LIST_ITEM
+        "# not a heading",  # would re-parse as HEADING
+        "$$ not a formula",  # would re-parse as FORMULA
         "<!-- ravel:caption -->not an annotation",
         chr(92) + "already starts with a backslash",
         "-tanpa spasi",
@@ -206,8 +206,10 @@ def test_table_without_a_header_does_not_get_one() -> None:
         n_cols=2,
         header_rows=0,
         cells=[
-            Cell(r=0, c=0, text="data A"), Cell(r=0, c=1, text="1"),
-            Cell(r=1, c=0, text="data B"), Cell(r=1, c=1, text="2"),
+            Cell(r=0, c=0, text="data A"),
+            Cell(r=0, c=1, text="1"),
+            Cell(r=1, c=0, text="data B"),
+            Cell(r=1, c=1, text="2"),
         ],
     )
     lines = t.markdown.splitlines()
@@ -223,10 +225,22 @@ def test_the_validator_rejects_a_path_that_nests_siblings(doc: CanonicalDoc) -> 
 
     bad = doc.model_copy(deep=True)
     bad.blocks = [
-        Block(id="b00000", type=BlockType.HEADING, text="Menimbang", level=3,
-              heading_path=["Menimbang"], reading_order=0),
-        Block(id="b00001", type=BlockType.HEADING, text="Mengingat", level=3,
-              heading_path=["Menimbang", "Mengingat"], reading_order=1),
+        Block(
+            id="b00000",
+            type=BlockType.HEADING,
+            text="Menimbang",
+            level=3,
+            heading_path=["Menimbang"],
+            reading_order=0,
+        ),
+        Block(
+            id="b00001",
+            type=BlockType.HEADING,
+            text="Mengingat",
+            level=3,
+            heading_path=["Menimbang", "Mengingat"],
+            reading_order=1,
+        ),
     ]
     bad.tables = []
 

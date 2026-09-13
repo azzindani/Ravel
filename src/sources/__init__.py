@@ -12,6 +12,12 @@ from sources.scan import (
 )
 
 __all__ = [
-    "ScanReport", "SourceFile", "guess_mime", "human_bytes", "read_manifest", "scan",
-    "sha256_file", "write_manifest",
+    "ScanReport",
+    "SourceFile",
+    "guess_mime",
+    "human_bytes",
+    "read_manifest",
+    "scan",
+    "sha256_file",
+    "write_manifest",
 ]

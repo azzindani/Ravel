@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from canon import CANON_VERSION, CanonicalDoc, Severity, validate
-from extract.base import ExtractionFailed, Probe
+from extract.base import ExtractionFailed, Extractor, Probe
 from extract.native import NativeExtractor
 from extract.native import probe as probe_pdf
 from extract.structure import Structurer
@@ -173,7 +173,13 @@ class Extraction:
         self.corpus = corpus
         self.workspace = Path(workspace)
         self.registry = registry or default_registry()
-        self.extractors = {"native": NativeExtractor(), "text": TextExtractor()}
+        # ! Annotated, not inferred. Two concrete extractor classes join to
+        # `object`, which silently makes `.supports()` and `.version`
+        # unresolvable — the registry is a protocol registry and has to say so.
+        self.extractors: dict[str, Extractor] = {
+            "native": NativeExtractor(),
+            "text": TextExtractor(),
+        }
         self._structurers: dict[str, Structurer] = {}
 
     # -- paths --------------------------------------------------------------
@@ -231,7 +237,7 @@ class Extraction:
             return self.registry.get(configured)
         return self.registry.route(mime=probe.mime, sample=read_sample(path, probe))
 
-    def extractor_for(self, path: Path, probe: Probe):  # noqa: ANN201
+    def extractor_for(self, path: Path, probe: Probe) -> Extractor | None:
         for name in self.corpus.extract.extractors:
             extractor = self.extractors.get(name)
             if extractor and extractor.supports(path, probe):

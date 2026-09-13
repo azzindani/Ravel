@@ -58,7 +58,8 @@ def _unit(vector: np.ndarray) -> np.ndarray:
     matrix = np.atleast_2d(np.asarray(vector, dtype=np.float32))
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     np.maximum(norms, 1e-12, out=norms)
-    return matrix / norms
+    unit: np.ndarray = matrix / norms
+    return unit
 
 
 def corpus_centroid(vectors: np.ndarray) -> np.ndarray:
@@ -67,12 +68,14 @@ def corpus_centroid(vectors: np.ndarray) -> np.ndarray:
     Kept beside a written anchor rather than used as one — see the module docstring.
     """
     matrix = _unit(vectors)
-    return _unit(matrix.mean(axis=0))[0]
+    centroid: np.ndarray = _unit(matrix.mean(axis=0))[0]
+    return centroid
 
 
 def similarities(anchors: np.ndarray, queries: np.ndarray) -> np.ndarray:
     """Best anchor similarity per query. `(n_queries,)`, cosine, in [-1, 1]."""
-    return (_unit(queries) @ _unit(anchors).T).max(axis=1)
+    best: np.ndarray = (_unit(queries) @ _unit(anchors).T).max(axis=1)
+    return best
 
 
 @dataclass(frozen=True, slots=True)

@@ -54,12 +54,23 @@ _OPERATIVE = re.compile(r"^\s*(PASAL|ARTICLE|ARTIKEL)\b", re.IGNORECASE)
 
 # Indonesian legal-obligation vocabulary. Density of these is the readable half of
 # `completeness`: a whole provision states an obligation, a fragment usually does not.
-_LEGAL_TERMS = frozenset([
-    "wajib", "dilarang", "berhak", "dapat", "harus", "tidak", "sanksi", "pidana", "denda",
-    "ketentuan", "peraturan", "pasal", "ayat", "huruf", "dimaksud", "berlaku",
-    "ditetapkan", "menetapkan", "mengatur", "kewajiban", "larangan", "hak", "izin",
-    "persetujuan", "penyelenggaraan", "pelaksanaan"
-])
+#
+# ! Written as one string and split, not as a list of 26 quoted items. `ruff format`
+# explodes a list literal to one element per line, which turns a readable vocabulary into
+# 28 lines of scrolling and makes adding a word a six-line diff. A word list is data; this
+# is the shape that survives the formatter and still reads like one.
+#
+# ! `noqa: SIM905` because ruff's two halves disagree here and the choice is deliberate:
+# the linter wants a list literal, and the formatter would then explode that literal to one
+# word per line. Following the linter loses the readability the formatter would then charge
+# for. The vocabulary stays a sentence.
+_LEGAL_TERMS = frozenset(
+    (  # noqa: SIM905
+        "wajib dilarang berhak dapat harus tidak sanksi pidana denda ketentuan "
+        "peraturan pasal ayat huruf dimaksud berlaku ditetapkan menetapkan mengatur "
+        "kewajiban larangan hak izin persetujuan penyelenggaraan pelaksanaan"
+    ).split()
+)
 _WORD = re.compile(r"(?u)\b\w\w+\b")
 
 
@@ -147,9 +158,7 @@ def _completeness(body: str, *, min_chars: int = 40, full_at: int = 400) -> tupl
     """
     text = body.strip()
     words = _WORD.findall(text.lower())
-    density = (
-        sum(1 for w in words if w in _LEGAL_TERMS) / len(words) if words else 0.0
-    )
+    density = sum(1 for w in words if w in _LEGAL_TERMS) / len(words) if words else 0.0
     # ! Below the indexable floor, completeness is zero outright — density cannot lift
     # it. Capping density was not enough: "wajib dilarang" is 14 characters and 100%
     # legal terms, and scored 0.3 on density alone until a test asserted otherwise. A

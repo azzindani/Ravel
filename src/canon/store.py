@@ -189,8 +189,11 @@ def _doc(row: dict[str, Any]) -> CanonicalDoc:
                 "warnings": row["warnings"] or [],
             },
             "blocks": [
-                {**b, "attrs": json.loads(b["attrs"] or "{}"),
-                 "bbox": tuple(b["bbox"]) if b["bbox"] else None}
+                {
+                    **b,
+                    "attrs": json.loads(b["attrs"] or "{}"),
+                    "bbox": tuple(b["bbox"]) if b["bbox"] else None,
+                }
                 for b in row["blocks"] or []
             ],
             "tables": [
@@ -198,8 +201,11 @@ def _doc(row: dict[str, Any]) -> CanonicalDoc:
                 for t in row["tables"] or []
             ],
             "assets": [
-                {**a, "recipe": json.loads(a["recipe"] or "{}"),
-                 "bbox": tuple(a["bbox"]) if a["bbox"] else None}
+                {
+                    **a,
+                    "recipe": json.loads(a["recipe"] or "{}"),
+                    "bbox": tuple(a["bbox"]) if a["bbox"] else None,
+                }
                 for a in row["assets"] or []
             ],
         }
@@ -214,7 +220,7 @@ def write_shard(docs: Iterable[CanonicalDoc], path: str, *, compression: str = "
     """Write one shard. Returns the row count."""
     table = to_table(docs)
     pq.write_table(table, path, compression=compression)
-    return table.num_rows
+    return int(table.num_rows)
 
 
 def read_shard(path: str) -> list[CanonicalDoc]:

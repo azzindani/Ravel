@@ -151,7 +151,7 @@ def write_vectors(
         schema=schema,
     )
     pq.write_table(table, str(path), compression="zstd")
-    return table.num_rows
+    return int(table.num_rows)
 
 
 DOMAIN_SCHEMA = pa.schema(
@@ -181,7 +181,7 @@ def write_domains(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
     ]
     table = pa.Table.from_pylist(materialised, schema=DOMAIN_SCHEMA)
     pq.write_table(table, str(path), compression="zstd")
-    return table.num_rows
+    return int(table.num_rows)
 
 
 CLUSTER_SCHEMA = pa.schema(
@@ -234,7 +234,7 @@ def write_clusters(
         schema=CLUSTER_SCHEMA,
     )
     pq.write_table(table, str(path), compression="zstd")
-    return table.num_rows
+    return int(table.num_rows)
 
 
 EDGE_SCHEMA = pa.schema(
@@ -266,7 +266,7 @@ def write_edges(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
     """
     table = pa.Table.from_pylist(list(rows), schema=EDGE_SCHEMA)
     pq.write_table(table, str(path), compression="zstd")
-    return table.num_rows
+    return int(table.num_rows)
 
 
 SIGNAL_SCHEMA = pa.schema(
@@ -292,7 +292,7 @@ def write_signals(path: str | Path, rows: Iterable[tuple[str, dict[str, Any]]]) 
         schema=SIGNAL_SCHEMA,
     )
     pq.write_table(table, str(path), compression="zstd")
-    return table.num_rows
+    return int(table.num_rows)
 
 
 # -- the bundle itself --------------------------------------------------------------------
@@ -449,7 +449,8 @@ def read_bundle(root: Path) -> dict[str, Any]:
             f"{root} has no manifest.json — it is an unsealed or abandoned build "
             f"directory, not a bundle"
         )
-    return json.loads(path.read_text(encoding="utf-8"))
+    document: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return document
 
 
 def iter_vectors(

@@ -257,9 +257,7 @@ def test_a_carried_lead_in_stays_traceable_to_its_block(regulation: CanonicalDoc
     """! The debugging path must not break exactly where it is most needed. A reader
     questioning the first sentence of a chunk has to be able to find the block it came
     from, and a carried lead-in is not in the chunk's own block group."""
-    lead_block = next(
-        b for b in regulation.blocks if b.text.startswith("Dalam Peraturan ini")
-    )
+    lead_block = next(b for b in regulation.blocks if b.text.startswith("Dalam Peraturan ini"))
     ayat = next(c for c in build(regulation) if c.locator_section == "Pasal 1 ayat (1)")
 
     assert lead_block.id in ayat.block_ids

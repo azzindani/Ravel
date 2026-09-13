@@ -97,9 +97,7 @@ def test_tokeniser_drift_is_refused_not_absorbed(bm25: Bm25Vectorizer, tmp_path)
     match the corpus — the same class of failure as the unapplied instruction."""
     path = tmp_path / "bm25.json"
     bm25.save(path)
-    drifted = path.read_text(encoding="utf-8").replace(
-        r"\\b\\w\\w+\\b", r"\\S+"
-    )
+    drifted = path.read_text(encoding="utf-8").replace(r"\\b\\w\\w+\\b", r"\\S+")
     path.write_text(drifted, encoding="utf-8")
 
     with pytest.raises(TokeniserDrift, match="would not match"):
@@ -172,9 +170,10 @@ def test_temporal_is_reproducible_rather_than_wall_clock(profile) -> None:
     b = compute_factors(profile=profile, body="x" * 500, year=2000, now=2026)
 
     assert a.temporal == b.temporal
-    assert a.temporal > compute_factors(
-        profile=profile, body="x" * 500, year=1980, now=2026
-    ).temporal
+    assert (
+        a.temporal
+        > compute_factors(profile=profile, body="x" * 500, year=1980, now=2026).temporal
+    )
 
 
 def test_an_annex_ranks_below_an_operative_article(profile) -> None:

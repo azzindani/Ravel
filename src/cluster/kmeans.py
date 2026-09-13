@@ -134,7 +134,8 @@ def _normalise(matrix: np.ndarray) -> np.ndarray:
     # A zero vector has no direction. Leave it at the origin rather than dividing by zero
     # and producing NaN, which would poison every centroid it ever touched.
     np.maximum(norms, 1e-12, out=norms)
-    return matrix / norms
+    unit: np.ndarray = matrix / norms
+    return unit
 
 
 def _closest(

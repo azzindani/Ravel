@@ -16,8 +16,24 @@ from canon.store import iter_shard, read_shard, write_shard
 from canon.validate import Issue, Severity, is_valid, validate
 
 __all__ = [
-    "CANON_VERSION", "Asset", "Block", "BlockType", "CanonicalDoc", "Cell",
-    "Extraction", "Source", "Table", "Issue", "Severity", "is_valid", "validate",
-    "parse_blocks", "render_block", "render_blocks", "render_table",
-    "iter_shard", "read_shard", "write_shard",
+    "CANON_VERSION",
+    "Asset",
+    "Block",
+    "BlockType",
+    "CanonicalDoc",
+    "Cell",
+    "Extraction",
+    "Source",
+    "Table",
+    "Issue",
+    "Severity",
+    "is_valid",
+    "validate",
+    "parse_blocks",
+    "render_block",
+    "render_blocks",
+    "render_table",
+    "iter_shard",
+    "read_shard",
+    "write_shard",
 ]

@@ -62,9 +62,7 @@ def built(tmp_path: Path) -> tuple[Path, np.ndarray]:
     writer.record("chunks/part-00000.parquet", rows)
 
     matrix = np.random.default_rng(0).normal(size=(3, DIM)).astype(np.float32)
-    rows = write_vectors(
-        writer.shard_path("vectors", 0), ["c0", "c1", "c2"], matrix, dim=DIM
-    )
+    rows = write_vectors(writer.shard_path("vectors", 0), ["c0", "c1", "c2"], matrix, dim=DIM)
     writer.record("vectors/part-00000.parquet", rows)
     writer.write_reference(matrix[0], "Pasal 1")
     writer.write_failed([])
@@ -351,9 +349,7 @@ def test_the_stamped_recipe_carries_the_fields_corpus_meta_was_missing(built) ->
     """`padding_side` and the three instruction columns — the two places Ravel's manifest
     is deliberately stricter than the table it was modelled on."""
     root, _ = built
-    stamp = next(
-        s for s in load_plan(read_bundle(root), root) if s.name == "stamp corpus_meta"
-    )
+    stamp = next(s for s in load_plan(read_bundle(root), root) if s.name == "stamp corpus_meta")
 
     for column in (
         "dense_padding_side",

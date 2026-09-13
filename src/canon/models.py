@@ -35,7 +35,8 @@ def _as_float32(value: float) -> float:
     drift between memory and disk is the kind of difference that surfaces later as
     an unexplainable test failure.
     """
-    return struct.unpack("f", struct.pack("f", value))[0]
+    rounded: float = struct.unpack("f", struct.pack("f", value))[0]
+    return rounded
 
 
 Confidence = Annotated[float, Field(ge=0.0, le=1.0), AfterValidator(_as_float32)]

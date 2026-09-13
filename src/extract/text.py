@@ -146,9 +146,7 @@ def _markdown_blocks(raw: str, builder: BlockBuilder) -> None:
             previous = builder.blocks[-1]
             if previous.type is BlockType.PARAGRAPH:
                 builder.blocks.pop()
-                builder.add(
-                    BlockType.HEADING, previous.text, level=1 if "=" in line else 2
-                )
+                builder.add(BlockType.HEADING, previous.text, level=1 if "=" in line else 2)
             continue
         if m := MD_HEADING.match(text):
             builder.add(BlockType.HEADING, normalize(m.group(2)), level=len(m.group(1)))

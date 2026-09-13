@@ -61,6 +61,11 @@ class PreflightReport:
 
 
 class _Embeds(Protocol):
+    spec: EmbedderSpec
+    """! Part of the protocol, because `preflight` reads it. An embedder that
+    cannot say what space it produces cannot be checked against one, and the
+    whole point of this module is that the recipe travels with the vectors."""
+
     def embed_documents(self, batch: list[str]) -> Any: ...
     def embed_queries(self, batch: list[str]) -> Any: ...
 
@@ -211,11 +216,13 @@ def preflight(
     checks.append(("instruction is applied (build side)", ok, detail))
 
     if allow_same_backend:
-        checks.append((
-            "backends are independent",
-            True,
-            "skipped by allow_same_backend — this run does not certify the vector space",
-        ))
+        checks.append(
+            (
+                "backends are independent",
+                True,
+                "skipped by allow_same_backend — this run does not certify the vector space",
+            )
+        )
     else:
         ok, detail = check_independent_backends(build, query)
         checks.append(("backends are independent", ok, detail))

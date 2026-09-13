@@ -182,9 +182,7 @@ def test_sealing_refuses_more_chunks_than_vectors(tmp_path: Path) -> None:
     writer = bundle(tmp_path, chunk_count=3)
     rows = write_chunks(chunks(3), str(writer.shard_path("chunks", 0)))
     writer.record("chunks/part-00000.parquet", rows)
-    rows = write_vectors(
-        writer.shard_path("vectors", 0), ["c0", "c1"], vectors(2), dim=DIM
-    )
+    rows = write_vectors(writer.shard_path("vectors", 0), ["c0", "c1"], vectors(2), dim=DIM)
     writer.record("vectors/part-00000.parquet", rows)
 
     with pytest.raises(BundleLayoutError, match="would drop the difference"):

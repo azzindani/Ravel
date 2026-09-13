@@ -164,9 +164,7 @@ def test_text_search_config_is_carried_not_assumed() -> None:
     """! `indonesian`, not `simple`. Indonesian is heavily affixed — `dikenakan` and
     `dikenai` are one word inflected, and `simple` indexes them as unrelated terms."""
     assert "to_tsvector('indonesian', body)" in render_schema(manifest())
-    assert "to_tsvector('simple', body)" in render_schema(
-        manifest(text_search_config="simple")
-    )
+    assert "to_tsvector('simple', body)" in render_schema(manifest(text_search_config="simple"))
 
 
 def test_padding_side_reaches_the_schema() -> None:
