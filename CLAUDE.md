@@ -234,7 +234,9 @@ parsing as a stateless service.
 - [x] Extractor: native PDF text + HTML/markdown/plain, profile-driven structuring
 - [ ] Extractor fallbacks: OCR, SmolDocling, table extraction
 - [x] Chunker registry + profile-driven `unit` chunker with provenance
-- [ ] Embedder plugin interface + local (transformers/vLLM) + API implementations
+- [x] Text-layer quality gate: clean/damaged/absent routing — `src/extract/quality.py`
+- [x] URI substrate (`file://`, `hf://`, `s3://`) — `src/uris.py`
+- [~] Embedder plugin interface + manifest + preflight — `src/embed/`; local (transformers/vLLM) and API backends still to write
 - [ ] Bundle writer: parquet shards + manifest + generated schema
 - [ ] Clustering: domain anchors, k-means, assignment, generation stamping
 - [ ] Loader: preflight, `COPY`, post-load verification

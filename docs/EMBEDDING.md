@@ -28,6 +28,31 @@ class Embedder(Protocol):
     def embed_documents(self, batch: list[Input]) -> np.ndarray: ...
 ```
 
+**Implemented in `src/embed/`.** Three pieces, and the shape of each is a direct answer
+to `ABSORPTION.md` §11:
+
+- `spec.py` — `EmbedderSpec` is the manifest, and it **refuses to hold the defect**: an
+  instruction string supplied with `instruction_style='none'` raises, because that is
+  precisely an instruction that exists and is never applied. `fingerprint()` covers every
+  field that changes a vector, so `padding_side` moving invalidates a cache the way a
+  model change does.
+- Rendering is a **pure function**, `render_document` / `render_query`, not a method an
+  implementation may forget to call. The incumbent's seam was
+  `def prepare_texts(self, contents): return contents` — a hook for exactly this,
+  implemented as a pass-through. An embedder that does not route through the renderer
+  produces vectors that fail the round trip.
+- `preflight.py` — `check_instruction_is_applied` asserts the invariant rather than
+  replaying the construction (`CLAUDE.md` §15): if the manifest declares an instruction,
+  the rendered input must differ from the raw text. `preflight()` runs that, the spec
+  comparison, and the cosine round trip, and **skips the round trip rather than faking it**
+  when the specs already disagree — comparing vectors across two spaces produces a number,
+  and reporting it as a cosine result is worse than reporting nothing.
+
+`hashing.py` provides a deterministic embedder seeded from SHA-256, so the plugin
+boundary, the manifest and the preflight are all testable with no GPU, no download and no
+network — alongside `RawHashEmbedder`, which is the incumbent's bug preserved as a fixture
+so the check cannot quietly become unfalsifiable.
+
 Two implementations to start:
 
 - **Local** — transformers or vLLM on whatever GPU is available. Used for bulk corpus
