@@ -37,8 +37,18 @@ cheap router picks per document (and, for PDFs, per page):
 
 - **Native** — PyMuPDF/docx/html text extraction. Milliseconds, no GPU. Correct for
   born-digital documents where the text layer is trustworthy. **Measured at 92% of the
-  ID regulation corpus** (`ABSORPTION.md` §10), so this is the main path, not a
+  ID regulation corpus** (`ABSORPTION.md` §9), so this is the main path, not a
   fallback.
+
+  > **The probe must test quality, not only coverage.** "Has a text layer" and "has a
+  > text layer worth using" are different questions, and only the first one is free.
+  > Measured over 300 source PDFs (`ABSORPTION.md` §16): 80.3% clean, **13.3% carry a
+  > text layer that is fully present and damaged**, 6.3% have none. A coverage-only gate
+  > — which is what `native_text_ratio` is — waves that 13.3% straight through, and they
+  > are the documents that fail silently, because a damaged text layer extracts without
+  > error. The probe therefore scores the extracted text as well as counting it: control
+  > characters, U+FFFD, and runs of 25+ letters with no space were the three signatures
+  > that separated the classes, and the third was the most common (8.7%).
 - **SmolDocling** — the default for anything where structure matters. It detects
   headings, subheadings, lists and tables and emits markdown, which is exactly the
   canonical format's shape. This is the reason the pipeline can chunk on legal units at

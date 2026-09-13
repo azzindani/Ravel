@@ -11,8 +11,16 @@ It added §§10–14, put the two sections that were numbered out of order back 
 and added four rows to §3. It also closes `OPEN_QUESTIONS.md` on the encoder. Two findings change plans rather than decorate them: the embedding run that
 produced the incumbent's vectors **never applied its instruction** (§11), and the
 labelled eval set this project is measured against **does not exist in any form** (§13).
+**Third pass, same day**, over the 547 archived notebooks and the extraction outputs
+themselves. It added §§15–17 and **corrected two of its own earlier verdicts** (§17): the
+NER notebooks are not NER, and the claim that nothing legal existed anywhere was too
+strong. Its main result is §15 — the corpus's character damage is self-inflicted, by an
+extractor configured to re-OCR pages it did not need to read, with every error channel
+deliberately disabled.
+
 Everything below is counted, not recalled; the queries are reproducible against
-`Vera/.test/ID_REG_DB_2511/id_regulations.db` and the parquet files named in §5.
+`Vera/.test/ID_REG_DB_2511/id_regulations.db`, the parquet files named in §5, and the 998
+source PDFs.
 
 ---
 
@@ -263,7 +271,7 @@ empty. The graph was built per-chunk; the *graph* part never closed.
 | `00_ID_REG_Parser_v1.ipynb` | **port the hierarchy, replace the metadata** | `ravel/chunk/id_regulation` | pasal/ayat/huruf + `full_reference` is right; the PMK-only regex is the bug |
 | `core/knowledge_graph/kg_core.py` | **port selectively** | `ravel/enrich/legal/` | entity + cross-ref extraction with positions and confidence; leave the ranking/boosting behind (that is Vera's job) |
 | `document_parser/extractors/*` (8) | **reference the shape, rewrite** | `ravel/extract/` | clean ABC, but `extract() → {text, page_count, metadata, method}` is far too thin for the canonical format — no blocks, no bbox, no reading order |
-| `notebooks/ner/*.ipynb` (v1–v4) | **evaluate, then port one** | `ravel/enrich/ner/` | four iterations; v4 is the candidate, but check what v1–v3 handled that it dropped |
+| `notebooks/ner/*.ipynb` (v1–v4) | ~~evaluate, then port one~~ → **drop the task, keep the concurrency** | `ravel/runtime/` | Corrected by the third pass (§17). All four run `pipeline("zero-shot-classification")` with ModernBERT-base over the **BBC News** dataset — English, general-domain, and **not NER at all**. There is nothing here to port into `enrich/ner`. The `ConcurrentGPUClassifier` (thread-local pipelines, double-checked locking) is real and belongs in the runtime; `bert-base-indonesian-NER` (§10) is the actual NER candidate |
 | `notebooks/preprocess/*` | **port as cleanups** | `ravel/extract/cleanup/` | spell correction, markdown formatting, dataset filter |
 | `00_ID_REG_Clean_v1.ipynb` | **port with review** | `ravel/extract/cleanup/` | `reorder_pasal1_definitions` is a genuinely smart domain rule |
 | `00_ID_REG_Parser_v2.ipynb` | **drop** | — | PMK-hardcoded, plus the `r`-deletion landmine (§4) |
@@ -456,8 +464,16 @@ They are not one, and anyone starting there loses a day:
 | prompt | `"Generate a question related to: {context}"` | — |
 | output on disk | — | `data/` is **empty** |
 
-No Indonesian content, no legal content, no reviewed labels, and no surviving output.
-Searching the rest of the workspace for a legal question set found nothing either.
+No Indonesian content, no reviewed labels, and no surviving output.
+
+**Corrected by the third pass:** the archives hold a third generator,
+`00_Archived_Colab/04_QAI_Generation_From_Corpus_GPU_v1.ipynb`, and it *is* pointed at a
+legal corpus — `joelniklaus/legal_case_document_summarization`, which is **English-language
+case-law summarisation, with `.select(range(2))`**. So the earlier claim that nothing legal
+exists anywhere was too strong; what exists is two rows of the wrong jurisdiction, in the
+wrong language, for the wrong instrument type. The conclusion is unchanged and the reason
+is worth stating precisely: an eval set for Indonesian *regulations* cannot be bootstrapped
+from case-law summaries, because the query shapes have nothing in common.
 
 This matters more than its size suggests. `EVAL.md` is the mechanism by which a variant is
 promoted, and `MIGRATION.md` §4 step 2 requires the incumbent's score *before* anything
@@ -483,7 +499,158 @@ Recorded so the sweep is not repeated:
 
 ---
 
-## 15. The decision this forces: rebuild or salvage?
+## 15. The corpus was damaged by its own extractor, on purpose, with the alarms off
+
+The third pass went looking for where §3's character damage came from. It is not a
+mystery and it is not the documents' fault. Two lines in
+`notebooks/docling/id-reg-smoldocling-tesseract-v2-rtx3090-16.ipynb`:
+
+```python
+pipeline_options.ocr_options = TesseractCliOcrOptions(
+    force_full_page_ocr=True,
+    lang=["ind"]
+)
+```
+
+`lang=["ind"]` is right, and worth saying so — the Indonesian traineddata is installed
+and selected, which is the single most common way an Indonesian OCR run goes wrong.
+
+**`force_full_page_ocr=True` is the defect.** It rasterises and re-OCRs *every page of
+every document*, including the 92% that §9 measured as already carrying a full text
+layer. The native text was not consulted. What shipped is a photograph of a page that
+could have been read directly.
+
+Verified end to end on eight documents whose extracted markdown contains damage, by
+opening the source PDFs with PyMuPDF:
+
+| Source document | Pages | Native chars | Per page | Had a text layer? |
+|---|---:|---:|---:|---|
+| `2023perbup5103039` | 34 | 103,455 | 3,043 | yes |
+| `2020_PERBUP_KAB._BOYOLALI_72` | 74 | 224,553 | 3,034 | yes |
+| `2022pb3203062__` | 219 | 346,872 | 1,584 | yes |
+| `2023pmkeuangan106` | 6 | 11,246 | 1,874 | yes |
+| `04_Tahun_2005` | 4 | 7,401 | 1,850 | yes |
+| `09._PERBUP__NO__09__THN_2022` | 19 | 28,739 | 1,513 | yes |
+| `22._PERBUP_NO_22__TAHUN_2022` | 13 | 18,220 | 1,402 | yes |
+| `20._PERBUP__NO_20__THN_2022` | 8 | 9,347 | 1,168 | yes |
+
+**Eight for eight.** Side by side on one of them:
+
+```
+native :  PERATURAN BUPATI NOMOR 54 TAHUN 2022 TENTANG PENJABARAN ANGGARAN
+          PENDAPATAN DAN BELANJA DAERAH TAHUN ANGGARAN 2023
+shipped:  PenjabaranAnggaranPendapatandanBelanjaDaerahTahunAnggatan2O23
+```
+
+Every space gone, `r`→`t` in *Anggaran*, and a letter `O` for the digit `0` in the year.
+The native layer was clean. This is the mechanism behind §3's space-loss rows, its
+`UndangUndang` hyphen losses, its `20092008` year collisions and its U+FFFD.
+
+**And the alarms were off.** Immediately above, under a heading that says so:
+
+```python
+# DISABLE ALL DOCLING/TESSERACT LOGGING (INCLUDING ERRORS)
+...
+# Nuclear option - disable ALL loggers related to docling/tesseract/OCR
+for logger_name in logging.root.manager.loggerDict:
+    if any(x in logger_name.lower() for x in ['docling','tesseract','ocr','pdf','pil']):
+        logger.disabled = True
+        logger.propagate = False
+logging.getLogger().setLevel(logging.CRITICAL)
+warnings.filterwarnings('ignore')
+```
+
+Root at CRITICAL, `propagate = False`, warnings suppressed. A run that needlessly OCR'd
+92% of its input, with every channel that could have said so switched off, for 748,558
+rows. Nobody ignored a warning; there was no warning to ignore.
+
+This is the strongest single argument in this document for the things Ravel already
+insists on, and it converts three of them from taste into evidence:
+
+- **`failure_tolerance: 0.15`** in `corpora/id_legal.yaml` is a *measured budget* — a run
+  that exceeds it stops. The opposite of a disabled logger.
+- **`extraction.extractor` recorded per document** (`EXTRACTION.md`) means "how much of
+  this corpus came from OCR" is a query, not an archaeology project. Here it took opening
+  the notebook to find out.
+- **Extract-once-chunk-many** is what makes the fix affordable: this is one re-extraction,
+  not a rebuild of everything downstream of it.
+
+---
+
+## 16. "Has a text layer" is not "has a good text layer"
+
+§9 measured that 92% of documents have a full text layer and concluded the GPU path is
+for one document in twelve. That number is correct and the conclusion drawn from it was
+too generous, because coverage was measured and quality was not.
+
+Re-measured over a random sample of **300 of the 998 source PDFs**, scoring the extracted
+native text rather than merely counting it:
+
+| Class | Share | What it means |
+|---|---:|---|
+| text layer, **clean** | **80.3%** | native extraction is correct and costs milliseconds |
+| text layer, **damaged** | **13.3%** | present, extracts without error, and is wrong |
+| **no** usable text layer | 6.3% | genuinely needs OCR or a VLM |
+
+Damage signatures, overlapping: runs of 25+ letters with no space **8.7%**, control
+characters **5.3%**, U+FFFD 0%.
+
+The middle row is the dangerous one, and it is twice the size of the bottom row. Those
+documents carry a text layer that is *fully present* — often because the PDF was itself
+produced by somebody else's bad OCR years ago — so a coverage gate accepts them. Two of
+the eight documents in §15 are in this class: `22._PERBUP_NO_22__TAHUN_2022` reads
+`NOMOR \x01J.. TAHUN 2022` natively, control character and all, and `04_Tahun_2005` reads
+`RAN DAERAH NOMOR RETRIBUSI PEMER,IKSAAN ALAT PERUBAHAN. PERTAMA ATAS 01 TAHUN 1999
+TEI{TANG` — the words in the wrong order as well as the wrong shape. For those two, OCR
+was not the wrong call; for the other six it was pure loss.
+
+**What this changes.** `corpora/id_legal.yaml` sets `native_text_ratio: 0.9`, and that key
+counts pages with extractable text. It cannot see this. The real routing question is
+three-way, not two-way, and the cheap path is smaller than 92%:
+
+```
+clean text layer  (80.3%) → native, milliseconds
+damaged text layer(13.3%) → OCR/VLM, because the bytes are there and wrong
+no text layer     ( 6.3%) → OCR/VLM
+```
+
+So the expensive path covers **~20% of the corpus, not 8%** — still a minority, still not
+the main path, but two and a half times the budget §9 implied. `EXTRACTION.md` now
+specifies the probe as a quality score, with these three signatures as its basis.
+
+A fourth class surfaced while measuring and is not in the table: PyMuPDF emitted
+`non-page object in page tree` and `cannot find XObject resource` on several files. Structurally
+malformed PDFs are rare enough not to plan around and common enough that the probe must
+not crash on them.
+
+---
+
+## 17. Third pass: corrections to this document, and where it found nothing
+
+Two verdicts from earlier passes were wrong and are struck above rather than quietly
+edited:
+
+1. **§7 on the NER notebooks.** They are not NER. All four iterations run
+   `pipeline("zero-shot-classification")` with ModernBERT-base over `bbc_news_alltime` —
+   English, general-domain topic labelling, with `category_hierarchy.csv` and a set of
+   `bbc_news_*.csv` outputs beside them. "Evaluate, then port one" pointed at work that
+   does not do the job it was credited with. What survives is the concurrency harness.
+2. **§13 on the eval set.** The claim that no legal question generator exists anywhere
+   was too strong; one does, over English case law, two rows deep. Corrected in place.
+
+Newly surveyed, nothing to absorb:
+
+| Area | Verdict |
+|---|---|
+| `00_Archived_Colab` · `_Local` · `_Kaggle` (547 notebooks) | Overwhelmingly fine-tuning (GRPO/PEFT/Unsloth legal LoRAs, 13 versions of one experiment) and one-off dashboards. Out of scope, and the ID_REG-relevant ones are superseded by the `notebooks/docling` versions already surveyed. |
+| `00_Archived_Colab/{PDF_Extractor,PDF_OCR_Extractor,LLM_PDF_OCR_Extractor_v1,v2,Table_Extractor}` | Early extraction prior art, all PyPDF2/pytesseract/pdf2image — superseded by the docling harness. **One thing worth keeping:** they install `tesseract-ocr-ind` and `ocrmypdf`. The first is the Indonesian traineddata (§15 confirms the docling runs use it too); the second adds a text layer to a scan in-place on CPU, which is a cheaper option for §16's bottom 6.3% than a VLM, and worth measuring before reaching for the GPU. |
+| `00_Archived_Colab/Indonesian_Regulation_Data_Preprocess_v1` | PyPDF2 + zipfile + thread pool over the regulation zips. The shape Ravel already has in `runtime/`, with a weaker PDF library. |
+| `21_Lab_NER` (4 notebooks + 6 CSVs) | See correction 1 above. |
+| `20_Lab_Synthetic_Dataset`, `10_Dataset_Kaggle`, `50_*`, `60_Benchmark_LLM` | Fine-tuning, quantisation, model merging, LLM benchmarks. Out of scope, unchanged. |
+
+---
+
+## 18. The decision this forces: rebuild or salvage?
 
 **Both, in this order.**
 
