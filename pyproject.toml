@@ -56,7 +56,7 @@ build-backend = "hatchling.build"
 packages = [
     "src/canon", "src/sources", "src/extract", "src/chunk", "src/enrich",
     "src/embed", "src/cluster", "src/bundle", "src/load", "src/runtime",
-    "src/variants", "src/mcp_server", "src/service",
+    "src/variants", "src/evaluate", "src/mcp_server", "src/service",
 ]
 only-include = ["src"]
 sources = ["src"]

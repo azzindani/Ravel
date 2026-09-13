@@ -33,10 +33,14 @@ canon_app = typer.Typer(help="Inspect and validate canonical documents.", no_arg
 sources_app = typer.Typer(help="Discover and hash source documents.", no_args_is_help=True)
 profiles_app = typer.Typer(help="Inspect the document profile registry.", no_args_is_help=True)
 bundle_app = typer.Typer(help="Inspect and verify corpus bundles.", no_args_is_help=True)
+eval_app = typer.Typer(help="Labeled sets and variant scoring.", no_args_is_help=True)
+variants_app = typer.Typer(help="Variant configurations and cache keys.", no_args_is_help=True)
 app.add_typer(canon_app, name="canon")
 app.add_typer(sources_app, name="sources")
 app.add_typer(profiles_app, name="profiles")
 app.add_typer(bundle_app, name="bundle")
+app.add_typer(eval_app, name="eval")
+app.add_typer(variants_app, name="variants")
 
 WORKSPACE = Annotated[Path, typer.Option("--workspace", "-w", help="Where artifacts go.")]
 CorpusArg = Annotated[str, typer.Argument(help="Corpus id from corpora/.")]
@@ -335,6 +339,94 @@ def status(corpus_id: CorpusArg, workspace: WORKSPACE = Path(".")) -> None:
 
 
 BundleArg = Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)]
+QueriesArg = Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)]
+
+
+@eval_app.command("check")
+def eval_check(
+    queries_path: QueriesArg,
+    holdout: Annotated[
+        float, typer.Option("--holdout", help="Share to reserve from sweeps.")
+    ] = 0.2,
+) -> None:
+    """Validate a labeled set before it is used to decide anything.
+
+    The set is the only ground truth this project has, and it is the cheapest thing to get
+    wrong. Exits non-zero if it is too small or its composition has drifted — both of
+    which change what the headline number means without changing how it looks.
+    """
+    from evaluate import QuerySet, check_composition, check_size
+
+    queries = QuerySet.load(queries_path)
+    sweep, held = queries.split(holdout=holdout)
+
+    table = RichTable(show_header=False, box=None)
+    table.add_row("queries", f"{len(queries):,}")
+    table.add_row("version", queries.version)
+    for kind, count in queries.composition().items():
+        share = count / len(queries) if len(queries) else 0.0
+        table.add_row(f"  {kind}", f"{count:,}  [dim]{share:.0%}[/dim]")
+    table.add_row("sweep / holdout", f"{len(sweep):,} / {len(held):,}")
+    out.print(table)
+
+    failed = False
+    for ok, detail in (check_size(queries), check_composition(queries)):
+        if ok:
+            out.print(f"[green]ok  [/green] {detail}")
+        else:
+            err.print(f"[red]FAIL[/red] {detail}")
+            failed = True
+    if failed:
+        raise typer.Exit(1)
+
+
+@variants_app.command("plan")
+def variants_plan(
+    corpus_id: CorpusArg,
+    workspace: WORKSPACE = Path("."),
+) -> None:
+    """Show the corpus's default variant, its cache keys, and what each stage costs.
+
+    The keys are the reuse policy: two variants sharing a key share that stage's artifacts,
+    and nothing else may (`VARIANTS.md` §4).
+    """
+    from variants import STAGES, VariantSpec
+
+    spec = CorpusSpec.find(corpus_id)
+    variant = VariantSpec(
+        corpus_id=spec.id,
+        name="default",
+        config={
+            "extract": {
+                "profile": spec.extract.profile,
+                "extractors": list(spec.extract.extractors),
+                "native_text_ratio": spec.extract.native_text_ratio,
+            },
+            "chunk": {
+                "chunker": spec.chunk.chunker,
+                "max_tokens": spec.chunk.max_tokens,
+                "min_tokens": spec.chunk.min_tokens,
+            },
+            "enrich": {},
+            "embed": {},
+            "cluster": {},
+        },
+    )
+
+    table = RichTable(show_header=True, header_style="bold")
+    table.add_column("stage")
+    table.add_column("key")
+    table.add_column("parameters", overflow="fold")
+    for stage in STAGES:
+        params = variant.config[stage]
+        table.add_row(
+            stage,
+            f"[dim]{variant.stage_key(stage)}[/dim]",
+            "  ".join(f"{k}={v}" for k, v in params.items()) or "[dim]—[/dim]",
+        )
+    out.print(f"[bold]{spec.id}[/bold] / {variant.name}  [dim]{variant.config_hash}[/dim]")
+    out.print(table)
+    out.print(f"[dim]{workspace.resolve()}[/dim]")
 
 
 @bundle_app.command("show")

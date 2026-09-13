@@ -241,8 +241,8 @@ parsing as a stateless service.
 - [x] Clustering: anchors, spherical k-means, streamed assignment, generations — `src/cluster/`
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
 - [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`; NER still to build
-- [ ] Variant harness: config hashing, matrix runs, cache reuse
-- [ ] Eval: labeled ID regulation set; score and promote a variant
+- [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
+- [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`; the labeled set itself still to import and review
 - [ ] MCP server: parser authoring tools (inspect, preview, diff, save)
 - [ ] HTTP service + two Docker images (`ravel-job`, `ravel-service`)
 - [ ] Remote URI backends: R2 working state, HF datasets for published bundles
