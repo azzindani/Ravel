@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Ravel workspace artifacts — never in git (BUNDLE.md, EXECUTION.md).
+#
+# ! Anchored with a leading slash, deliberately. Unanchored, `canon/` and
+# `sources/` match at ANY depth and would silently exclude the `src/canon/` and
+# `src/sources/` packages — a repository missing its own source, with no error.
+/sources/
+/canon/
+/work/
+/bundles/
+/state/
+/registry-local/
+
+*.parquet
+*.db
+*.sqlite3
