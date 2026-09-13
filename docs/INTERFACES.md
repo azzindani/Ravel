@@ -123,6 +123,32 @@ With `fsspec`, every stage takes URIs, so `hf://`, `s3://` and `file://` are the
 path. Hybrid is then not a mode — it is just different URIs per stage: sources local,
 canon on R2, bundles on HF.
 
+**Implemented in `src/uris.py`**, whose whole job is to make the sentence above true;
+`tools/structure_eval.py` is the first consumer and takes a URI where it used to take a
+`Path`:
+
+```
+python tools/structure_eval.py sources/id_legal                          # full local
+python tools/structure_eval.py hf://datasets/Azzindani/ID_REG --cache-dir .cache   # hybrid
+python tools/structure_eval.py s3://bucket/sources --limit 300           # cloud to cloud
+```
+
+Two details in there are correctness, not convenience, and both are covered by
+`tests/test_uris.py`:
+
+- **A local file is yielded where it lies and never copied.** Otherwise `file://` becomes
+  the slowest way to read a 5 GB corpus, and every local run goes back to raw paths —
+  which is how an abstraction like this actually dies.
+- **Listings are sorted before they are sampled.** Object stores promise nothing about
+  listing order, and callers sample with a seeded shuffle so a measurement can be
+  repeated. Unsorted, the same `--seed` selects different documents on `hf://` than on
+  `file://`, and the local and cloud runs cannot be compared — which is the comparison
+  the URI support exists to enable.
+
+Remote reads are materialised one document at a time and released, so memory and disk stay
+bounded regardless of corpus size; `--cache-dir` keeps them instead, which is what makes a
+resumed cloud job cheap (`EXECUTION.md` §4).
+
 **Storage correction (supersedes the earlier `ARCHITECTURE.md` §4 sketch):** canonical
 documents are stored as **parquet shards, one row per document**, not one JSON file each.
 HF datasets and object stores both handle millions of small files badly — listing is slow,

@@ -158,6 +158,28 @@ MCP authoring tools (`INTERFACES.md` §2) wrap this same loop for an agent.
 5. Run `profiles try` over the collected lines; every near-miss must classify as `None`.
 6. Add the near-misses to `tests/test_profiles.py` — they are corpus regressions, and
    they are the reason a future edit will not quietly undo this work.
+7. Run the false-positive guard: `pytest -m samples`.
+
+### The false-positive guard
+
+Step 5 checks near-misses you thought of. `tests/test_routing_samples.py` checks the ones
+you did not, against **158 real PDFs of which 144 are not regulations** — contracts,
+resumes, invoices, US federal documents, exchange filings. None of them may route to
+`id_regulation`; the Indonesian ones must.
+
+This is the half of routing that fails silently. Widening `match.content` produces no
+error and no crash — it produces a *plausible* parse of a document the profile should
+never have seen, and `identity.title` then trusts whatever it extracted from it. A résumé
+routed to `id_regulation` yields a chunk claiming to be `Pasal 3` of something.
+
+The guard is calibrated, not decorative: adding one generic pattern —
+`'(?i)(agreement|pursuant to|whereas)'` — to `match.content` still compiles, still passes
+every test in `test_profiles.py`, still routes all the Indonesian documents correctly,
+**and fails 53 of these**. That is the margin it protects.
+
+It is marked `samples` and excluded from the default suite, because it reads real PDFs and
+needs the `extract` extra; the hermetic suite stays under four seconds so it keeps being
+run. `ABSORPTION.md` §12 is the near-miss that motivated it.
 
 ---
 

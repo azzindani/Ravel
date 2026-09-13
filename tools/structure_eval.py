@@ -16,7 +16,17 @@ still worth seeing stated.
 a structurer that hallucinates or drops headings produces gaps and repeats. Nothing
 in either arm optimizes for this, so both arms can be compared on it fairly.
 
-    python tools/structure_eval.py <dir-of-pdfs> [--limit 50]
+    python tools/structure_eval.py <uri-of-pdfs> [--limit 50]
+
+`<uri>` is a URI, so the same command measures a local directory, a Hugging Face
+dataset or an S3/R2 bucket without changing (`INTERFACES.md` §5):
+
+    python tools/structure_eval.py sources/id_legal
+    python tools/structure_eval.py hf://datasets/Azzindani/ID_REG --cache-dir .cache
+    python tools/structure_eval.py s3://bucket/sources --limit 300
+
+Remote documents are fetched one at a time and discarded, unless `--cache-dir` is
+given, which turns the fetch into a cache a resumed run reuses.
 """
 
 from __future__ import annotations
@@ -37,6 +47,7 @@ from canon import BlockType, CanonicalDoc  # noqa: E402
 from extract import ExtractionFailed, NativeExtractor, probe  # noqa: E402
 from extract.structure import Structurer  # noqa: E402
 from spec import default_registry  # noqa: E402
+from uris import as_local_path, find  # noqa: E402
 
 PASAL_NUMBER = re.compile(r"^PASAL\s+(\d+)", re.I)
 
@@ -143,18 +154,23 @@ class Arm:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("root", type=Path)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("root", help="URI of the documents: a path, hf://, s3://, file://")
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--profile", default="id_regulation")
+    ap.add_argument(
+        "--cache-dir",
+        default=None,
+        help="keep fetched remote documents here instead of discarding them",
+    )
     args = ap.parse_args()
 
-    # ! dict.fromkeys, not list +. Windows globbing is case-insensitive, so
-    # "**/*.pdf" already returns the .PDF files; concatenating the uppercase glob
-    # double-counts them and silently halves the effective sample size.
-    found = sorted(args.root.glob("**/*.pdf")) + sorted(args.root.glob("**/*.PDF"))
-    pdfs = list(dict.fromkeys(found))
+    # Case variants and ordering are both handled in `uris.find`, and both are
+    # correctness issues rather than tidiness — see the notes there.
+    fs, pdfs = find(args.root)
     random.Random(args.seed).shuffle(pdfs)
     pdfs = pdfs[: args.limit]
     if not pdfs:
@@ -175,17 +191,21 @@ def main() -> int:
     scanned = pages = failures = 0
     t0 = time.time()
 
-    for path in pdfs:
-        p = probe(path)
-        pages += p.pages or 0
-        if p.text_ratio < 0.9:
-            scanned += 1
-            continue
-        try:
-            doc = extractor.extract(path, title=path.stem)
-        except ExtractionFailed:
-            failures += 1
-            continue
+    for entry in pdfs:
+        # Local files yield in place and cost nothing; remote ones are fetched here and
+        # released at the end of the block, so memory and disk stay bounded at one
+        # document regardless of how large the corpus is.
+        with as_local_path(fs, entry, cache_dir=args.cache_dir) as path:
+            p = probe(path)
+            pages += p.pages or 0
+            if p.text_ratio < 0.9:
+                scanned += 1
+                continue
+            try:
+                doc = extractor.extract(path, title=path.stem)
+            except ExtractionFailed:
+                failures += 1
+                continue
         typography.score(doc)
         pattern.score(structurer.apply(doc))
 
