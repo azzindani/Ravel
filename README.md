@@ -4,7 +4,7 @@
 
 **Unravel documents into threads; ravel the threads into a corpus.** The offline
 compiler that turns raw source documents into a versioned, verifiable corpus bundle
-that [Vera](../Vera) serves.
+that [Vera](https://github.com/azzindani/Vera) serves.
 
 `ravel` is a contranym — it means both *to tangle* and *to untangle*. Both halves are
 the job: pull tangled documents apart into clean structured threads (headings, clauses,
@@ -98,5 +98,23 @@ documents → bundle → Postgres    ─────► query → route → sear
 
 Ravel owns the schema because Ravel is the only thing that writes. Readers do not
 define formats. See [docs/BUNDLE.md](docs/BUNDLE.md) §2.
+
+The seam is the **`corpus_meta` row**. `src/bundle/schema.py` generates the table;
+`src/load/plan.py` stamps the manifest into it *before* the first chunk, because
+`chunks.corpus_id REFERENCES corpus_meta(id)`. Vera reads that row at startup and builds
+its embedder from it — so a manifest field Ravel gets wrong does not fail here, it fails
+Vera's startup canary. The manifest is deliberately **stricter** than `corpus_meta`
+(`padding_side` and separate document/query instruction strings have no column there), so
+the bundle, not the loaded database, is the authoritative record of how a corpus was made.
+
+Shared between the two repositories:
+
+| Thing | Here | In Vera | Rule |
+|---|---|---|---|
+| Labelled eval queries | [`eval/id_legal/queries@v1.jsonl`](eval/id_legal) | [`dev_tools/eval/queries.json`](https://github.com/azzindani/Vera/blob/main/dev_tools/eval/queries.json) — 50 cases, the origin | Imported by [`tools/import_vera_queries.py`](tools/import_vera_queries.py); chunk ids are dropped, because relevance is a document + locator ([docs/EVAL.md](docs/EVAL.md) §1) |
+| Byte-aware batching | [`src/runtime/batching.py`](src/runtime/batching.py) | [`dev_tools/pre_embed/batching.py`](https://github.com/azzindani/Vera/blob/main/dev_tools/pre_embed/batching.py) — frozen | Ported per [docs/ABSORPTION.md](docs/ABSORPTION.md) §7. Ravel owns it; Vera's copy is held only until `pre_embed`'s remaining scripts follow it |
+| Corpus schema | [`src/bundle/schema.py`](src/bundle/schema.py) — generated | [`migrations/*.sql`](https://github.com/azzindani/Vera/tree/main/migrations) — applied by hand | Generated from the manifest here, never hand-written there |
+
+Vera: **[github.com/azzindani/Vera](https://github.com/azzindani/Vera)**
 
 Family: Folio · Pipeline · Sift · Vera · **Ravel**.

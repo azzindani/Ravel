@@ -8,7 +8,8 @@
 
 ## 1. What Ravel is
 
-**Ravel** is the offline corpus compiler for [Vera](../Vera). It turns raw source
+**Ravel** is the offline corpus compiler for
+[Vera](https://github.com/azzindani/Vera). It turns raw source
 documents into a versioned **corpus bundle** — parquet shards plus a manifest — that is
 loaded into PostgreSQL and served by Vera.
 
@@ -229,7 +230,8 @@ parsing as a stateless service.
 
 - [x] Canonical format spec + validator + round-trip test
 - [x] Source scanner: discovery, content hashing, source manifest
-- [x] Execution runtime: ledger, sharding, resume, bounded memory
+- [x] Execution runtime: ledger, sharding, resume, bounded memory, byte-aware
+      batching — `src/runtime/`
 - [ ] Extractor: SmolDocling (structure → markdown), batched on GPU
 - [x] Extractor: native PDF text + HTML/markdown/plain, profile-driven structuring
 - [ ] Extractor fallbacks: OCR, SmolDocling, table extraction
@@ -242,7 +244,11 @@ parsing as a stateless service.
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
 - [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`; NER still to build
 - [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
-- [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`; the labeled set itself still to import and review
+- [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;
+      Vera's 50-case seed set imported to `eval/id_legal/queries@v1.jsonl` by
+      `tools/import_vera_queries.py`. Still **below the gate it must pass**: 50
+      cases against a 100 minimum, 66% factual against a 40% target, and the
+      source set's own "STILL NEEDS DOMAIN REVIEW" is unaddressed
 - [ ] MCP server: parser authoring tools (inspect, preview, diff, save)
 - [ ] HTTP service + two Docker images (`ravel-job`, `ravel-service`)
 - [ ] Remote URI backends: R2 working state, HF datasets for published bundles
@@ -252,6 +258,7 @@ parsing as a stateless service.
 
 ---
 
-*Companion project: `../Vera` (the serving engine). Where this file and Vera's
-`CLAUDE.md` disagree about the corpus schema, **Ravel takes precedence** — Ravel writes,
-Vera reads.*
+*Companion project: [azzindani/Vera](https://github.com/azzindani/Vera) (the serving
+engine). Where this file and
+[Vera's `CLAUDE.md`](https://github.com/azzindani/Vera/blob/main/CLAUDE.md) disagree about
+the corpus schema, **Ravel takes precedence** — Ravel writes, Vera reads.*

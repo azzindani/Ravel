@@ -11,6 +11,26 @@ eval/
 └── promotions.jsonl                which variant won, when, and by how much
 ```
 
+## What is here now
+
+`id_legal/queries@v1.jsonl` — 50 cases imported from
+[`dev_tools/eval/queries.json`](https://github.com/azzindani/Vera/blob/main/dev_tools/eval/queries.json)
+in [azzindani/Vera](https://github.com/azzindani/Vera), which is the origin and stays the
+editable copy. Edit labels there, then regenerate — the argument is a local path because
+the importer reads a working copy, so clone Vera beside Ravel or point it at wherever
+yours is:
+
+```bash
+python tools/import_vera_queries.py ../Vera/dev_tools/eval/queries.json \
+    --profile registry/profiles/id_regulation@1.0.yaml \
+    --out eval/id_legal/queries@v1.jsonl
+```
+
+! **Not yet fit to promote on.** 50 queries against a 100 minimum, 66% factual against a
+40% target, and the source set's own "STILL NEEDS DOMAIN REVIEW" is unaddressed — whether
+a clause genuinely *answers* a question is a lawyer's judgement. Both gates report this
+on every import rather than passing quietly. See `docs/MIGRATION.md` §3a.
+
 ## What a labeled query looks like
 
 ```jsonc

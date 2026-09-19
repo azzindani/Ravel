@@ -50,8 +50,9 @@ workflow around it.
 
 ## 3. Vera's `pre_embed` hand-off
 
-`Vera/dev_tools/pre_embed/` moves to Ravel and Vera keeps only `crates/` (the Rust
-engine) plus its own docs. After the move:
+[`dev_tools/pre_embed/`](https://github.com/azzindani/Vera/tree/main/dev_tools/pre_embed)
+in [azzindani/Vera](https://github.com/azzindani/Vera) moves to Ravel, and Vera keeps only
+`crates/` (the Rust engine) plus its own docs. After the move:
 
 - Vera's `PRE_EMBEDDING.md` becomes a **pointer** to Ravel, not a spec. Its content is
   the origin of `ARCHITECTURE.md`, `EMBEDDING.md` and `BUNDLE.md` here, and two copies
@@ -64,6 +65,49 @@ engine) plus its own docs. After the move:
 
 Do this move early. Every week `pre_embed` stays in Vera is a week of Vera's CI, docs and
 standards compliance covering code that belongs elsewhere.
+
+### 3a. Hand-off status — 2026-09-19
+
+Two pieces have crossed. Recorded here rather than only in a commit message, because the
+next question anyone asks is *"which copy is real?"*.
+
+| Piece | In [azzindani/Vera](https://github.com/azzindani/Vera) | Here | State |
+|---|---|---|---|
+| Byte-aware batching | [`dev_tools/pre_embed/batching.py`](https://github.com/azzindani/Vera/blob/main/dev_tools/pre_embed/batching.py) — frozen in place | `src/runtime/batching.py` | **Ravel owns it.** Typing tightened (PEP 695 generics, keyword-only `text_of`) and the two TEI constants documented as defaults a caller overrides rather than policy — `CLAUDE.md` §7.8. Guarded by `tests/test_batching.py` |
+| Labelled queries | [`dev_tools/eval/queries.json`](https://github.com/azzindani/Vera/blob/main/dev_tools/eval/queries.json) — **stays; it is the origin** | `eval/id_legal/queries@v1.jsonl` | Imported by `tools/import_vera_queries.py`, guarded by `tests/test_eval_seed.py` |
+
+**Why `batching.py` was frozen rather than deleted.** Vera's `pre_embed/ingest.py` and
+`pre_embed/eval_arms.py` still import it and have not migrated, so deleting it would
+break two working scripts to save one file. It goes when they do. The freeze notice is in
+the file itself, which is the only place someone about to edit it will look.
+
+**Why `queries.json` is deliberately kept in both.** Five Vera scripts read it (`e2e.py`,
+`e2e_sweep.py`, `fit_factors.py`, `pool_depth.py`, `run.py`) and
+[Vera's `docs/SCORING.md`](https://github.com/azzindani/Vera/blob/main/docs/SCORING.md)
+cites it as what the factor weights are *fitted against* — moving it would break Vera's
+scoring provenance to tidy a directory. So Vera keeps the labels and Ravel keeps an
+import of them. **Edit labels in Vera and re-run the importer.** Two editable copies of
+the only ground truth either project has would be worse than one copy in the wrong place.
+
+What the import drops, and why it is not a loss: `answer_chunks_spike01` names rows in
+one spike's corpus. `EVAL.md` §1 refuses chunk ids in labels precisely because
+re-chunking changes every one — and Vera's own `_README` had independently reached the
+same conclusion (*"LABELS ARE ARTICLE-LEVEL, NOT CHUNK-LEVEL"*). The ids are kept in
+`notes` as archaeology, never as relevance.
+
+**What the import measured.** Both of Ravel's own gates fail on this set, which is the
+useful part:
+
+```
+composition: factual 33 · conceptual 4 · exact_citation 5 · cross_reference 2 · negative 6
+  [NOT OK] size: 50 queries, below 100
+  [NOT OK] mix:  factual 66% (target 40%)
+```
+
+50 cases is half `MIN_USEFUL_QUERIES`, so a variant promoted on this set is promoted on
+noise — and the source set's own warning (*"STILL NEEDS DOMAIN REVIEW. Whether a clause
+genuinely ANSWERS a question is a lawyer's judgement, not a retrieval engineer's"*) is
+still unaddressed. The set is imported. It is not yet fit to gate §4's acceptance test.
 
 ---
 
