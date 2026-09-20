@@ -222,7 +222,13 @@ class ScoringSpec(Base):
     """
 
     min_term_chars: int = Field(default=3, ge=1)
-    """Shortest token the engine keeps. Also Vera's, also declared here."""
+    """A token must be LONGER than this to count · at 3 the engine keeps 4+ characters.
+
+    ! Strictly greater, not "at least". The distinction is one character and it moves
+    Vera's relevance floor, which is a threshold fitted against one tokenisation --
+    applying it to another is a cut nothing measured (`SCORING.md` §3). Documented
+    here in the units the engine actually uses rather than the ones the name suggests.
+    """
 
     def resolved(self, authority: dict[str, int]) -> dict[str, Any]:
         """The whole vocabulary, as one JSON document for `corpus_meta`.
