@@ -417,3 +417,35 @@ def test_the_json_report_survives_a_narrow_terminal(built, tmp_path: Path) -> No
     assert "unsealed build directory" in report["checks"][0]["detail"], (
         "the message is intact in JSON however narrow the terminal is"
     )
+
+
+def test_a_bundle_without_a_vocabulary_stamps_null_not_an_empty_object(built) -> None:
+    """! The distinction the engine acts on. NULL is "not recorded" -- the engine falls
+    back to its built-in tables AND REPORTS that it did -- while `{}` claims the corpus
+    declares no hierarchy, which is a claim no profile made."""
+    root, _ = built
+    stamp = next(s for s in load_plan(read_bundle(root), root) if s.name == "stamp corpus_meta")
+
+    assert '"scoring_vocabulary"' in stamp.sql
+    assert "NULL" in stamp.sql
+
+
+def test_a_bundle_with_a_vocabulary_stamps_it_as_json(tmp_path: Path) -> None:
+    """The whole point of the column: the engine stops carrying its own copy."""
+    from spec import Registry
+
+    vocabulary = Registry.load().get("id_regulation").spec.scoring_vocabulary
+    manifest = BundleManifest(
+        corpus_id="v",
+        run_id="r",
+        chunk_count=0,
+        source_manifest_sha256="a" * 64,
+        dense=spec_for(dim=4, id="h"),
+        scoring_vocabulary=vocabulary,
+    )
+    root = tmp_path / "v1"
+    BundleWriter(root=root, manifest=manifest).seal()
+    stamp = next(s for s in load_plan(read_bundle(root), root) if s.name == "stamp corpus_meta")
+
+    assert "UNDANG-UNDANG" in stamp.sql
+    assert "LAMPIRAN" in stamp.sql

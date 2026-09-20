@@ -23,6 +23,14 @@ Authority without relevance ranks the most prestigious document in the corpus fi
 every query — and it *looks* correct, which is what makes it dangerous. Everything here
 returns a number in `[0, 1]` intended for the `(1 + sum(w*f))` term, never a score.
 
+**The vocabulary is the profile's, never this module's.** `authority` already read
+`identity.authority` from the registry; `structural` and `completeness` did not, and
+carried Indonesian patterns and a 26-word Indonesian term list as module constants.
+`generic@1.0.yaml` states that everything `id_regulation` does, it does "with
+different data and no code changes" — which was false for two of the five factors.
+They now read `profile.scoring` (`ScoringSpec`), and a profile that declares nothing
+gets `None` rather than a number computed from another corpus's words.
+
 **A factor that cannot be computed is `None`, never `0.0`.** "Unknown" and "lowest" are
 different claims, and collapsing them silently demotes every document the profile does
 not recognise. `SCORING.md` earned this the hard way: `enacting_body` is populated on all
@@ -43,35 +51,23 @@ from spec.models import Profile
 
 __all__ = ["Factors", "compute_factors"]
 
-AUTHORITY_SCALE = 10
-"""`authority = rank / 10`, matching `SCORING.md`. A scale, not a maximum — the ladder
-tops out at 9, leaving headroom rather than pinning the top instrument at exactly 1.0."""
-
-# Annex-like sections. An annex is rarely the answer to a question about obligations;
-# an operative article usually is, and `chapter`/`article` already record which is which.
-_ANNEX = re.compile(r"^\s*(LAMPIRAN|PENJELASAN|ATTACHMENT|APPENDIX)\b", re.IGNORECASE)
-_OPERATIVE = re.compile(r"^\s*(PASAL|ARTICLE|ARTIKEL)\b", re.IGNORECASE)
-
-# Indonesian legal-obligation vocabulary. Density of these is the readable half of
-# `completeness`: a whole provision states an obligation, a fragment usually does not.
-#
-# ! Written as one string and split, not as a list of 26 quoted items. `ruff format`
-# explodes a list literal to one element per line, which turns a readable vocabulary into
-# 28 lines of scrolling and makes adding a word a six-line diff. A word list is data; this
-# is the shape that survives the formatter and still reads like one.
-#
-# ! `noqa: SIM905` because ruff's two halves disagree here and the choice is deliberate:
-# the linter wants a list literal, and the formatter would then explode that literal to one
-# word per line. Following the linter loses the readability the formatter would then charge
-# for. The vocabulary stays a sentence.
-_LEGAL_TERMS = frozenset(
-    (  # noqa: SIM905
-        "wajib dilarang berhak dapat harus tidak sanksi pidana denda ketentuan "
-        "peraturan pasal ayat huruf dimaksud berlaku ditetapkan menetapkan mengatur "
-        "kewajiban larangan hak izin persetujuan penyelenggaraan pelaksanaan"
-    ).split()
-)
+# ! The only pattern left at module level, and it is not corpus knowledge: it says
+# "a word is two or more word characters", which is true of every language this
+# runs on. Everything that WAS here -- the annex and operative patterns, and 26
+# Indonesian legal terms -- moved to `ScoringSpec`, because `generic@1.0.yaml`
+# promises that a different corpus needs different data and no code changes, and
+# with those constants in Python that promise was false.
 _WORD = re.compile(r"(?u)\b\w\w+\b")
+
+
+def _compiled(patterns: list[str]) -> list[re.Pattern[str]]:
+    """Anchored at the start, case-insensitive · a label is a prefix, not a mention.
+
+    ! `match`, not `search`. "Pasal 9 dihapus" is an amending clause that *contains*
+    an operative marker without being one, which is the same distinction the profile
+    makes with `marker_only`.
+    """
+    return [re.compile(rf"^\s*(?:{p})", re.IGNORECASE) for p in patterns]
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,8 +89,15 @@ class Factors:
 
 
 def _authority(profile: Profile, document_type: str | None) -> float | None:
+    """`rank / authority_scale`, the scale declared by the profile.
+
+    ! A scale, not a maximum. Indonesian regulation tops out at 9 against 10; a
+    corpus whose ladder runs 1-5 declares 5 and its top instrument also reaches 1.0.
+    Normalising against the highest rank *present* would make the same instrument
+    score differently in a corpus that merely lacks a constitution.
+    """
     rank = profile.authority_of(document_type)
-    return None if rank is None else rank / AUTHORITY_SCALE
+    return None if rank is None else rank / profile.scoring.authority_scale
 
 
 def _temporal(year: int | None, *, now: int | None = None, half_life: int = 25) -> float | None:
@@ -115,20 +118,31 @@ def _temporal(year: int | None, *, now: int | None = None, half_life: int = 25) 
     return round(half_life / (half_life + age), 6)
 
 
-def _structural(chapter: str | None, article: str | None) -> float | None:
+def _structural(profile: Profile, chapter: str | None, article: str | None) -> float | None:
     """Is this an operative clause or an annex?
 
     Vera returns `LAMPIRAN / LAMPIRAN` hits above `Pasal` hits today, which is the
-    concrete defect this factor exists to correct.
+    concrete defect this factor exists to correct. The *question* generalises to any
+    corpus with a body and appendices; the labels never do, so they come from the
+    profile.
+
+    ! A profile declaring neither list gets `None` for every chunk -- "this profile
+    does not classify its sections" -- rather than the labelled fallback. Returning
+    0.6 there would be a claim the profile never made.
     """
+    sc = profile.scoring
+    if not (sc.annex or sc.operative):
+        return None
+    annex = _compiled(sc.annex)
+    operative = _compiled(sc.operative)
     for value in (article, chapter):
         if not value:
             continue
-        if _ANNEX.match(value):
-            return 0.2
-        if _OPERATIVE.match(value):
-            return 1.0
-    return None if not (chapter or article) else 0.6
+        if any(p.match(value) for p in annex):
+            return sc.annex_score
+        if any(p.match(value) for p in operative):
+            return sc.operative_score
+    return None if not (chapter or article) else sc.labelled_score
 
 
 def _topical(about: str | None) -> float | None:
@@ -150,7 +164,9 @@ def _topical(about: str | None) -> float | None:
     return 1.0
 
 
-def _completeness(body: str, *, min_chars: int = 40, full_at: int = 400) -> tuple[float, float]:
+def _completeness(
+    profile: Profile, body: str, *, min_chars: int = 40, full_at: int = 400
+) -> tuple[float, float]:
     """Whole provision or fragment, plus the legal-term density behind it.
 
     `min_chars` matches the profile's `cleanup.min_indexable_chars`: below it a chunk is
@@ -158,7 +174,12 @@ def _completeness(body: str, *, min_chars: int = 40, full_at: int = 400) -> tupl
     """
     text = body.strip()
     words = _WORD.findall(text.lower())
-    density = sum(1 for w in words if w in _LEGAL_TERMS) / len(words) if words else 0.0
+    # ! A profile declaring no vocabulary gets density 0.0, and `completeness` is
+    # then length alone. That is the honest degradation -- and it is exactly what
+    # every generic corpus was silently getting while the vocabulary was 26
+    # Indonesian words in this file.
+    terms = {t.lower() for t in profile.scoring.terms}
+    density = sum(1 for w in words if w in terms) / len(words) if words and terms else 0.0
     # ! Below the indexable floor, completeness is zero outright — density cannot lift
     # it. Capping density was not enough: "wajib dilarang" is 14 characters and 100%
     # legal terms, and scored 0.3 on density alone until a test asserted otherwise. A
@@ -188,11 +209,11 @@ def compute_factors(
     numbers from the same inputs — a factor that drifts with the wall clock cannot be part
     of a reproducible bundle.
     """
-    completeness, density = _completeness(body)
+    completeness, density = _completeness(profile, body)
     return Factors(
         authority=_authority(profile, document_type),
         temporal=_temporal(year, now=now),
-        structural=_structural(chapter, article),
+        structural=_structural(profile, chapter, article),
         topical=_topical(about),
         completeness=completeness,
         legal_term_density=density,

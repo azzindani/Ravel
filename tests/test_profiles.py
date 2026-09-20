@@ -8,6 +8,7 @@ profile encodes the knowledge whose absence produced ID_Legal's defects
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -400,3 +401,47 @@ def test_nothing_searches_upward(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.chdir(nested)
 
     assert registry_root() != tmp_path / "registry"
+
+
+# -- the scoring vocabulary reaches the engine ---------------------------------------
+
+
+def test_the_resolved_vocabulary_carries_the_ladder_from_identity() -> None:
+    """! `identity.authority` and `scoring:` become one document by the time the engine
+    sees them. The ladder lives under `identity` because it is how a document says what
+    it IS; it is consumed as a ranking factor. Duplicating it under `scoring:` so one
+    object could hold everything would create the drift this exists to remove."""
+    v = Registry.load().get("id_regulation").spec.scoring_vocabulary
+
+    assert v["authority"]["UNDANG-UNDANG"] == 8
+    assert v["authority"]["PERATURAN BUPATI"] == 2
+    assert v["authority_scale"] == 10
+    assert all(k == k.upper() for k in v["authority"]), "uppercased once, here"
+
+
+def test_a_profile_with_no_ladder_resolves_to_an_empty_one_not_a_missing_key() -> None:
+    """The engine reads this blind. A key that is sometimes absent is one a reader learns
+    to guard, and a guard is where a default creeps back in."""
+    generic = Registry.load().get("generic").spec.scoring_vocabulary
+    id_reg = Registry.load().get("id_regulation").spec.scoring_vocabulary
+
+    assert generic["authority"] == {}
+    assert set(generic) == set(id_reg), "same shape, different data"
+
+
+def test_the_vocabulary_is_json_serialisable() -> None:
+    """It goes into a JSONB column as a literal. A set or a compiled pattern in here
+    fails at load time, against a real database, at the end of an ingest."""
+    for name in ("id_regulation", "generic"):
+        v = Registry.load().get(name).spec.scoring_vocabulary
+        assert json.loads(json.dumps(v, ensure_ascii=False, sort_keys=True)) == v, name
+
+
+def test_the_vocabulary_is_richer_than_the_engines_own_copy_was() -> None:
+    """! The drift, measured. Vera's `engine::factors` compiled in ten regulation types --
+    the ones present in the live corpus -- while this profile declares the full ladder.
+    Two copies of one table in two repositories had ALREADY disagreed, which is the
+    argument for there being one."""
+    v = Registry.load().get("id_regulation").spec.scoring_vocabulary
+
+    assert len(v["authority"]) > 10

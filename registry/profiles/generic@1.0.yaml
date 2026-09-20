@@ -81,6 +81,83 @@ cleanup:
     - '^\s*[-–—]{3,}\s*$'
   min_indexable_chars: 24
 
+# ---------------------------------------------------------------------------
+# Scoring vocabulary · English, and that is the whole demonstration.
+#
+# ! This profile's description promises that everything `id_regulation` does,
+# this does "with different data and no code changes". Until this block existed
+# that was false: `enrich/factors.py` carried the annex patterns and a 26-word
+# Indonesian term list as constants, so a generic corpus got
+# `legal_term_density` of ~0 on every row and a `completeness` that had quietly
+# degraded to length alone, with nothing in the output saying so.
+# ---------------------------------------------------------------------------
+scoring:
+  # No hierarchy is declared (`identity.authority` is empty), so `authority` is
+  # None on every row and the scale is unused. It is stated rather than omitted
+  # because a corpus that later gains a ladder edits one number.
+  authority_scale: 10
+
+  annex: ['APPENDIX', 'ANNEX', 'LAMPIRAN', 'REFERENCES', 'BIBLIOGRAPHY', 'DAFTAR\s+PUSTAKA']
+  operative: ['SECTION', 'CHAPTER', 'ARTICLE', 'PASAL', 'BAB', '\d+(\.\d+)*\.?\s']
+  annex_score: 0.2
+  operative_score: 1.0
+  labelled_score: 0.6
+
+  # ! Modal and normative verbs, ✗ legal ones. RFC 2119 keywords plus the ordinary
+  # English of a requirement. The factor asks "does this state a rule or describe
+  # one", which is what separates a whole provision from a fragment in a standard,
+  # a manual or a policy just as much as in a statute.
+  terms:
+    - must
+    - shall
+    - should
+    - may
+    - required
+    - recommended
+    - prohibited
+    - optional
+    - responsible
+    - ensure
+    - comply
+    - requirement
+    - obligation
+    - provision
+    - section
+    - clause
+    - defined
+    - applies
+    - subject
+
+  # A conventional English closed-class list. Short and boring on purpose: a stop
+  # list is a claim about which words carry no information, and a long one quietly
+  # deletes evidence.
+  stopwords:
+    - the
+    - and
+    - for
+    - with
+    - that
+    - this
+    - from
+    - are
+    - was
+    - were
+    - has
+    - have
+    - been
+    - not
+    - any
+    - all
+    - its
+    - their
+    - which
+    - what
+    - when
+    - where
+    - who
+    - how
+  min_term_chars: 3
+
 extract:
   native:
     # With no corpus patterns to lean on, typography is the only signal there is —

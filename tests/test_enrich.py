@@ -13,6 +13,7 @@ import pytest
 from bundle import check_vocabulary_covers_corpus
 from enrich import Bm25Vectorizer, TokeniserDrift, compute_factors
 from spec import Registry
+from spec.models import Profile
 
 DOCS = [
     "Setiap orang wajib menaati ketentuan dalam peraturan daerah ini",
@@ -240,3 +241,92 @@ def test_factors_stay_in_the_unit_interval(profile) -> None:
 
     for name, value in f.to_dict().items():
         assert 0.0 <= value <= 1.0, f"{name} = {value}"
+
+
+# -- the vocabulary is the profile's, not this module's -----------------------------
+
+
+@pytest.fixture(scope="module")
+def generic():
+    return Registry.load().get("generic")
+
+
+def test_an_english_corpus_scores_its_own_vocabulary(generic) -> None:
+    """! The regression this whole block exists for.
+
+    `generic@1.0.yaml` states in its own description that everything `id_regulation`
+    does, it does "with different data and no code changes". That was false:
+    `factors.py` held the annex patterns and a 26-word Indonesian term list as module
+    constants, so an English chunk scored a term density of 0.0 no matter what it
+    said, and `completeness` silently degraded to length alone with nothing in the
+    output reporting it.
+    """
+    body = (
+        "The operator must ensure that all required records are retained. "
+        "Personnel shall comply with every provision of this section, and any "
+        "party subject to this clause is responsible for the obligation defined "
+        "herein. Optional measures may be applied where recommended."
+    )
+    f = compute_factors(profile=generic, body=body, article="Section 4.2")
+
+    assert f.legal_term_density > 0.05, (
+        "an English profile must score English normative vocabulary"
+    )
+    assert f.structural == 1.0, "Section is operative under the generic ladder"
+
+
+def test_the_indonesian_vocabulary_does_not_reach_the_generic_profile(generic) -> None:
+    """Two profiles, two vocabularies. A word list that leaked across would make the
+    factor a property of the engine again, just less visibly."""
+    indonesian = "Setiap orang wajib dan dilarang mengatur ketentuan sanksi pidana denda"
+
+    assert compute_factors(profile=generic, body=indonesian * 8).legal_term_density == 0.0
+
+
+def test_a_profile_declaring_no_ladder_says_none_rather_than_guessing(generic) -> None:
+    """! `None`, not `labelled_score`. A profile with no annex or operative patterns is
+    making no claim about its sections, and a scorer must be able to tell that apart
+    from "located but unclassified"."""
+    spec = generic.spec.model_copy(deep=True)
+    spec.scoring.annex = []
+    spec.scoring.operative = []
+    bare = Profile.compile(spec)
+
+    assert compute_factors(profile=bare, body="x" * 500, article="Section 1").structural is None
+    # And with a ladder, the same chunk IS classified -- so the None above is the
+    # absence of a declaration, not an absence of input.
+    classified = compute_factors(profile=generic, body="x" * 500, article="Section 1")
+    assert classified.structural == 1.0
+
+
+def test_authority_normalises_against_the_declared_scale_not_the_top_present(profile) -> None:
+    """! A scale, not a maximum. Indonesian regulation tops out at 9 against 10, so no
+    instrument reaches 1.0 -- deliberate headroom. A corpus whose ladder runs 1-5
+    declares 5 and its top instrument DOES reach 1.0, which is the same claim about a
+    different corpus rather than a different claim."""
+    uu = compute_factors(profile=profile, body="x" * 500, document_type="UNDANG-UNDANG")
+
+    assert profile.scoring.authority_scale == 10
+    assert uu.authority == pytest.approx(8 / 10)
+
+
+def test_every_shipped_profile_keeps_annex_below_operative() -> None:
+    """A schedule outranking the clause it belongs to inverts the one thing this factor
+    does. It is a legible thing to want for some corpus, and not something to acquire
+    by mistyping two numbers -- so the spec refuses it and this asserts the shipped
+    files are on the right side of that."""
+    for name in ("id_regulation", "generic"):
+        sc = Registry.load().get(name).scoring
+        if sc.annex and sc.operative:
+            assert sc.annex_score < sc.operative_score, name
+
+
+def test_an_operative_marker_inside_prose_is_not_a_heading(profile) -> None:
+    """! Anchored match, not search. "Pasal 9 dihapus" is an amending clause that
+    CONTAINS an operative marker without being one -- the same distinction the profile
+    draws with `marker_only`."""
+    mention = compute_factors(
+        profile=profile, body="x" * 500, article="Ketentuan Pasal 9 dihapus"
+    )
+
+    assert mention.structural != 1.0

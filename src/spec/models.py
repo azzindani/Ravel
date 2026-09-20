@@ -159,6 +159,110 @@ class CleanupSpec(Base):
     min_indexable_chars: int = Field(default=0, ge=0)
 
 
+class ScoringSpec(Base):
+    """The vocabulary the query-independent ranking factors are computed from.
+
+    ! This block exists because `generic@1.0.yaml` claims, in its own description,
+    that "everything the `id_regulation` profile does, this does with different data
+    and no code changes" — and that was not true. `enrich/factors.py` carried the
+    annex and operative patterns as module-level regexes and the legal vocabulary as
+    a 26-word frozenset, all Indonesian. A generic corpus got `legal_term_density`
+    of ~0 on every row and a `completeness` that had quietly degraded to length
+    alone, with nothing in the output saying so.
+
+    That is the same rule `identity.authority` already follows, and for the same
+    reason `ABSORPTION.md` §4 gives: corpus knowledge that lives in Python is
+    knowledge the next corpus cannot reuse.
+
+    ! Every field defaults to empty, and empty means the factor reports `None`
+    rather than a confident zero. A profile that declares no vocabulary is making no
+    claim about its corpus, which is different from claiming its corpus scores zero.
+    """
+
+    authority_scale: int = Field(default=10, ge=1)
+    """What `identity.authority`'s ranks are divided by.
+
+    ! A scale, not a maximum. Indonesian regulation tops out at 9 against a scale of
+    10, deliberately: normalising against the highest rank *present* would make the
+    same instrument score differently in a corpus that merely lacks a constitution.
+    A corpus whose ladder runs 1-5 declares 5 here and its top instrument reaches
+    1.0, exactly as UU does against 10.
+    """
+
+    annex: list[str] = Field(default_factory=list)
+    """Patterns marking a chunk as annex-like: schedules, forms, appendices.
+
+    Matched against `article` then `chapter`, anchored at the start. An annex is
+    rarely the answer to a question about obligations.
+    """
+
+    operative: list[str] = Field(default_factory=list)
+    """Patterns marking a chunk as operative text — the clause itself."""
+
+    annex_score: float = Field(default=0.2, ge=0.0, le=1.0)
+    operative_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    labelled_score: float = Field(default=0.6, ge=0.0, le=1.0)
+    """A chunk that carries a label matching neither list. It is located but not
+    classified, which is a weaker claim than either and a stronger one than nothing."""
+
+    terms: list[str] = Field(default_factory=list)
+    """The domain vocabulary whose density is the readable half of `completeness`.
+
+    ! A whole provision states an obligation and a fragment usually does not — but
+    "states an obligation" is spelled `wajib` in one corpus, `MUST` in another and
+    `shall` in a third. The claim generalises; the words never do.
+    """
+
+    stopwords: list[str] = Field(default_factory=list)
+    """Function words the engine drops before measuring term overlap.
+
+    ! Read by Vera, not by Ravel: it is the input to the relevance floor
+    (`SCORING.md` §3), and it is declared here so the engine stops compiling in a
+    stop list that describes one language.
+    """
+
+    min_term_chars: int = Field(default=3, ge=1)
+    """Shortest token the engine keeps. Also Vera's, also declared here."""
+
+    def resolved(self, authority: dict[str, int]) -> dict[str, Any]:
+        """The whole vocabulary, as one JSON document for `corpus_meta`.
+
+        ! Takes `identity.authority` as an argument rather than reaching for it. The
+        ladder lives under `identity` because it is how a document says what it *is*;
+        it is consumed as a ranking factor. Both are true, and duplicating the table
+        under `scoring:` so this method could read one object would create the exact
+        drift this block exists to remove.
+
+        Keys are uppercased here, once, rather than per candidate on every request in
+        the engine.
+        """
+        return {
+            "authority": {k.upper(): v for k, v in authority.items()},
+            "authority_scale": self.authority_scale,
+            "annex": list(self.annex),
+            "operative": list(self.operative),
+            "annex_score": self.annex_score,
+            "operative_score": self.operative_score,
+            "labelled_score": self.labelled_score,
+            "terms": [t.lower() for t in self.terms],
+            "stopwords": [w.lower() for w in self.stopwords],
+            "min_term_chars": self.min_term_chars,
+        }
+
+    @model_validator(mode="after")
+    def _annex_outranks_nothing(self) -> Self:
+        # ! An annex scoring above an operative clause inverts the one thing this
+        # factor exists to do. It is a legible thing to want for some corpus, and it
+        # is not something to acquire by mistyping two numbers.
+        if self.annex and self.operative and self.annex_score >= self.operative_score:
+            raise ValueError(
+                f"annex_score {self.annex_score} >= operative_score "
+                f"{self.operative_score}: a schedule would outrank the clause it "
+                "belongs to"
+            )
+        return self
+
+
 class ProfileSpec(Base):
     """The whole file. Validated from YAML; hashed into every downstream cache key."""
 
@@ -170,11 +274,18 @@ class ProfileSpec(Base):
     structure: StructureSpec = Field(default_factory=StructureSpec)
     identity: IdentitySpec = Field(default_factory=IdentitySpec)
     cleanup: CleanupSpec = Field(default_factory=CleanupSpec)
+    scoring: ScoringSpec = Field(default_factory=ScoringSpec)
     extract: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def ref(self) -> str:
         return f"{self.id}@{self.version}"
+
+    @property
+    def scoring_vocabulary(self) -> dict[str, Any]:
+        """What goes into `corpus_meta.scoring_vocabulary` · the engine's copy of this
+        profile's ranking tables, so it stops carrying its own."""
+        return self.scoring.resolved(self.identity.authority)
 
     @property
     def config_hash(self) -> str:
@@ -356,6 +467,11 @@ class Profile:
     def abbreviate(self, document_type: str) -> str:
         """Short form of a document type, or the type unchanged when none is declared."""
         return self.abbreviations.get(document_type.upper(), document_type)
+
+    @property
+    def scoring(self) -> ScoringSpec:
+        """The vocabulary the ranking factors are computed from."""
+        return self.spec.scoring
 
     def authority_of(self, document_type: str | None) -> int | None:
         """Where this instrument sits in the legal hierarchy, or None if unranked.

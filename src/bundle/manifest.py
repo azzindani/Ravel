@@ -98,6 +98,13 @@ class BundleManifest:
     chunker: str = ""
     chunker_version: str = ""
     profile_ref: str = ""
+    scoring_vocabulary: dict[str, Any] | None = None
+    """The profile's resolved `scoring:` block, carried into `corpus_meta`.
+
+    ! In the manifest rather than derived at load time, because the manifest is what
+    `config_hash` covers. A profile whose vocabulary changed produced a different corpus,
+    and a bundle that could not say so would let two corpora share a receipt.
+    """
     text_search_config: str = "simple"
     """! `indonesian`, not `simple`, for this corpus. Indonesian is heavily affixed:
     `dikenakan` and `dikenai` are one word inflected, and `simple` indexes them as two

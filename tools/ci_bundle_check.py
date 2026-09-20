@@ -54,6 +54,7 @@ from chunk.models import Chunk  # noqa: E402
 from chunk.store import write_chunks  # noqa: E402
 from embed import spec_for  # noqa: E402
 from load import Step, load_plan, preflight  # noqa: E402
+from spec import Registry
 
 DIM = 16
 CHUNKS = 3
@@ -79,6 +80,10 @@ def build_bundle(root: Path) -> Path:
         chunker="unit",
         chunker_version="1.0",
         profile_ref="id_regulation@1.0",
+        # ! From the registry, ✗ a literal. This is the one path that proves the
+        # vocabulary reaches `corpus_meta` at all, and a hand-written dict here would
+        # let the profile and the bundle disagree without any test noticing.
+        scoring_vocabulary=Registry.load().get("id_regulation").spec.scoring_vocabulary,
         text_search_config="indonesian",
     )
     writer = BundleWriter(root=root / "v1", manifest=manifest)

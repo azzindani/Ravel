@@ -244,6 +244,100 @@ cleanup:
     - '^\s*cukup\s+jelas\.?\s*$'
   min_indexable_chars: 40
 
+# ---------------------------------------------------------------------------
+# Scoring vocabulary · the query-independent ranking factors (enrich/factors.py),
+# and the two fields Vera reads at query time.
+#
+# ! This block reproduces, exactly, what `enrich/factors.py` used to carry as
+# module-level constants. Moving it changes no number on this corpus -- which is
+# the point: the same data, somewhere a different corpus can replace it.
+# `identity.authority` above is the third table and was already here.
+# ---------------------------------------------------------------------------
+scoring:
+  # The Art 7 ladder tops out at 9 (UUD 1945), so the scale is 10 and no
+  # instrument reaches 1.0. Deliberate headroom: normalising against the highest
+  # rank PRESENT would make the same instrument score differently in a corpus
+  # that merely lacks a constitution.
+  authority_scale: 10
+
+  # 80,313 rows of the incumbent corpus are Pembukaan or Pengesahan, and 22.5% of
+  # the live corpus is LAMPIRAN. An annex is rarely the answer to a question
+  # about obligations; an operative article usually is.
+  annex: ['LAMPIRAN', 'PENJELASAN', 'ATTACHMENT', 'APPENDIX']
+  operative: ['PASAL', 'ARTICLE', 'ARTIKEL']
+  annex_score: 0.2
+  operative_score: 1.0
+  labelled_score: 0.6
+
+  # Density of these is the readable half of `completeness`: a whole provision
+  # states an obligation, a fragment usually does not.
+  #
+  # ! The claim generalises and the words never do. "States an obligation" is
+  # `wajib` here, `MUST` in an RFC and `shall` in a contract.
+  terms:
+    - wajib
+    - dilarang
+    - berhak
+    - dapat
+    - harus
+    - tidak
+    - sanksi
+    - pidana
+    - denda
+    - ketentuan
+    - peraturan
+    - pasal
+    - ayat
+    - huruf
+    - dimaksud
+    - berlaku
+    - ditetapkan
+    - menetapkan
+    - mengatur
+    - kewajiban
+    - larangan
+    - hak
+    - izin
+    - persetujuan
+    - penyelenggaraan
+    - pelaksanaan
+
+  # ! Read by VERA, not by Ravel: the input to the relevance floor
+  # (`SCORING.md` §3). Declared here so the engine stops compiling in a stop list
+  # that describes one language.
+  #
+  # ! `dapat`, `harus`, `wajib` and `tidak` appear in `terms` above AND here, and
+  # that is not a contradiction. As TERMS they are near-universal in this corpus
+  # and carry no discriminative power, so overlap drops them; as a DENSITY they
+  # are exactly what distinguishes a provision from a fragment.
+  stopwords:
+    - yang
+    - dan
+    - atau
+    - untuk
+    - dengan
+    - pada
+    - dari
+    - dalam
+    - oleh
+    - apakah
+    - bagaimana
+    - berapa
+    - siapa
+    - adalah
+    - itu
+    - ini
+    - ke
+    - di
+    - tidak
+    - dapat
+    - harus
+    - wajib
+    - jika
+    - akan
+    - sebagai
+  min_term_chars: 3
+
 # Per-extractor overrides. Absent keys fall back to the extractor's defaults.
 extract:
   native:

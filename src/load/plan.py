@@ -37,6 +37,7 @@ transaction open across it serves no purpose once the data is committed and veri
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -368,6 +369,11 @@ def _corpus_meta_insert(document: dict[str, Any]) -> str:
         "chunker": document.get("chunker", ""),
         "chunker_version": document.get("chunker_version", ""),
         "profile_ref": document.get("profile_ref", ""),
+        # ! `None` when the bundle predates this field, ✗ `{}`. An empty object is a
+        # vocabulary that declares nothing, which the engine would treat as "this corpus
+        # has no hierarchy" -- a claim the profile never made. NULL says "not recorded",
+        # and the engine falls back to its built-in tables and reports that it did.
+        "scoring_vocabulary": _json_or_null(document.get("scoring_vocabulary")),
         "text_search_config": document.get("text_search_config", "simple"),
         "source_manifest_sha256": document["source_manifest_sha256"],
         "manifest_sha256": document["manifest_sha256"],
@@ -376,6 +382,17 @@ def _corpus_meta_insert(document: dict[str, Any]) -> str:
     names = ", ".join(quote_ident(k) for k in columns)
     values = ", ".join(quote_literal(v) for v in columns.values())
     return f"INSERT INTO corpus_meta ({names})\nVALUES ({values});"
+
+
+def _json_or_null(value: Any) -> str | None:
+    """A JSONB literal, or None for a bundle that carries no vocabulary.
+
+    ! `quote_literal` renders None as SQL NULL, which is exactly the distinction wanted:
+    "not recorded" and "recorded as empty" are different claims about a corpus.
+    """
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
 @dataclass(frozen=True, slots=True)

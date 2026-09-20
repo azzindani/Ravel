@@ -93,6 +93,23 @@ CREATE TABLE IF NOT EXISTS corpus_meta (
     chunker             TEXT NOT NULL DEFAULT '',
     chunker_version     TEXT NOT NULL DEFAULT '',
     profile_ref         TEXT NOT NULL DEFAULT '',
+
+    -- ! The profile's `scoring:` block, resolved, so the ENGINE stops carrying its own
+    -- copy. Vera's `engine::factors` compiled in ten UNDANG-UNDANG/PERATURAN literals,
+    -- the strings LAMPIRAN/PENJELASAN/PASAL and 25 Indonesian function words -- the same
+    -- tables this profile already declares. Two copies in two repositories that must
+    -- agree are two copies that will eventually disagree, and only one of them can be
+    -- right for a corpus that is not Indonesian regulation.
+    --
+    -- Same rule as `dense_pooling` and `sparse_vocab_sha256`: on a corpus these tables do
+    -- not describe, `authority` and `structural` evaluate neutrally for every row and the
+    -- operator's weights do nothing AT ALL -- silently. Recording the vocabulary beside
+    -- the data is what lets the engine notice.
+    --
+    -- JSONB, not columns: the shape is a profile's to define and the engine's to read,
+    -- and a new factor family must not be a migration on a table Vera only reads.
+    -- NULL means a corpus loaded before this existed; the engine falls back and says so.
+    scoring_vocabulary  JSONB,
     text_search_config  TEXT NOT NULL,
     source_manifest_sha256 TEXT NOT NULL,
     manifest_sha256     TEXT NOT NULL,
