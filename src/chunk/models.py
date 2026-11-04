@@ -47,6 +47,14 @@ class Chunk(Base):
     part: tuple[int, int] = (1, 1)
     """`(n, m)` — piece n of m, when one structural unit had to be split by size."""
 
+    seq: int = Field(default=0, ge=0)
+    """Position among the chunks of this document, in the order the chunker produced them.
+
+    What lets a reader ask for "the chunks either side of this one": `part` only orders
+    the pieces of one unit, and nothing else in a row says what came before it. Not in the
+    chunk id -- moving a chunk must not make it a different chunk.
+    """
+
     block_ids: list[str] = Field(default_factory=list)
     """Traceability back into the canonical document, to the exact bounding boxes.
 

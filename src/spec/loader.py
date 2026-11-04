@@ -131,9 +131,13 @@ class Registry:
         Ties break on priority then id, so routing is deterministic — two runs over
         the same corpus must produce the same assignment or the cache is a lie.
         """
+        # ! Newest version of each id only. Two versions of one profile score alike by
+        # construction, and choosing between them by iteration order would make the
+        # assignment depend on how the registry happened to be loaded.
+        newest = {p.id: self._by_ref[p.id] for p in self}
         viable = [
             (score, profile)
-            for profile in self
+            for profile in newest.values()
             if (score := profile.score(mime=mime, sample=sample)) is not None
         ]
         if not viable:

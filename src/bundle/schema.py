@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     article             TEXT,
     identifier          TEXT,
     chunk_no            INTEGER,
+    seq                 INTEGER,
 
     body                TEXT NOT NULL,
 
@@ -196,6 +197,9 @@ CREATE INDEX IF NOT EXISTS chunks_indexable_idx ON chunks (indexable) WHERE inde
 
 -- The exact-identifier path must never depend on routing, so it gets its own btree and
 -- searches globally.
+-- Neighbour expansion: "the chunks either side of this one" is a range scan here.
+CREATE INDEX IF NOT EXISTS chunks_doc_seq_idx   ON chunks (doc_id, seq);
+
 CREATE INDEX IF NOT EXISTS chunks_identifier_idx
     ON chunks (regulation_type, regulation_number, year);
 

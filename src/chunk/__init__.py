@@ -20,6 +20,8 @@ from chunk.base import (
     estimate_tokens,
     get,
 )
+from chunk.derive import embed_text, search_text
+from chunk.expect import Violation, check
 from chunk.models import PATH_SEP, Chunk, chunk_id
 from chunk.run import Chunking, RunReport, iter_chunk_shards
 from chunk.store import SCHEMA, iter_chunks, read_chunks, write_chunks
@@ -34,13 +36,17 @@ __all__ = [
     "Chunking",
     "Entry",
     "RunReport",
+    "Violation",
     "available",
+    "check",
     "chunk_id",
     "chunker",
+    "embed_text",
     "estimate_tokens",
     "get",
     "iter_chunk_shards",
     "iter_chunks",
     "read_chunks",
+    "search_text",
     "write_chunks",
 ]

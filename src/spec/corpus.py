@@ -106,6 +106,18 @@ class ExtractSpec(Base):
     """
 
 
+_CONFIG_FIELDS = frozenset(
+    {
+        "max_tokens",
+        "min_tokens",
+        "overlap_tokens",
+        "carry_parent",
+        "carry_parent_max_tokens",
+        "include_tables",
+    }
+)
+
+
 class ChunkSpec(Base):
     """Phase B defaults for this corpus. A variant overrides any of them.
 
@@ -132,18 +144,37 @@ class ChunkSpec(Base):
     """Chunks buffered before sealing. The Phase B counterpart of `shard_max_blocks`;
     a chunk is far lighter than a document, so this number is far larger."""
 
-    def to_config(self) -> Any:
+    def to_config(self, profile: Any = None) -> Any:
+        """Engine default < the profile's `pipeline.chunk` < what this corpus states.
+
+        ! "States" means written in the corpus file, which `model_fields_set` knows and a
+        default value cannot tell. Without it a corpus that never mentioned `max_tokens`
+        would still override its profile with 512.
+        """
         from chunk.base import ChunkConfig
 
-        return ChunkConfig(
-            max_tokens=self.max_tokens,
-            min_tokens=self.min_tokens,
-            overlap_tokens=self.overlap_tokens,
-            carry_parent=self.carry_parent,
-            carry_parent_max_tokens=self.carry_parent_max_tokens,
-            include_tables=self.include_tables,
-            params=dict(self.params),
-        )
+        merged: dict[str, Any] = {}
+        params: dict[str, Any] = {}
+        if profile is not None:
+            stated = profile.spec.pipeline.chunk
+            merged.update(
+                {
+                    k: v
+                    for k, v in stated.model_dump(exclude={"chunker", "params"}).items()
+                    if v is not None
+                }
+            )
+            params.update(stated.params)
+        for name in self.model_fields_set & _CONFIG_FIELDS:
+            merged[name] = getattr(self, name)
+        params.update(self.params)
+        return ChunkConfig(**merged, params=params)
+
+    def resolved_chunker(self, profile: Any = None) -> str:
+        """The chunker the corpus names, else the profile's, else the corpus default."""
+        if "chunker" in self.model_fields_set or profile is None:
+            return self.chunker
+        return str(profile.spec.pipeline.chunk.chunker or self.chunker)
 
 
 class CorpusSpec(Base):

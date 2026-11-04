@@ -56,6 +56,7 @@ _STAGED: tuple[tuple[str, str, str], ...] = (
     ("body", "TEXT", "body"),
     ("token_count", "INTEGER", "token_count"),
     ("part_n", "INTEGER", "chunk_no"),
+    ("seq", "INTEGER", "seq"),
     ("source_title", "TEXT", "source_title"),
     ("source_url", "TEXT", "source_url"),
     ("source_sha256", "TEXT", "source_sha256"),

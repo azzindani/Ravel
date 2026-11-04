@@ -29,6 +29,7 @@ SCHEMA = pa.schema(
         ("token_count", pa.int32()),
         ("part_n", pa.int16()),
         ("part_of", pa.int16()),
+        ("seq", pa.int32()),
         ("block_ids", pa.list_(pa.string())),
         # -- provenance: hard columns, not nullable except where the model allows --
         ("source_title", pa.large_string()),
@@ -65,6 +66,7 @@ def _row(chunk: Chunk) -> dict[str, object]:
         "token_count": chunk.token_count,
         "part_n": chunk.part[0],
         "part_of": chunk.part[1],
+        "seq": chunk.seq,
         "block_ids": chunk.block_ids,
         "source_title": chunk.source_title,
         "source_url": chunk.source_url,
@@ -96,6 +98,7 @@ def _chunk(row: dict[str, Any]) -> Chunk:
         body=str(row["body"]),
         token_count=int(row["token_count"]),
         part=(int(row["part_n"]), int(row["part_of"])),
+        seq=int(row["seq"]),
         block_ids=list(row["block_ids"] or []),
         source_title=str(row["source_title"]),
         source_url=str(row["source_url"]),

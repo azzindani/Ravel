@@ -1,7 +1,9 @@
 # ARCHITECTURE.md — Ravel
 
 Full system design. For the intermediate representation see `CANONICAL_FORMAT.md`; for
-the output contract see `BUNDLE.md`.
+the output contract see `BUNDLE.md`. For the order of layers -- knowledge base first, then
+the embedding and keyword indexes -- and what each may write, see `PIPELINE.md`; where it
+disagrees with the stage graph below, `PIPELINE.md` is current.
 
 ---
 

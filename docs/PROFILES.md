@@ -103,6 +103,13 @@ list is maintained once and every pattern stays in sync with it. Types are match
 
 ---
 
+`pipeline:` declares what the layers after extraction do for this kind of document -- chunk
+defaults, derived text for the embedder and the keyword index, and the `expected` floors a
+build is checked against. See `PIPELINE.md`; every field is a default that the corpus and the
+variant may override.
+
+---
+
 ## 3. Levels
 
 Levels are **fixed per unit**, not derived from nesting depth. Two documents chunked at

@@ -15,12 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from canon import CanonicalDoc
 from chunk.base import Builder, ChunkConfig, get
+from chunk.expect import Violation, check
 from chunk.models import Chunk
 from chunk.store import write_chunks
 from extract.run import iter_canon
@@ -93,6 +95,13 @@ class RunReport:
     with_identifier: int = 0
     with_section: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
+    present: Counter[str] = field(default_factory=Counter)
+    """How many chunks carried each field the profile has a coverage floor for."""
+    longest: int = 0
+    oversize: int = 0
+    """Chunks above the profile's `max_row_tokens`."""
+    violations: list[Violation] = field(default_factory=list)
+    """Floors the build fell below (`PIPELINE.md` §6). Empty when it met its profile."""
 
     @property
     def chunks_per_doc(self) -> float:
@@ -138,8 +147,12 @@ class Chunking:
         self.workspace = Path(workspace)
         self.variant = variant
         self.registry = registry or default_registry()
-        self.entry = get(chunker or corpus.chunk.chunker)
-        self.config = config or corpus.chunk.to_config()
+        # ! The profile the corpus pins, if it pins one. The chunker and its settings come
+        # from it unless the corpus or the caller states otherwise; a corpus that routes
+        # among several profiles has no single answer and keeps the corpus defaults.
+        self.pinned = self._pinned()
+        self.entry = get(chunker or corpus.chunk.resolved_chunker(self.pinned))
+        self.config = config or corpus.chunk.to_config(self.pinned)
 
         # ! Resolved once, here, to a concrete generation name — never left as a
         # placeholder meaning "whatever is newest". `output_generation` hashes this
@@ -148,6 +161,15 @@ class Chunking:
         # rows beside the old ones, which is precisely the defect generations exist to
         # prevent. A fix that names a moving target has not fixed anything.
         self.generation = generation or self._newest_canon()
+
+    def _pinned(self) -> Profile | None:
+        ref = self.corpus.extract.profile
+        if not ref:
+            return None
+        try:
+            return self.registry.get(ref)
+        except KeyError:
+            return None
 
     # -- paths --------------------------------------------------------------
     @property
@@ -215,6 +237,7 @@ class Chunking:
     ) -> RunReport:
         report = RunReport(corpus=self.corpus.id, variant=self.variant)
         started = time.time()
+        expected = self.pinned.spec.pipeline.expected if self.pinned else None
 
         with Ledger(self.ledger_path) as ledger:
             if force:
@@ -241,6 +264,8 @@ class Chunking:
                 weigh=lambda c: (len(c.body) + 512, 1),
             ) as writer:
                 seen: set[str] = set()
+                covered = tuple(expected.coverage) if expected else ()
+                cap = expected.max_row_tokens if expected else None
                 for doc in iter_canon(self.workspace, self.corpus.id, self.generation):
                     if limit and report.documents >= limit:
                         break
@@ -281,6 +306,10 @@ class Chunking:
 
                     for chunk in chunks:
                         writer.add(chunk, key)
+                        report.longest = max(report.longest, chunk.token_count)
+                        report.oversize += bool(cap and chunk.token_count > cap)
+                        for name in covered:
+                            report.present[name] += getattr(chunk, name, None) not in (None, "")
                         report.tokens.append(chunk.token_count)
                         report.with_identifier += chunk.identifier is not None
                         report.with_section += chunk.locator_section is not None
@@ -289,6 +318,10 @@ class Chunking:
                     if on_progress:
                         on_progress(report)
 
+        if expected and report.chunks:
+            report.violations = check(
+                expected, present=report.present, chunks=report.chunks, oversize=report.oversize
+            )
         report.seconds = time.time() - started
         return report
 

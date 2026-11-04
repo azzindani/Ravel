@@ -83,6 +83,7 @@ Ravel/
 │   ├── CANONICAL_FORMAT.md        ← the IR: structured markdown + layout + tables
 │   ├── EXTRACTION.md              ← SmolDocling/OCR/native; throughput, concurrency
 │   ├── PROFILES.md                ← document profiles: corpus knowledge as data, not code
+│   ├── PIPELINE.md                ← the layers, what each may write, what the profile decides
 │   ├── CHUNKING.md                ← chunker registry; provenance capture rules
 │   ├── ENRICHMENT.md              ← NER, entities, KG edges, signals, keyword stats
 │   ├── EMBEDDING.md               ← pluggable embedders; dimension; omni; consistency
@@ -175,6 +176,10 @@ stack and version policy in `docs/STACK.md`.
 15. **A validator must assert the invariant, not replay the construction.** A check that
     re-implements the code it checks certifies that code's bugs — 931 documents passed a
     heading_path rule that shared the builder's defect. (`docs/LOOPHOLES.md`)
+16. **Build the knowledge base before the index.** Layers up to and including the
+    `expected` check produce the sealed chunks; embedding and keyword indexing come after
+    and can be dropped and rebuilt. Every layer writes to one place only — `body` takes
+    deletions, derived text takes repairs, sidecars take anything. (`docs/PIPELINE.md`)
 
 ---
 

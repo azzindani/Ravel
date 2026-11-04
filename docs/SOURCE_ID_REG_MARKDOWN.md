@@ -248,6 +248,11 @@ under a chapter or section heading that is not itself citable). Chapters: `N/A` 
 `LAMPIRAN` 5,835, `PENUTUP` 3,723, `PENJELASAN` 3,229, `BAB R ...` the rest. 2,438 chunks sit
 under a `BAB R` with no title, where the title is longer than `max_title_chars` or two lines.
 
+`id_regulation_md@1.1` adds the `pipeline:` section (`PIPELINE.md`): one chunk per pasal,
+`max_tokens` 4096, a context header for the embedder, and floors measured per chunk on the
+same sample. On the sample that is 26,576 chunks (the default 1.0 build gives 90,052), 12.9%
+of them under 8 tokens before chapter titles were consumed as labels and 6.2% after.
+
 Not ported, deliberately: the notebook's per-pasal explanation parser and its sequence validator
 (`validate_article_sequence`). The first needs the run-on splitter (gap 6); the second
 repairs OCR'd numbering by guessing, which this project does not do.

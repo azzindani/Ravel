@@ -108,6 +108,7 @@ Every chunk carries:
 | `heading_path` | joined block `heading_path` | yes |
 | `identifier` | canonical citation, if any | yes |
 | `regulation_type`, `enacting_body`, `regulation_number`, `year`, `about`, `effective_date` | `profile.describe()` over the title block (first 30 blocks) and, for the date, the whole document | yes |
+| `seq` | position among the chunks of the document, from 0; indexed with `doc_id` for neighbour expansion | no |
 | `chapter`, `article` | the heading labels in force where the chunk sits (§5.1) | yes |
 | `source_sha256` | `doc.source.sha256` | no |
 | `config_hash` | the chunk config this row came from | no |

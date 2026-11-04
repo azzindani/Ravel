@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import string
 from dataclasses import dataclass, field
 from typing import Any, Literal, Self
 
@@ -313,6 +314,123 @@ class ScoringSpec(Base):
         return self
 
 
+#: The chunk fields a profile may name in `expected.coverage` and `derive.embed_text`.
+#: Listed here, not read off `Chunk`, because `chunk` imports `spec`; a test asserts every
+#: name is a real `Chunk` field, so the two cannot drift apart.
+CHUNK_FIELDS = frozenset(
+    {
+        "body",
+        "identifier",
+        "regulation_type",
+        "enacting_body",
+        "regulation_number",
+        "year",
+        "about",
+        "effective_date",
+        "chapter",
+        "article",
+        "heading_path",
+        "locator_section",
+        "source_title",
+    }
+)
+
+
+class ChunkDefaults(Base):
+    """What this kind of document wants from the chunker. Every field is optional.
+
+    ! None means "not stated", not "zero". Precedence is engine default < profile <
+    corpus < variant, and a field the profile leaves out must fall through to the next
+    layer rather than overwrite it with a default of its own.
+    """
+
+    chunker: str | None = None
+    max_tokens: int | None = Field(default=None, ge=32)
+    min_tokens: int | None = Field(default=None, ge=0)
+    overlap_tokens: int | None = Field(default=None, ge=0)
+    carry_parent: bool | None = None
+    carry_parent_max_tokens: int | None = Field(default=None, ge=0)
+    include_tables: bool | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class Rewrite(Base):
+    pattern: str
+    replace: str = ""
+
+
+class EmbedText(Base):
+    """How a chunk is presented to the embedder: context first, then the body.
+
+    A pasal of thirty tokens means little alone; the law, subject and chapter it sits in
+    are what place it. The context is built from fields the chunk already carries, so it
+    costs no extra extraction -- and it is *derived*: `body` is never touched.
+    """
+
+    context: list[str] = Field(default_factory=list)
+    """Parts joined by `separator`. A part is dropped when every field in it is empty."""
+    separator: str = " › "
+    skip_values: list[str] = Field(default_factory=lambda: ["N/A"])
+    """Field values that count as empty (`N/A` is a label, not information)."""
+
+    @model_validator(mode="after")
+    def _known_fields(self) -> Self:
+        for part in self.context:
+            for _, name, _, _ in string.Formatter().parse(part):
+                if name and name not in CHUNK_FIELDS:
+                    raise ValueError(
+                        f"embed_text names {name!r} · known: {sorted(CHUNK_FIELDS)}"
+                    )
+        return self
+
+
+class DeriveSpec(Base):
+    """Text derived from a chunk for the index layers. Never stored in `body`."""
+
+    embed_text: EmbedText | None = None
+    search_normalize: list[Rewrite] = Field(default_factory=list)
+    """Rewrites applied to `body` to make `search_text` for the keyword index. Fixes the
+    damage OCR does to tokens a query will contain (`Pasal5`, `1O0`) in the copy that is
+    *matched*, while the copy that is *cited* stays as the source printed it."""
+
+
+class ExpectedSpec(Base):
+    """The contract the knowledge-base build is checked against.
+
+    Floors, not targets: a build below one is reported, and the profile author decides
+    whether the profile or the corpus is wrong. Measured on a real sample before they
+    are written down, so they describe what is achievable and not what is hoped for.
+    """
+
+    coverage: dict[str, float] = Field(default_factory=dict)
+    """Chunk field -> least share of chunks that must carry it (0..1)."""
+    max_row_tokens: int | None = Field(default=None, ge=1)
+    """Chunks above this are over budget. The embedder's `max_length` is the natural value."""
+    oversize_share: float = Field(default=0.0, ge=0, le=1)
+    """Share of chunks allowed above `max_row_tokens`. A single block is the smallest unit a
+    chunk is built from, so one unbroken run-on paragraph can exceed any budget; 0 would
+    fail a whole corpus for it, and this says how many such rows are tolerable."""
+
+    @model_validator(mode="after")
+    def _known(self) -> Self:
+        for name, floor in self.coverage.items():
+            if name not in CHUNK_FIELDS:
+                raise ValueError(
+                    f"expected.coverage names {name!r} · known: {sorted(CHUNK_FIELDS)}"
+                )
+            if not 0 <= floor <= 1:
+                raise ValueError(f"expected.coverage[{name!r}] = {floor}: must be within 0..1")
+        return self
+
+
+class PipelineSpec(Base):
+    """What the layers after extraction do for this kind of document (`PIPELINE.md`)."""
+
+    chunk: ChunkDefaults = Field(default_factory=ChunkDefaults)
+    derive: DeriveSpec = Field(default_factory=DeriveSpec)
+    expected: ExpectedSpec = Field(default_factory=ExpectedSpec)
+
+
 class ProfileSpec(Base):
     """The whole file. Validated from YAML; hashed into every downstream cache key."""
 
@@ -325,6 +443,7 @@ class ProfileSpec(Base):
     identity: IdentitySpec = Field(default_factory=IdentitySpec)
     cleanup: CleanupSpec = Field(default_factory=CleanupSpec)
     scoring: ScoringSpec = Field(default_factory=ScoringSpec)
+    pipeline: PipelineSpec = Field(default_factory=PipelineSpec)
     extract: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -363,10 +482,22 @@ class ProfileSpec(Base):
         them. `identity` and `cleanup` are not: they are read at chunk time, and
         chunking keys on the full `config_hash`.
         """
+        # ! `role`, `region`, `article` and `opening` are labels read at chunk time. Left
+        # in, correcting a label would discard every extracted document to reproduce the
+        # same blocks -- the cost this hash exists to avoid.
+        label_fields = {"role", "region", "article"}
+        structure = self.structure.model_dump(
+            mode="json",
+            exclude={
+                "opening": True,
+                "units": {"__all__": label_fields},
+                "sections": {"__all__": label_fields},
+            },
+        )
         return _digest(
             {
                 "match": self.match.model_dump(mode="json"),
-                "structure": self.structure.model_dump(mode="json"),
+                "structure": structure,
                 "extract": self.extract,
             }
         )
@@ -430,6 +561,7 @@ class Profile:
     enacting_body: re.Pattern[str] | None = None
     about: re.Pattern[str] | None = None
     dates: tuple[re.Pattern[str], ...] = ()
+    rewrites: tuple[tuple[re.Pattern[str], str], ...] = ()
     _types_sorted: tuple[str, ...] = field(default=())
 
     # -- construction -------------------------------------------------------
@@ -472,6 +604,10 @@ class Profile:
             enacting_body=build(spec.identity.enacting_body),
             about=build(spec.identity.about),
             dates=tuple(re.compile(d, flags) for d in spec.identity.dates),
+            rewrites=tuple(
+                (re.compile(r.pattern), r.replace)
+                for r in spec.pipeline.derive.search_normalize
+            ),
             _types_sorted=types,
         )
 

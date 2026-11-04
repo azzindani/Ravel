@@ -3,19 +3,33 @@
 from spec.corpus import CorpusSpec, ExtractSpec, ProvenanceSpec, SourcesSpec
 from spec.loader import ENV_VAR, Registry, RegistryError, default_registry, registry_root
 from spec.models import (
+    CHUNK_FIELDS,
+    ChunkDefaults,
     CleanupSpec,
+    DeriveSpec,
+    EmbedText,
+    ExpectedSpec,
     Facts,
     IdentitySpec,
     MatchSpec,
+    PipelineSpec,
     Profile,
     ProfileSpec,
+    Rewrite,
     StructureSpec,
     Unit,
     UnitSpec,
 )
 
 __all__ = [
+    "CHUNK_FIELDS",
     "ENV_VAR",
+    "ChunkDefaults",
+    "DeriveSpec",
+    "EmbedText",
+    "ExpectedSpec",
+    "PipelineSpec",
+    "Rewrite",
     "CleanupSpec",
     "CorpusSpec",
     "ExtractSpec",

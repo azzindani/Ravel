@@ -116,11 +116,15 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
     use_subunits = bool(config.params.get("subunits", True)) and profile is not None
     citation = _citation(doc, profile)
     builder.facts = _facts(doc, profile)
+    where, titles = _where(doc, profile)
 
     plans: list[Plan] = []
-    for segment in _segments(doc, split_on, _where(doc, profile)):
+    for segment in _segments(doc, split_on, where):
         here: list[Plan] = []
-        body = [b for b in segment.blocks if _is_body(b, profile)]
+        # ! A chapter title that became the chapter's label is not also a chunk. Emitted
+        # twice, it made 3,340 of 29,140 chunks on the sample two-token rows reading
+        # `KETENTUAN UMUM` -- 11% of the corpus, none of it able to answer a query.
+        body = [b for b in segment.blocks if b.id not in titles and _is_body(b, profile)]
         if not body:
             continue
 
@@ -315,8 +319,11 @@ def _facts(doc: CanonicalDoc, profile: Profile | None) -> Facts | None:
 # ---------------------------------------------------------------------------
 # Where a chunk sits: chapter and article labels
 # ---------------------------------------------------------------------------
-def _where(doc: CanonicalDoc, profile: Profile | None) -> dict[str, Where]:
+def _where(doc: CanonicalDoc, profile: Profile | None) -> tuple[dict[str, Where], set[str]]:
     """The labels in force at every heading, keyed by block id; `""` is the opening.
+
+    Also the ids of the title blocks that were consumed as chapter labels, which the
+    caller must not emit as body.
 
     A single forward pass over reading order. A `region` unit (`PENJELASAN`) opens a
     region that lasts until the next one, and a chapter inside it reads
@@ -329,11 +336,12 @@ def _where(doc: CanonicalDoc, profile: Profile | None) -> dict[str, Where]:
     own roles and gets the same behaviour.
     """
     if profile is None:
-        return {}
+        return {}, set()
     opening = profile.spec.structure.opening
     out: dict[str, Where] = {"": Where(_compose(None, None), opening)}
     units = {u.name: u for u in profile.units}
     blocks = sorted(doc.blocks, key=lambda b: b.reading_order)
+    consumed: set[str] = set()
     region: str | None = None
     chapter: str | None = None
     for index, block in enumerate(blocks):
@@ -346,11 +354,14 @@ def _where(doc: CanonicalDoc, profile: Profile | None) -> dict[str, Where]:
             region, chapter = unit.region, None
         marker, rest = _split_marker(unit, block.text)
         if unit.role == "chapter":
-            title = rest or _title_below(blocks, index, profile)
+            title = rest
+            if not title and (below := _title_below(blocks, index, profile)):
+                title = below.text.strip()
+                consumed.add(below.id)
             chapter = f"{marker} - {title}" if title else marker
         article = unit.article or (marker if unit.role == "article" else None)
         out[block.id] = Where(_compose(region, chapter), article)
-    return out
+    return out, consumed
 
 
 def _compose(region: str | None, chapter: str | None) -> str:
@@ -371,8 +382,8 @@ def _split_marker(unit: Unit, text: str) -> tuple[str, str]:
     return marker, text[match.end() :].strip(" .:;-")
 
 
-def _title_below(blocks: Sequence[Block], index: int, profile: Profile) -> str:
-    """A chapter's title when it sits on the line under its marker, or empty.
+def _title_below(blocks: Sequence[Block], index: int, profile: Profile) -> Block | None:
+    """The block holding a chapter's title when it sits under its marker, or None.
 
     Only a short paragraph that is not itself a marker: the title is a label, and
     promoting the first sentence of the chapter's text to one would put prose in a
@@ -387,8 +398,8 @@ def _title_below(blocks: Sequence[Block], index: int, profile: Profile) -> str:
             and not text.endswith(tuple(profile.spec.structure.prose_tail))
             and profile.structural(text) is None
         ):
-            return text
-    return ""
+            return block
+    return None
 
 
 def _identifier(citation: str | None, locator: str) -> str | None:

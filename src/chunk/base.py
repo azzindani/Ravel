@@ -139,6 +139,7 @@ class Builder:
     config: ChunkConfig
     profile: Profile | None = None
     count_tokens: TokenCounter = estimate_tokens
+    _seq: int = field(default=0, init=False, repr=False)
     facts: Facts | None = None
     """The document's own facts, set once by a chunker that reads them. Stamped on every
     chunk of the document, so the exact-identifier path never has to join to find them."""
@@ -184,6 +185,7 @@ class Builder:
         full_locator = locator or heading_path or ""
         page = next((b.page for b in blocks if b.page is not None), None)
 
+        seq, self._seq = self._seq, self._seq + 1
         return Chunk(
             id=chunk_id(
                 doc_id=self.doc.doc_id,
@@ -202,6 +204,7 @@ class Builder:
             body=text,
             token_count=self.count_tokens(text),
             part=part,
+            seq=seq,
             block_ids=block_ids,
             source_title=self.doc.source.title,
             source_url=self._url(),

@@ -269,6 +269,13 @@ def chunk_cmd(
     ] = "default",
     limit: Annotated[int, typer.Option("--limit", help="Stop after N documents.")] = 0,
     force: Annotated[bool, typer.Option("--force", help="Ignore the ledger.")] = False,
+    enforce: Annotated[
+        bool,
+        typer.Option(
+            "--enforce/--no-enforce",
+            help="Exit non-zero when the build falls below the profile's `expected` floors.",
+        ),
+    ] = True,
 ) -> None:
     """Phase B: canonical documents into chunks with immutable provenance.
 
@@ -307,6 +314,10 @@ def chunk_cmd(
             f"[yellow]{report.empty:,} documents produced no chunks · "
             f"they are recorded, not silently dropped[/yellow]"
         )
+    for violation in report.violations:
+        err.print(f"[red]below expected[/red] {violation}")
+    if report.violations and enforce:
+        raise typer.Exit(1)
 
 
 @app.command()
