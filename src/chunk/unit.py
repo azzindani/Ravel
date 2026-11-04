@@ -367,7 +367,7 @@ def _where(
         if unit.role == "chapter":
             title = rest
             if not title and (below := _title_below(blocks, index, profile)):
-                title = below.text.strip()
+                title = below.text.strip().strip(" .:;-")
                 consumed[block.id] = below
             chapter = f"{marker} - {title}" if title else marker
         article = unit.article or (marker if unit.role == "article" else None)

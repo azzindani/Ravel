@@ -93,12 +93,14 @@ structure:
       # in an amending regulation, so it is dropped as a truncated duplicate when its
       # completion follows, `cleanup.drop_truncated_duplicates`):
       #   `Pasa13`    `Pasa1` is `Pasal` with the l read as 1 (7,621 headings, 2,001 files),
+      #   `Pasai 56`  or as i (1,237 lines alone on a line, 672 files; a cross-reference never
+      #               stands alone, so marker_only keeps this from reading prose),
       #   `Pasal 3 2` a space inside the number, so pasal 32 (the first line of 17,949 that
       #               opened with a marker and were refused as marker + text),
       #   `Pasal 5 Cukup jelas.` the whole explanation of a pasal on its marker's line.
       # `label` names the unit from the number, so the damage is repaired where a reader
       # sees it and the body is untouched.
-      pattern: '^(?:PASAL|Pasal|Pasa1)\s*(?P<number>\d+(?:\s\d)*[A-Z]?|[IVXLC]+)\s*[.:]?(?:\s*(?i:cukup\s+jelas)\.?)?'
+      pattern: '^(?:PASAL|Pasal|Pasa[1i])\s*(?P<number>\d+(?:\s\d)*[A-Z]?|[IVXLC]+)\s*[.:]?(?:\s*(?i:cukup\s+jelas)\.?)?'
       ignorecase: false
       marker_only: true
       role: article

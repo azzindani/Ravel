@@ -139,7 +139,7 @@ def test_structural_markers(md: Profile, line: str, unit: str) -> None:
         "| Bab I | Pendahuluan | Pendahuluan |",
         "| Pasal 5 | Cukup jelas |",
         # OCR damage that would give a wrong locator rather than none
-        "Pasai 84",
+        "Pasai 84 dan Pasai 85 mengatur hal yang sama",
     ],
 )
 def test_prose_and_near_misses_are_never_headings(md: Profile, line: str) -> None:
@@ -339,6 +339,7 @@ def test_every_added_type_has_an_abbreviation_and_a_rank(md: Profile, pdf: Profi
     ("line", "label"),
     [
         ("Pasa13", "Pasal 3"),  # `l` read as `1`
+        ("Pasai 84", "Pasal 84"),  # or as `i`
         ("Pasa122", "Pasal 22"),
         ("Pasal 3 2", "Pasal 32"),  # a space inside the number
         ("Pasal 5 Cukup jelas.", "Pasal 5"),

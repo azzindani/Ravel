@@ -221,6 +221,13 @@ happened to spell it when joined, now matched against whole labels.
 
 ### 8.2 Spot check, and what 1.2 fixed
 
+A second round, on 4,000 random files, audited the changes themselves. Every sampled
+`Pasa1N`, `Pasal 3 2` and `Pasal N Cukup jelas.` match was a real heading; every one of 407
+dropped duplicates had its completion directly after it; the cut-off lines still kept are
+form blanks (`Nama ......`) and real double full stops. Two things it found: a chapter
+title taken from the next line kept its leading `:` (`BAB V - : PROYEKSI`), now stripped,
+and `Pasai N`, now read.
+
 Reading chunks at random, not totals, found what the gates cannot: a gate asserts that no
 word was lost, not that the structure is right. Each defect was counted over all files, then
 fixed as profile data (`id_regulation_md@1.2`) plus the engine support it needed:
@@ -228,6 +235,7 @@ fixed as profile data (`id_regulation_md@1.2`) plus the engine support it needed
 | defect | before | after |
 |---|---|---|
 | `Pasa13` read as text, not a heading | 7,621 headings, 2,001 files | headings, labelled `Pasal 3` |
+| `Pasai 56` (i for l) alone on a line | 1,237 lines, 672 files | heading, labelled `Pasal 56` |
 | `Pasal 3 2` refused as marker + text | first line of 17,949 | one heading, `Pasal 32` |
 | `Pasal 5 Cukup jelas.` as a clause | about 1,700 | heading, empty body, no chunk |
 | BAB lines inside another chunk (`.`/`;` tails, long titles, glued `BABIV`) | 6,992 | 5,868, mostly inside annexes |
