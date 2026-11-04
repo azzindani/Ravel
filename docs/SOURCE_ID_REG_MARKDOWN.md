@@ -1,7 +1,7 @@
 # SOURCE_ID_REG_MARKDOWN.md — Ravel
 
 A measured reading of `Azzindani/ID_REG_Markdown` and the profile written from it,
-`registry/profiles/id_regulation_md@1.1.yaml`. (Measured with 1.0, whose structure and identity are identical to 1.1's; 1.0 was removed as superseded.) Everything below was counted, not recalled;
+`registry/profiles/id_regulation_md@1.2.yaml`. (Measured with 1.0; 1.1 and 1.2 add the repairs in `PIPELINE.md` §8.2, and the superseded files were removed.) Everything below was counted, not recalled;
 the commands that reproduce it are in §8. Nothing here has been run through
 `ravel extract` / `ravel chunk` yet — the profile is tested against lines, not against a
 build (§7).
@@ -106,7 +106,7 @@ repetition: `<!-- image -->` 1,890 files / 22,431 lines; `PRESIDEN REPUBLIK INDO
 
 ---
 
-## 4. The profile · `id_regulation_md@1.1`
+## 4. The profile · `id_regulation_md@1.2`
 
 A **separate profile, not `id_regulation@1.1`**: the family is the same, the noise model is
 not, and `id_regulation@1.0` is named explicitly by `test_chunk_run`, `test_extract_run` and
@@ -123,7 +123,7 @@ abbreviations and `scoring` block are copied from `id_regulation@1.0`.
 ### Measured on a 1-in-12 sample (3,871 files, 1,305,005 blocks)
 
 Through Ravel's own Markdown extractor, `Profile.structural()` against a deliberately loose
-detector. `id_regulation@1.0` → `id_regulation_md@1.1`:
+detector. `id_regulation@1.0` → `id_regulation_md@1.2`:
 
 | unit | claimed | loose lines not claimed |
 |---|---|---|
@@ -248,7 +248,7 @@ under a chapter or section heading that is not itself citable). Chapters: `N/A` 
 `LAMPIRAN` 5,835, `PENUTUP` 3,723, `PENJELASAN` 3,229, `BAB R ...` the rest. 2,438 chunks sit
 under a `BAB R` with no title, where the title is longer than `max_title_chars` or two lines.
 
-`id_regulation_md@1.1` adds the `pipeline:` section (`PIPELINE.md`): one chunk per pasal,
+`id_regulation_md@1.2` adds the `pipeline:` section (`PIPELINE.md`): one chunk per pasal,
 `max_tokens` 4096, a context header for the embedder, and floors measured per chunk on the
 same sample. On the sample that is 26,576 chunks (the default 1.0 build gives 90,052), 12.9%
 of them under 8 tokens before chapter titles were consumed as labels and 6.2% after.
@@ -286,10 +286,10 @@ for z in sorted(src.glob("*.zip")):
 EOF
 
 uv run python tools/probe_markdown_corpus.py structure id_regulation@1.0    work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py structure id_regulation_md@1.1 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py cite      id_regulation_md@1.1 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.1 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py facts    id_regulation_md@1.1 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py labels   id_regulation_md@1.1 work/id_reg_markdown --every 48
+uv run python tools/probe_markdown_corpus.py structure id_regulation_md@1.2 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py cite      id_regulation_md@1.2 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.2 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py facts    id_regulation_md@1.2 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py labels   id_regulation_md@1.2 work/id_reg_markdown --every 48
 uv run pytest tests/test_profile_id_regulation_md.py tests/test_document_facts.py
 ```

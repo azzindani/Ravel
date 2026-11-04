@@ -1,8 +1,8 @@
 """Measure a profile against a directory of Markdown regulations · three read-only reports.
 
-    python tools/probe_markdown_corpus.py structure id_regulation_md@1.1 work/id_reg_markdown
-    python tools/probe_markdown_corpus.py cite      id_regulation_md@1.1 work/id_reg_markdown
-    python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.1 work/md --every 24
+    python tools/probe_markdown_corpus.py structure id_regulation_md@1.2 work/id_reg_markdown
+    python tools/probe_markdown_corpus.py cite      id_regulation_md@1.2 work/id_reg_markdown
+    python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.2 work/md --every 24
 
 `<profile>` is a ref in the registry or a path to a `<id>@<version>.yaml`; `--every N` reads
 every Nth file in sorted order, so a run is a deterministic sample rather than a lottery.

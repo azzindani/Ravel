@@ -150,7 +150,7 @@ when it falls below a floor (`--no-enforce` reports without failing).
   One unbroken block can exceed any budget, so the contract is a *share*, not zero.
 - A build with no chunks fails every coverage floor. "No data" is not "all data is fine".
 
-Floors are measured before they are written. `id_regulation_md@1.1` records its sample
+Floors are measured before they are written. `id_regulation_md@1.2` records its sample
 (968 files, 26,576 chunks) and sets each floor about five points below what was achieved.
 
 ---
@@ -197,27 +197,51 @@ canonical blocks and against chunk bodies, with what went missing at each step),
 per stage, peak memory, the size distribution, fact and label coverage, and the lowest-recall
 documents to open by hand.
 
-### 8.1 Measured: `id_regulation_md@1.1` over all 46,451 files
+### 8.1 Measured: `id_regulation_md@1.2` over all 46,451 files
 
-16 workers, 145 s wall. Every gate passes.
+16 workers, 167 s wall. Every gate passes.
 
 | | |
 |---|---|
-| chunks | 1,323,160 (28.5 per file) |
-| source words in a chunk body | 96.69% |
+| chunks | 1,327,249 (28.6 per file) |
+| source words in a chunk body | 96.61% |
 | lost at extraction | 0.14%: 0.13% decoded HTML entities (`&lt;` becomes `<`, still present), 0.01% encoding damage and hyphen joins, 0.00% list numbers |
-| lost at chunking | 0.64%: the words of removed `<!-- image -->`, `Cukup jelas.`, repeated `PRESIDEN REPUBLIK INDONESIA` headers, `ttd` |
-| blocks by bucket | 80.7% emitted, 10.7% heading carried, 7.4% boilerplate (by rule, counted), 0.9% chapter title consumed, 0.3% empty section |
+| lost at chunking | 0.66%: the words of removed `<!-- image -->`, `Cukup jelas.`, repeated `PRESIDEN REPUBLIK INDONESIA` headers, `ttd` (6,618 cut-off duplicates are counted apart: their words are in the next block) |
+| blocks by bucket | 80.2% emitted, 10.8% heading carried, 7.6% boilerplate (by rule, counted), 0.9% chapter title consumed, 0.4% empty section, 0.04% truncated duplicate |
 | zero-chunk documents | 150, median 62 bytes, every character boilerplate: image-only scans that need OCR, not a parser fix |
-| chunk tokens p10 / p50 / p90 / p99 | 13 / 91 / 553 / 4,112; 6.2% under 8, 3.5% split into parts, 31 over the 8,192 cap |
-| coverage | type 82.9%, issuer 89.1%, subject 89.4%, date 71.4%, article 87.5%, chapter 100% |
-| throughput | 29 files/s/core, 1.1 MB/s/core (extract 540 s, structure 307 s, chunk 745 s of CPU); peak 753 MB per worker |
+| chunk tokens p10 / p50 / p90 / p99 | 14 / 91 / 545 / 4,110; 6.0% under 8, 3.4% split into parts, 31 over the 8,192 cap |
+| coverage | type 82.7%, issuer 89.0%, subject 89.3%, date 74.3%, article 87.7%, chapter 100% |
+| throughput | 27 files/s/core, 1.0 MB/s/core (extract 492 s, structure 282 s, chunk 961 s of CPU); peak 750 MB per worker |
 
 What the first full run found, and the fixes: stripping `1.` list numbers dropped 1.8M words
 (0.95%), now kept (`TextExtractor` 1.2); a titled heading with nothing under it, or inside a
 chapter segment, reached no chunk (277K characters), now kept as its own chunk
 (`attrs.orphan`, `unit` 1.2); and a heading judged carried because neighbouring labels
 happened to spell it when joined, now matched against whole labels.
+
+### 8.2 Spot check, and what 1.2 fixed
+
+Reading chunks at random, not totals, found what the gates cannot: a gate asserts that no
+word was lost, not that the structure is right. Each defect was counted over all files, then
+fixed as profile data (`id_regulation_md@1.2`) plus the engine support it needed:
+
+| defect | before | after |
+|---|---|---|
+| `Pasa13` read as text, not a heading | 7,621 headings, 2,001 files | headings, labelled `Pasal 3` |
+| `Pasal 3 2` refused as marker + text | first line of 17,949 | one heading, `Pasal 32` |
+| `Pasal 5 Cukup jelas.` as a clause | about 1,700 | heading, empty body, no chunk |
+| BAB lines inside another chunk (`.`/`;` tails, long titles, glued `BABIV`) | 6,992 | 5,868, mostly inside annexes |
+| cut-off catch-word lines kept beside their completion | 69,661 lines | 29,810; 6,618 dropped as exact repeats |
+| dotted leader lines `.........` | kept | boilerplate |
+| issuer read across `TENTANG`/`NOMOR` | wrong `enacting_body` | repaired |
+| `Pebruari`, `Nopember` dates | no date | read; date coverage 71.4% to 74.3% |
+
+Known and left, because the source is the cause or the fix is a decision, not a pattern:
+bare page-number lines inside a body (93,001 lines, 24.4% of files); pasal numbers absent from
+the source (43.5% of the remaining gaps); unreadable OCR scans (about 1 to 2% of files, which
+word recall does not detect); `�` replacement characters already in the source (2.9% of
+files); a preamble displaced when a document has no `PENJELASAN` heading; 150 image-only
+files that need OCR. A document-level quality flag is the open question.
 
 `verify_kb.py` measures the layers, not the CLI: the corpus file that `ravel chunk` needs is
 the open item in §7.

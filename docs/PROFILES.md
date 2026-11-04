@@ -87,7 +87,19 @@ text the chapter (`BAB III - KETENTUAN UMUM`, with the title taken from the line
 the marker stands alone); `role: article` makes it the thing cited (`Pasal 5`); `region`
 opens a part of the document that lasts until the next one (`PENJELASAN`), and replaces the
 chapter while it lasts; `article` is a fixed label for a unit cited by name (`Pembukaan`).
-`structure.opening` labels what precedes the first marker. None of these names is known to
+`structure.opening` labels what precedes the first marker.
+
+Four fields repair what a converter or an OCR pass did to a marker, in the place a reader
+sees it (the label) and not in the stored text. `label: 'Pasal {number}'` builds a unit's name
+from the pattern's named groups with whitespace removed, so `Pasa13` (the `l` read as `1`),
+`Pasal 3 2` (a space inside the number) and the glued `BABIV` are cited as `Pasal 3`,
+`Pasal 32` and `BAB IV`. `max_title_chars` and `prose_tail` on one unit override the
+`structure` defaults for that unit only: a chapter title is long and ends in `.` here, a
+clause that opens `Pasal` is neither. Without the override the defaults, written for pasal,
+refused 6,992 chapter lines. `identity.month_aliases` maps other spellings to a name in
+`months` (`Pebruari` to `Februari`). `cleanup.drop_truncated_duplicates` drops a block that
+ends in an ellipsis when the next block begins with the same words; it is a rule over
+neighbours, so a cut line with no completion after it is kept. None of these names is known to
 the engine, so a contract profile declares `role: article` on its `Clause` and gets the same
 columns.
 

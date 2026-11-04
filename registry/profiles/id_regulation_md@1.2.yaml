@@ -1,5 +1,5 @@
 id: id_regulation_md
-version: "1.1"
+version: "1.2"
 title: Indonesian laws and regulations · Docling markdown export
 description: >
   The same kind of document as `id_regulation` -- Undang-Undang, Peraturan Pemerintah,
@@ -60,9 +60,20 @@ structure:
       level: 3
       # A title on the same line is accepted (`BAB IX KETENTUAN PENUTUP`); `[.:]?` covers
       # `BAB V.` and `BAB I :`.
-      pattern: '^(?:BAB|Bab)\s*(?:[IVXLCDM]+|\d+)\b\s*[.:]?'
+      #
+      # ! `label` rebuilds the name from the number, so the glued `BABIV` a converter writes
+      # is cited as `BAB IV`. And a chapter title here ends in `.`, `;` or `,` and runs long
+      # (`BAB I. KETENTUAN UMUM.`, `BAB II : EVALUASI HASIL RKPD ... TAHUN 20`): measured on
+      # 46,451 files, 6,992 chapter lines sat inside another chunk because the default
+      # title guard, written for pasal, refused them. An uppercase `BAB` followed by a roman
+      # numeral opening a line is not the start of a sentence.
+      pattern: '^(?:BAB|Bab)\s*(?P<number>[IVXLCDM]+|\d+)\b\s*[.:]?'
       ignorecase: false
       role: chapter
+      label: 'BAB {number}'
+      max_title_chars: 100
+      # Only an ellipsis marks a cut-off line (`BAB IX . . .`); a full stop does not.
+      prose_tail: ['…', '..', '. .']
     - name: bagian
       level: 4
       # ! An explicit ordinal list, ✗ `KE\w+`. `Bagian Keuangan` and `Bagian Kepegawaian`
@@ -77,16 +88,28 @@ structure:
       ignorecase: false
     - name: pasal
       level: 6
-      pattern: '^(?:PASAL|Pasal)\s*(?:\d+[A-Z]?|[IVXLC]+)\s*[.:]?'
+      # ! Three OCR and layout habits, each measured on the 46,451 files (a heading cut at the
+      # page break, `Pasal 34 …`, is NOT accepted here: `Pasal 97 ...` also means "text omitted"
+      # in an amending regulation, so it is dropped as a truncated duplicate when its
+      # completion follows, `cleanup.drop_truncated_duplicates`):
+      #   `Pasa13`    `Pasa1` is `Pasal` with the l read as 1 (7,621 headings, 2,001 files),
+      #   `Pasal 3 2` a space inside the number, so pasal 32 (the first line of 17,949 that
+      #               opened with a marker and were refused as marker + text),
+      #   `Pasal 5 Cukup jelas.` the whole explanation of a pasal on its marker's line.
+      # `label` names the unit from the number, so the damage is repaired where a reader
+      # sees it and the body is untouched.
+      pattern: '^(?:PASAL|Pasal|Pasa1)\s*(?P<number>\d+(?:\s\d)*[A-Z]?|[IVXLC]+)\s*[.:]?(?:\s*(?i:cukup\s+jelas)\.?)?'
       ignorecase: false
       marker_only: true
       role: article
+      label: 'Pasal {number}'
 
   # Non-hierarchical sections that are still headings.
   #
   # ! A heading and its content on ONE line cannot be expressed here and are left out on
   # purpose: `Menimbang : a. bahwa ...` (1,141 of 3,794 Menimbang lines), `Menetapkan :
-  # PERATURAN DAERAH TENTANG ...` (1,826 of 3,817) and `Pasal 5 Cukup jelas.` (~1,700).
+  # PERATURAN DAERAH TENTANG ...` (1,826 of 3,817). (`Pasal 5 Cukup jelas.` is accepted
+  # above: its whole tail is a fixed phrase, so the pattern can name it.)
   # `structural()` accepts a marker plus a SHORT title, ✗ a marker plus a clause, and
   # widening it would turn amendment clauses into headings. Recorded as an engine gap in
   # docs/SOURCE_ID_REG_MARKDOWN.md, not papered over with a looser regex.
@@ -372,11 +395,13 @@ identity:
   #
   # `body` is whatever sits between the type and `NOMOR`, so a regional regulation names its
   # region without a list of every region.
-  enacting_body: '(?:{types})\s*(?P<body>[A-Z][A-Za-z\s.''-]{{0,60}}?)\s*NOMOR\b'
+  # ! `(?!TENTANG)` per character: `PERATURAN GUBERNUR SUMATERA SELATAN TENTANG NOMOR 41` is
+  # a real title layout, and the issuer was read as `SUMATERASELATAN TENTANG`.
+  enacting_body: '(?:{types})\s*(?P<body>[A-Z](?:(?!TENTANG)[A-Za-z\s.''-]){{0,60}}?)\s*(?:TENTANG\s*)?NOMOR\b'
   # The subject runs from `TENTANG` to the line that opens the preamble (`DENGAN RAHMAT TUHAN`,
   # the issuing office, or `Menimbang`). Lazy, bounded, and None when no such line follows
   # within 400 characters -- a missing subject beats a subject that swallows the preamble.
-  about: '(?s:\bTENTANG\b\s*(?P<about>.{{3,400}}?)\s*(?=\n\s*(?:DENGAN\b|PRESIDEN\b|BUPATI\b|WALI\s?KOTA\b|GUBERNUR\b|MENTERI\b|KEPALA\b|DEWAN\b|Menimbang\b|MENIMBANG\b)|\Z))'
+  about: '(?s:\bTENTANG\b\s*(?:NOMOR\s*\d+\s*TAHUN\s*\d{{4}}\s*)?(?P<about>.{{3,400}}?)\s*(?=\n\s*(?:DENGAN\b|PRESIDEN\b|BUPATI\b|WALI\s?KOTA\b|GUBERNUR\b|MENTERI\b|KEPALA\b|DEWAN\b|Menimbang\b|MENIMBANG\b)|\Z))'
   # Most specific first; the first that validates wins. `mulai berlaku` is the effective date
   # proper, then the date it was issued, then the date it was promulgated.
   dates:
@@ -385,6 +410,8 @@ identity:
     - '(?i:diundangkan\s+di\s*:?\s*[A-Za-z. ]{2,40}?\s*[,:]?\s*(?:pada\s+)?(?:tanggal\s*:?\s*)?)(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})'
     - '(?i:(?:ditetapkan|disahkan|diundangkan)\s+(?:pada\s+)?(?:tanggal\s*:?\s*))(?P<day>\d{1,2})\s*[-/.]\s*(?P<month>\d{1,2})\s*[-/.]\s*(?P<year>\d{4})'
   months: [Januari, Februari, Maret, April, Mei, Juni, Juli, Agustus, September, Oktober, November, Desember]
+  # Spellings the corpus uses for them (`23 Pebruari 2005` was a date no list could read).
+  month_aliases: {Pebruari: Februari, Nopember: November, Agustus: Agustus, Peb: Februari, Okt: Oktober, Des: Desember, Agt: Agustus, Sept: September}
   flags: []
 
 # ---------------------------------------------------------------------------
@@ -440,6 +467,9 @@ pipeline:
 # Cleanup. Stored, not applied at extraction — a chunker decides whether to drop.
 # ---------------------------------------------------------------------------
 cleanup:
+  # A clause cut at a page break and printed again in full below it (69,661 truncated lines in
+  # 8,734 files, many of them the first half of a clause the next block repeats).
+  drop_truncated_duplicates: true
   # 30,520 rows of the incumbent corpus are exactly this string: thousands of
   # near-identical vectors that distort ranking and answer no query.
   boilerplate:
@@ -452,6 +482,9 @@ cleanup:
     # header in 401 / 4,719, `- 2 -` page numbers in 403 / 4,797. They are one block per
     # page, so left in they become body text of whatever chunk spans a page break.
     - '^<!--\s*image\s*-->$'
+    # Dotted and underscore leader lines of a blank form (`..........`): no words, no meaning.
+    # Table separators are `|---|---|`, contain a pipe, and are not matched.
+    - '^[.…_·\-–—\s]{4,}$'
     # The Markdown extractor strips the list bullet, so `- 2 -` arrives as `2 -`.
     - '^-?\s*\d{1,3}\s*-$'
     - '^(?:PRESIDEN|REPUBLIK\s+INDONESIA|PRESIDEN\s+REPUBLIK\s+INDONESIA)\s*,?$'

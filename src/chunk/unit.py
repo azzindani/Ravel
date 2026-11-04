@@ -119,6 +119,7 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
     builder.facts = _facts(doc, profile)
     where, title_of = _where(doc, profile)
     titles = {b.id for b in title_of.values()}
+    repeated = truncated_duplicates(doc, profile)
 
     plans: list[Plan] = []
     for segment in _segments(doc, split_on, where):
@@ -126,7 +127,11 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
         # ! A chapter title that became the chapter's label is not also a chunk. Emitted
         # twice, it made 3,340 of 29,140 chunks on the sample two-token rows reading
         # `KETENTUAN UMUM` -- 11% of the corpus, none of it able to answer a query.
-        body = [b for b in segment.blocks if b.id not in titles and _is_body(b, profile)]
+        body = [
+            b
+            for b in segment.blocks
+            if b.id not in titles and b.id not in repeated and _is_body(b, profile)
+        ]
         if not body:
             continue
 
@@ -438,6 +443,38 @@ def _keep_orphan_headings(
         )
 
 
+_CUT = re.compile(r"^(?P<head>.*?)\s*(?:\.{2,}|…|(?:\.\s+){2,}\.?)\s*$")
+
+
+def truncated_duplicates(doc: CanonicalDoc, profile: Profile | None) -> set[str]:
+    """Ids of blocks cut off at an ellipsis whose completion follows immediately.
+
+    The rule is `cleanup.drop_truncated_duplicates`. The cut block is dropped only when
+    the next block begins with the same words, so what is removed is a repeat and
+    never the only copy.
+    """
+    if profile is None or not profile.spec.cleanup.drop_truncated_duplicates:
+        return set()
+    # Any block may complete a cut one, a heading included: `Pasal 34 …` is a paragraph, and
+    # the `Pasal 34` that repeats it after the page break is a heading.
+    live = [
+        b
+        for b in sorted(doc.blocks, key=lambda b: b.reading_order)
+        if b.text.strip() and not profile.is_boilerplate(b.text.strip())
+    ]
+    dropped: set[str] = set()
+    for here, following in zip(live, live[1:], strict=False):
+        if here.type not in BODY_TYPES:
+            continue
+        cut = _CUT.match(here.text.strip())
+        if not cut:
+            continue
+        head = squash_text(cut.group("head"))
+        if len(head) > 2 and squash_text(following.text).startswith(head):
+            dropped.add(here.id)
+    return dropped
+
+
 def squash_text(text: str) -> str:
     """Letters and digits only, lower-cased: how two renderings of one title are compared."""
     return re.sub(r"\W+", "", text).lower()
@@ -456,6 +493,12 @@ def _split_marker(unit: Unit, text: str) -> tuple[str, str]:
     if not match:
         return text, ""
     # `Pasal5` is a glued `Pasal 5`: a label is read by people, so the seam is restored.
+    if unit.label:
+        values = {k: re.sub(r"\s+", "", v or "") for k, v in match.groupdict().items()}
+        try:
+            return unit.label.format(**values), text[match.end() :].strip(" .:;-")
+        except KeyError:
+            pass  # a label naming a group the pattern lacks falls back to the matched text
     marker = re.sub(r"(?<=[^\W\d_])(?=\d)", " ", match.group(0))
     marker = re.sub(r"\s+", " ", marker).strip(" .:;")
     return marker, text[match.end() :].strip(" .:;-")

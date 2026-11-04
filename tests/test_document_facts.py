@@ -18,7 +18,7 @@ from chunk import SCHEMA, Builder, ChunkConfig, get, read_chunks, write_chunks
 from load.plan import CHUNK_COLUMNS
 from spec import Profile, default_registry
 
-REF = "id_regulation_md@1.1"
+REF = "id_regulation_md@1.2"
 
 TITLE = (
     "PERATURAN BUPATI BANYUWANGI\n"
@@ -414,3 +414,55 @@ def test_neighbouring_labels_do_not_stand_in_for_a_heading(
     )
     bodies = [c.body for c in _chunks(built, profile)]
     assert "BAB I Pasal 1 BAB II" in bodies
+
+
+# ---------------------------------------------------------------------------
+# spellings and layouts the corpus really has
+# ---------------------------------------------------------------------------
+def test_an_older_month_spelling_is_a_date(profile: Profile) -> None:
+    assert profile.describe(
+        "", "Ditetapkan di Jakarta pada tanggal 23 Pebruari 2005"
+    ).effective_date == ("23 Februari 2005")
+
+
+def test_the_issuer_is_not_read_across_tentang_and_nomor(profile: Profile) -> None:
+    facts = profile.describe(
+        "PERATURAN GUBERNUR SUMATERA SELATAN TENTANG NOMOR 41 TAHUN 2010 PEMBENTUKAN DINAS\n"
+        "DENGAN RAHMAT TUHAN YANG MAHA ESA"
+    )
+    assert facts.enacting_body == "SUMATERA SELATAN"
+    assert facts.regulation_number == "41"
+    assert facts.about is not None and facts.about.startswith("PEMBENTUKAN")
+
+
+# ---------------------------------------------------------------------------
+# a clause cut at a page break and printed again is one clause, not two
+# ---------------------------------------------------------------------------
+def _cut_doc(doc: CanonicalDoc, texts: list[str]) -> CanonicalDoc:
+    return _doc_from(doc, [TITLE_ROW, *[(P, t, None, None) for t in texts]])
+
+
+def test_a_cut_line_is_dropped_only_when_its_completion_follows(
+    doc: CanonicalDoc, profile: Profile
+) -> None:
+    from chunk.unit import truncated_duplicates
+
+    built = _cut_doc(
+        doc, ["e. menyiapkan...", "e. menyiapkan, pengolahan dan penyajian data", "f. lain ..."]
+    )
+    dropped = {b.text for b in built.blocks if b.id in truncated_duplicates(built, profile)}
+    assert dropped == {"e. menyiapkan..."}  # `f. lain ...` has no completion, so it stays
+
+
+def test_a_cut_line_is_completed_by_a_heading_too(doc: CanonicalDoc, profile: Profile) -> None:
+    from chunk.unit import truncated_duplicates
+
+    built = _doc_from(
+        doc,
+        [
+            TITLE_ROW,
+            (P, "Ketentuan peralihan ini berlaku bagi semua orang yang ...", None, None),
+            (H, "Ketentuan peralihan ini berlaku bagi semua orang yang memiliki izin", 3, None),
+        ],
+    )
+    assert len(truncated_duplicates(built, profile)) == 1

@@ -38,7 +38,7 @@ from spec import (
 )
 from spec.corpus import ChunkSpec
 
-MD = "id_regulation_md@1.1"
+MD = "id_regulation_md@1.2"
 
 
 @pytest.fixture(scope="module")

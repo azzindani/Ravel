@@ -45,7 +45,7 @@ SAMPLE = (
 
 
 def test_a_markdown_regulation_routes_to_the_markdown_profile(registry: Registry) -> None:
-    assert registry.route(mime="text/markdown", sample=SAMPLE).ref == "id_regulation_md@1.1"
+    assert registry.route(mime="text/markdown", sample=SAMPLE).ref == "id_regulation_md@1.2"
 
 
 @pytest.mark.parametrize("mime", ["application/pdf", "text/plain", "text/html"])
@@ -124,8 +124,6 @@ def test_structural_markers(md: Profile, line: str, unit: str) -> None:
         "Pasal 1a diubah seluruhnya sehingga berbunyi sebagai berikut:",
         # A cross-reference that opens a sentence
         "Pasal 5 ayat (2) Undang-Undang Dasar Negara Republik Indonesia Tahun 1945;",
-        # The explanation's per-article entry, one line · not a heading (see the gap below)
-        "Pasal 5 Cukup jelas.",
         # A catch-word at a page break
         "Pasal 97 ...",
         "BAB IX . . .",
@@ -141,7 +139,6 @@ def test_structural_markers(md: Profile, line: str, unit: str) -> None:
         "| Bab I | Pendahuluan | Pendahuluan |",
         "| Pasal 5 | Cukup jelas |",
         # OCR damage that would give a wrong locator rather than none
-        "Pasa122",
         "Pasai 84",
     ],
 )
@@ -333,3 +330,28 @@ def test_every_added_type_has_an_abbreviation_and_a_rank(md: Profile, pdf: Profi
     for kind in set(md.spec.identity.types) - set(pdf.spec.identity.types):
         assert kind in md.spec.identity.abbreviations, kind
         assert kind in md.spec.identity.authority, kind
+
+
+# ===========================================================================
+# 1.2 · damage a reader would repair, repaired where the citation is made
+# ===========================================================================
+@pytest.mark.parametrize(
+    ("line", "label"),
+    [
+        ("Pasa13", "Pasal 3"),  # `l` read as `1`
+        ("Pasa122", "Pasal 22"),
+        ("Pasal 3 2", "Pasal 32"),  # a space inside the number
+        ("Pasal 5 Cukup jelas.", "Pasal 5"),
+        ("BABIV", "BAB IV"),
+        ("BAB I. KETENTUAN UMUM.", "BAB I"),
+        ("BAB II : EVALUASI HASIL RKPD DAN PENYUSUNAN RENCANA KERJA TAHUN 20", "BAB II"),
+    ],
+)
+def test_damaged_headings_are_found_and_labelled_from_their_number(
+    md: Profile, line: str, label: str
+) -> None:
+    from chunk.unit import _split_marker
+
+    unit = md.structural(line)
+    assert unit is not None
+    assert _split_marker(unit, line)[0] == label

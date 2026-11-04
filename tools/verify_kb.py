@@ -1,6 +1,6 @@
 """Verify a knowledge-base build against the documents it came from · read-only, measured.
 
-    python tools/verify_kb.py id_regulation_md@1.1 work/id_reg_markdown --every 23 --workers 8
+    python tools/verify_kb.py id_regulation_md@1.2 work/id_reg_markdown --every 23 --workers 8
 
 Runs the real pipeline in memory (`TextExtractor` -> `Structurer` -> the profile's chunker and
 config) and answers one question per document: **did anything the document says fail to
@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from canon import Block, BlockType  # noqa: E402
 from chunk import Builder, Chunk, check, get  # noqa: E402
 from chunk.base import BODY_TYPES  # noqa: E402
-from chunk.unit import _split_marker, _where  # noqa: E402
+from chunk.unit import _split_marker, _where, truncated_duplicates  # noqa: E402
 from extract.structure import Structurer  # noqa: E402
 from extract.text import TextExtractor  # noqa: E402
 from spec import Profile, default_registry  # noqa: E402
@@ -130,6 +130,7 @@ def account(
     consumed: set[str],
     profile: Profile,
     titled: set[str],
+    repeated: set[str],
 ) -> dict[str, Any]:
     """Put every block in exactly one bucket. Returns counts and characters per bucket."""
     emitted = {bid for c in chunks for bid in c.block_ids}
@@ -161,6 +162,9 @@ def account(
             put("emitted", block)
         elif block.id in consumed:
             put("consumed_title", block)
+        elif block.id in repeated:
+            # Cut off at a page break and printed again in full by the next block.
+            put("truncated_duplicate", block, example=True)
         elif block.type is BlockType.HEADING:
             if squash(text) in hay or any(squash(text) in part for part in hay):
                 put("heading_carried", block)
@@ -233,6 +237,7 @@ def run_one(args: tuple[str, str, str]) -> dict[str, Any]:
     blocks = sorted(doc.blocks, key=lambda b: b.reading_order)
     _, title_of = _where(doc, profile)
     consumed = {b.id for b in title_of.values()}
+    repeated = truncated_duplicates(doc, profile)
     units = {u.name: u for u in profile.units}
     titled = {
         b.id
@@ -257,7 +262,9 @@ def run_one(args: tuple[str, str, str]) -> dict[str, Any]:
     )
     total = sum(src_words.values()) or 1
     missing_canon = src_words - canon_words
-    missing_chunks = canon_words - carried_words
+    # A dropped cut copy is not lost: the block after it carries every one of its words.
+    repeat_words = words(" ".join(b.text for b in blocks if b.id in repeated))
+    missing_chunks = canon_words - carried_words - repeat_words
     lost_kinds: Counter[str] = Counter()
     other_missing: Counter[str] = Counter()
     for token, n in missing_canon.items():
@@ -296,7 +303,7 @@ def run_one(args: tuple[str, str, str]) -> dict[str, Any]:
             "lost_kinds": dict(lost_kinds),
             "missing_extract": dict(other_missing.most_common(25)),
             "missing_chunk": dict(missing_chunks.most_common(25)),
-            "accounting": account(blocks, chunks, consumed, profile, titled),
+            "accounting": account(blocks, chunks, consumed, profile, titled, repeated),
             "verbatim_bad": verbatim_failures(blocks, chunks),
             "duplicated_blocks": sum(
                 n > 1 for n in Counter(i for c in chunks for i in c.block_ids).values()
@@ -533,7 +540,7 @@ def report(s: dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", maxsplit=1)[0])
-    parser.add_argument("profile", help="a registry ref, e.g. id_regulation_md@1.1")
+    parser.add_argument("profile", help="a registry ref, e.g. id_regulation_md@1.2")
     parser.add_argument("directory", type=Path, help="a directory of .md files")
     parser.add_argument(
         "--every", type=int, default=23, help="read every Nth file (default 23)"

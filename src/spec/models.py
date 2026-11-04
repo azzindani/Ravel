@@ -98,6 +98,18 @@ class UnitSpec(Base):
     article: str | None = None
     """Fixed label for a unit that is cited by name, not by number (`Pembukaan`)."""
 
+    label: str | None = None
+    """How a citation names this unit, built from the pattern's named groups: `Pasal
+    {number}`. Whitespace inside a captured value is dropped, because OCR spaces digits
+    (`Pasal 3 2` is pasal 32) and glues words (`BABIV`); the label is what a reader cites,
+    so it is repaired there and the heading text, which is not stored in `body`, is not."""
+
+    max_title_chars: int | None = None
+    prose_tail: list[str] | None = None
+    """Per-unit overrides of `structure.max_title_chars` and `structure.prose_tail`. A
+    chapter title is routinely longer than 80 characters and ends in `.` or `,` in this
+    corpus; a clause that opens `Pasal` is not, which is why the defaults are not looser."""
+
 
 class MatchSpec(Base):
     """How the router decides a profile applies to a document."""
@@ -187,6 +199,9 @@ class IdentitySpec(Base):
     months: list[str] = Field(default_factory=list)
     """Month names in calendar order. A numeric month is rendered as `months[n - 1]`."""
 
+    month_aliases: dict[str, str] = Field(default_factory=dict)
+    """Other spellings of a month -> the name in `months` (`Pebruari` -> `Februari`)."""
+
     flags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -202,6 +217,14 @@ class IdentitySpec(Base):
 class CleanupSpec(Base):
     boilerplate: list[str] = Field(default_factory=list)
     min_indexable_chars: int = Field(default=0, ge=0)
+    drop_truncated_duplicates: bool = False
+    """Drop a block that ends in an ellipsis when the next block begins with the same words.
+
+    A page break leaves the last words of a clause printed twice, the first time cut off
+    (`e. menyiapkan...`, then `e. menyiapkan, pengolahan dan penyajian data`). The cut copy
+    is repeated in full by the block after it, so removing it loses no word; a truncated
+    block that is NOT followed by its own completion is kept, which a pattern alone cannot
+    tell and is why this is a rule over neighbours and not another regex."""
 
 
 class ScoringSpec(Base):
@@ -485,7 +508,7 @@ class ProfileSpec(Base):
         # ! `role`, `region`, `article` and `opening` are labels read at chunk time. Left
         # in, correcting a label would discard every extracted document to reproduce the
         # same blocks -- the cost this hash exists to avoid.
-        label_fields = {"role", "region", "article"}
+        label_fields = {"role", "region", "article", "label"}
         structure = self.structure.model_dump(
             mode="json",
             exclude={
@@ -527,6 +550,9 @@ class Unit:
     role: str | None = None
     region: str | None = None
     article: str | None = None
+    label: str | None = None
+    max_title_chars: int | None = None
+    prose_tail: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -591,6 +617,9 @@ class Profile:
                     u.role,
                     u.region,
                     u.article,
+                    u.label,
+                    u.max_title_chars,
+                    None if u.prose_tail is None else tuple(u.prose_tail),
                 )
                 for u in (*spec.structure.units, *spec.structure.sections)
             ),
@@ -649,16 +678,18 @@ class Profile:
             rest = text[match.end() :].strip()
             if not rest:
                 return unit
-            if unit.marker_only or not self._is_title(rest):
+            if unit.marker_only or not self._is_title(rest, unit):
                 return None
             return unit
         return None
 
-    def _is_title(self, rest: str) -> bool:
+    def _is_title(self, rest: str, unit: Unit) -> bool:
         limits = self.spec.structure
-        return len(rest) <= limits.max_title_chars and not rest.endswith(
-            tuple(limits.prose_tail)
+        longest = (
+            unit.max_title_chars if unit.max_title_chars is not None else limits.max_title_chars
         )
+        tail = unit.prose_tail if unit.prose_tail is not None else tuple(limits.prose_tail)
+        return len(rest) <= longest and not rest.endswith(tail)
 
     def subunit(self, line: str) -> tuple[str, str, str] | None:
         """`(kind, value, marker)` for a sub-unit such as an ayat or huruf.
@@ -762,6 +793,7 @@ class Profile:
     def _date(self, text: str) -> str | None:
         months = self.spec.identity.months
         names = {m.lower(): m for m in months}
+        names.update({k.lower(): v for k, v in self.spec.identity.month_aliases.items()})
         for pattern in self.dates:
             for match in pattern.finditer(text):
                 groups = match.groupdict()
