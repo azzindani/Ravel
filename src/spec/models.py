@@ -30,7 +30,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -79,6 +79,24 @@ class UnitSpec(Base):
     chunker splits the document at every amendment clause.
     """
 
+    role: Literal["chapter", "article"] | None = None
+    """What this unit is to a reader's citation.
+
+    `chapter` units name the grouping a chunk sits in (`BAB III - KETENTUAN UMUM`);
+    `article` units name the thing cited (`Pasal 5`). Declared rather than inferred from
+    `level`, because depth says how a marker nests and not what a reader calls it.
+    """
+
+    region: str | None = None
+    """Label for the part of the document this marker opens, until another one does.
+
+    `PENJELASAN` opens the explanatory annex; every pasal after it belongs to the annex
+    and not to the body, which is what lets one `Pasal 5` be told from the other.
+    """
+
+    article: str | None = None
+    """Fixed label for a unit that is cited by name, not by number (`Pembukaan`)."""
+
 
 class MatchSpec(Base):
     """How the router decides a profile applies to a document."""
@@ -97,6 +115,9 @@ class StructureSpec(Base):
     units: list[UnitSpec] = Field(default_factory=list)
     sections: list[UnitSpec] = Field(default_factory=list)
     subunits: dict[str, str] = Field(default_factory=dict)
+    opening: str | None = None
+    """`article` label for what precedes the first marker: the title block of a regulation
+    is its `Pembukaan`, and a chunk with no label at all cannot be cited."""
 
     @model_validator(mode="after")
     def _names_unique(self) -> Self:
@@ -142,6 +163,29 @@ class IdentitySpec(Base):
     title: str | None = None
     citation: str | None = None
     cross_ref: str | None = None
+    enacting_body: str | None = None
+    """Named group `body`: who issued the document, read from its title block.
+
+    `{types}` expands as in the other patterns. The text is what sits between the type
+    and the number (`PERATURAN BUPATI` `BANYUWANGI` `NOMOR 26`), so a regional
+    regulation says which region without a list of every region.
+    """
+
+    about: str | None = None
+    """Named group `about`: the subject line (`TENTANG ...`), searched in the title block."""
+
+    dates: list[str] = Field(default_factory=list)
+    """Patterns for the document's own date, most specific first.
+
+    Named groups `day`, `month`, `year`. The first match that also validates wins, so a
+    loose fallback can sit last without outranking a precise one. The notebook this was
+    ported from kept 60 patterns in one list and took the first hit, which in practice
+    meant the first date of any kind in the text.
+    """
+
+    months: list[str] = Field(default_factory=list)
+    """Month names in calendar order. A numeric month is rendered as `months[n - 1]`."""
+
     flags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -333,6 +377,14 @@ class ProfileSpec(Base):
 # ---------------------------------------------------------------------------
 
 
+def _squash(text: str | None) -> str | None:
+    """Collapse whitespace and trim edge punctuation; None when nothing is left."""
+    if not text:
+        return None
+    cleaned = re.sub(r"\s+", " ", text).strip(" \t\n.:;,-")
+    return cleaned or None
+
+
 @dataclass(frozen=True, slots=True)
 class Unit:
     """A compiled structural marker."""
@@ -341,6 +393,25 @@ class Unit:
     level: int
     pattern: re.Pattern[str]
     marker_only: bool
+    role: str | None = None
+    region: str | None = None
+    article: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Facts:
+    """What a document says about itself, as far as its profile can read.
+
+    Every field is None when the profile did not find it. Never a guess: an empty
+    `regulation_type` is a gap somebody can count, and `Unknown` is a claim.
+    """
+
+    regulation_type: str | None = None
+    enacting_body: str | None = None
+    regulation_number: str | None = None
+    year: int | None = None
+    about: str | None = None
+    effective_date: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,6 +427,9 @@ class Profile:
     title: re.Pattern[str] | None = None
     citation: re.Pattern[str] | None = None
     cross_ref: re.Pattern[str] | None = None
+    enacting_body: re.Pattern[str] | None = None
+    about: re.Pattern[str] | None = None
+    dates: tuple[re.Pattern[str], ...] = ()
     _types_sorted: tuple[str, ...] = field(default=())
 
     # -- construction -------------------------------------------------------
@@ -382,6 +456,9 @@ class Profile:
                     u.level,
                     re.compile(u.pattern, re.IGNORECASE if u.ignorecase else 0),
                     u.marker_only,
+                    u.role,
+                    u.region,
+                    u.article,
                 )
                 for u in (*spec.structure.units, *spec.structure.sections)
             ),
@@ -392,6 +469,9 @@ class Profile:
             title=build(spec.identity.title),
             citation=build(spec.identity.citation),
             cross_ref=build(spec.identity.cross_ref),
+            enacting_body=build(spec.identity.enacting_body),
+            about=build(spec.identity.about),
+            dates=tuple(re.compile(d, flags) for d in spec.identity.dates),
             _types_sorted=types,
         )
 
@@ -511,6 +591,56 @@ class Profile:
         if number.endswith(f"/{year}"):
             return f"{self.abbreviate(kind)} {number}"
         return f"{self.abbreviate(kind)} {number}/{year}"
+
+    def describe(self, head: str, whole: str | None = None) -> Facts:
+        """The document's own facts. `head` is its title block; `whole` is all of it.
+
+        Type, number and year come from the citation, the body and subject from the
+        title block, and the date from anywhere in the document -- a regulation states
+        when it was issued at its foot, not its head.
+        """
+        kind = number = None
+        year: int | None = None
+        if self.citation and (match := self.citation.search(head)):
+            groups = match.groupdict()
+            kind, number = groups.get("type"), groups.get("number")
+            if (groups.get("year") or "").isdigit():
+                year = int(groups["year"])
+        if number and year and number.endswith(f"/{year}"):
+            number = number[: -len(f"/{year}")]
+        body = about = None
+        if self.enacting_body and (match := self.enacting_body.search(head)):
+            body = _squash(match.groupdict().get("body"))
+        if self.about and (match := self.about.search(head)):
+            about = _squash(match.groupdict().get("about"))
+        kind = _squash(kind)
+        return Facts(
+            regulation_type=kind.upper() if kind else None,
+            enacting_body=body,
+            regulation_number=number,
+            year=year,
+            about=about,
+            effective_date=self._date(whole if whole is not None else head),
+        )
+
+    def _date(self, text: str) -> str | None:
+        months = self.spec.identity.months
+        names = {m.lower(): m for m in months}
+        for pattern in self.dates:
+            for match in pattern.finditer(text):
+                groups = match.groupdict()
+                day, month, year = groups.get("day"), groups.get("month"), groups.get("year")
+                if not (day and month and year):
+                    continue
+                if month.isdigit() and 1 <= int(month) <= len(months):
+                    month = months[int(month) - 1]
+                elif month.lower() in names:
+                    month = names[month.lower()]
+                else:
+                    continue
+                if 1 <= int(day) <= 31 and 1900 <= int(year) <= 2100:
+                    return f"{int(day)} {month} {year}"
+        return None
 
     def is_boilerplate(self, text: str) -> bool:
         return any(p.match(text) for p in self.boilerplate)

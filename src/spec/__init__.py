@@ -4,6 +4,7 @@ from spec.corpus import CorpusSpec, ExtractSpec, ProvenanceSpec, SourcesSpec
 from spec.loader import ENV_VAR, Registry, RegistryError, default_registry, registry_root
 from spec.models import (
     CleanupSpec,
+    Facts,
     IdentitySpec,
     MatchSpec,
     Profile,
@@ -18,6 +19,7 @@ __all__ = [
     "CleanupSpec",
     "CorpusSpec",
     "ExtractSpec",
+    "Facts",
     "ProvenanceSpec",
     "SourcesSpec",
     "IdentitySpec",

@@ -55,8 +55,10 @@ structure:
       level: 6
       pattern: '^PASAL\s+\d+[A-Z]?\b'
       marker_only: true    # see §4
+      role: article        # what a reader cites it as; `chapter` for BAB
   sections:                # headings that are not part of the hierarchy
-    - {name: memutuskan, level: 3, pattern: '^MEMUTUSKAN\s*:?\s*$'}
+    - {name: memutuskan, level: 3, pattern: '^MEMUTUSKAN\s*:?\s*$', article: Pembukaan}
+    - {name: penjelasan, level: 2, pattern: '^PENJELASAN\b', region: PENJELASAN}
   subunits:                # markers INSIDE a unit; not headings
     ayat: '^\((\d+)\)\s+'
 
@@ -64,6 +66,10 @@ identity:                  # read the document's own identity out of its text
   types: [UNDANG-UNDANG, PERATURAN BUPATI, ...]
   title: '(?P<type>{types})\s+...NOMOR\s+(?P<number>[\w./-]+)...'
   cross_ref: 'Pasal\s+(?P<pasal>\d+[A-Z]?)...'
+  enacting_body: '(?:{types})\s*(?P<body>[A-Z][A-Za-z\s]{0,60}?)\s*NOMOR\b'
+  about: '(?s:\bTENTANG\b\s*(?P<about>.{3,400}?)\s*(?=\nDENGAN\b|\Z))'
+  dates: ['(?i:mulai\s+berlaku\s+tanggal\s+)(?P<day>\d{1,2})\s+(?P<month>\w+)\s+(?P<year>\d{4})']
+  months: [Januari, Februari, Maret, ...]
   flags: [ignorecase]
 
 cleanup:
@@ -74,6 +80,21 @@ extract:                   # per-extractor overrides and engine switches
   native: {heading_size_ratio: 1.12}
   trust_typography: false  # see §5
 ```
+
+`role`, `region` and `article` on a unit decide the two labels every chunk carries besides
+its locator, `chapter` and `article` (`CHUNKING.md` §5.1). `role: chapter` makes a unit's
+text the chapter (`BAB III - KETENTUAN UMUM`, with the title taken from the line below when
+the marker stands alone); `role: article` makes it the thing cited (`Pasal 5`); `region`
+opens a part of the document that lasts until the next one (`PENJELASAN`), and replaces the
+chapter while it lasts; `article` is a fixed label for a unit cited by name (`Pembukaan`).
+`structure.opening` labels what precedes the first marker. None of these names is known to
+the engine, so a contract profile declares `role: article` on its `Clause` and gets the same
+columns.
+
+`identity.enacting_body`, `about` and `dates` read the rest of what a document says about
+itself (named groups `body`, `about`, and `day` / `month` / `year`). A pattern that does not
+match leaves the field None -- there is no `Unknown`, because a gap that is a NULL can be
+counted and a gap that is a string cannot be told from a value.
 
 `{types}` in any identity pattern expands to an alternation of the `types` list, so the
 list is maintained once and every pattern stays in sync with it. Types are matched

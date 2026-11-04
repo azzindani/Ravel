@@ -1,0 +1,528 @@
+id: id_regulation_md
+version: "1.0"
+title: Indonesian laws and regulations · Docling markdown export
+description: >
+  The same kind of document as `id_regulation` -- Undang-Undang, Peraturan Pemerintah,
+  Perda, Perbup, Pergub, Perwali, Keppres and the rest -- read from the Markdown that a
+  PDF-to-Markdown converter (Docling-style) wrote for `Azzindani/ID_REG_Markdown`
+  (46,457 files, ~70% regional regulations). A separate profile and not a new version of
+  `id_regulation` because the two share a document family and not a noise model. The
+  identity and scoring tables are IDENTICAL to `id_regulation@1.0` except for the types
+  marked "added for this corpus", and `tests/test_profiles.py` fails if they drift apart.
+
+# Routes ONLY text/markdown, and wins over `id_regulation` there: priority 50 outweighs
+# any difference in how many content patterns each one hits (10 points per hit), so a
+# Markdown regulation can never be claimed by the PDF-tuned profile. PDFs and plain text
+# are untouched.
+match:
+  mime:
+    - text/markdown
+  content:
+    - '(?i)\b(?:undang-undang|peraturan\s+(?:pemerintah|daerah|menteri|bupati|gubernur|presiden|walikota)|qanun)\b'
+    - '(?i)\bdengan\s+rahmat\s+tuhan\s+yang\s+maha\s+esa\b'
+    - '(?i)^\s*MEMUTUSKAN\s*:'
+  min_hits: 1
+  priority: 50
+
+# ---------------------------------------------------------------------------
+# Structure, measured on the real files (docs/SOURCE_ID_REG_MARKDOWN.md).
+#
+# ! `##` is NOT structure in this corpus and this profile never trusts it. The converter
+# marks `## Pasal 2` and leaves `Pasal 4` plain in the same document, makes signatory names
+# headings (`## PATRIALIS AKBAR`), and splits `BAB II` from its title across two `##`
+# lines in some files and not in others. Over 46K files: 88.7% have a `## Pasal N`, and
+# 44.8% also have bare `Pasal N` lines. `trust_typography` is left at its default (false),
+# so the structurer demotes every `##` that no pattern here confirms.
+#
+# ! Case is part of the pattern wherever a marker is also an ordinary word. `BAB` is
+# upper-case in 99.3% of its occurrences, so it is matched case-sensitively: ignoring case
+# turns a line starting `Babi ...` (pig) into chapter I. `Pasal` is Title-case in 99.7% of
+# occurrences (95,282 against 178 upper-case), `Bagian` in 99.5%.
+#
+# ! Glued forms are real, not typos to ignore: `Pasal5` (3,304 lines in a 1-in-12 sample),
+# `BABV`, `BABIV`. The converter loses the space, hence `\s*` between marker and number.
+#
+# ! `Pasal I`, `Pasal II` (roman) are the articles of an AMENDING regulation (1,181 lines
+# in the sample) and are headings. `Pasal 1a diubah ...` quoted inside them is prose, and
+# `marker_only` keeps it prose.
+# ---------------------------------------------------------------------------
+structure:
+  max_line_chars: 120
+  max_title_chars: 80
+  prose_tail: [".", ":", ";", ","]
+
+  units:
+    - name: buku
+      level: 2
+      pattern: '^(?:BUKU|Buku)\s+(?:[IVXLCDM]+|KE\w+)\b'
+      ignorecase: false
+    - name: bab
+      level: 3
+      # A title on the same line is accepted (`BAB IX KETENTUAN PENUTUP`); `[.:]?` covers
+      # `BAB V.` and `BAB I :`.
+      pattern: '^(?:BAB|Bab)\s*(?:[IVXLCDM]+|\d+)\b\s*[.:]?'
+      ignorecase: false
+      role: chapter
+    - name: bagian
+      level: 4
+      # ! An explicit ordinal list, ✗ `KE\w+`. `Bagian Keuangan` and `Bagian Kepegawaian`
+      # are offices of a Sekretariat Daerah and `Bagian Hukum` is a unit of an
+      # organisation, not of a regulation. `Keduabelas` .. `Kelimabelas` are written as ONE
+      # word in this corpus and the 1.0 list had only `KEDUA BELAS`.
+      pattern: '^(?:BAGIAN|Bagian)\s+(?i:KESATU|PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KEDELAPAN|KESEMBILAN|KESEPULUH|KESEBELAS|KEDUABELAS|KETIGABELAS|KEEMPATBELAS|KELIMABELAS|KEENAMBELAS|KETUJUHBELAS|KEDELAPANBELAS|KESEMBILANBELAS|KEDUA\s+BELAS|KETIGA\s+BELAS|KEEMPAT\s+BELAS|KELIMA\s+BELAS|[IVXLCDM]+|\d+)\b\s*[.:]?'
+      ignorecase: false
+    - name: paragraf
+      level: 5
+      pattern: '^(?:PARAGRAF|Paragraf)\s+(?i:KESATU|PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KEDELAPAN|KESEMBILAN|KESEPULUH|SATU|DUA|TIGA|[IVXLCDM]+|\d+)\b\s*[.:]?'
+      ignorecase: false
+    - name: pasal
+      level: 6
+      pattern: '^(?:PASAL|Pasal)\s*(?:\d+[A-Z]?|[IVXLC]+)\s*[.:]?'
+      ignorecase: false
+      marker_only: true
+      role: article
+
+  # Non-hierarchical sections that are still headings.
+  #
+  # ! A heading and its content on ONE line cannot be expressed here and are left out on
+  # purpose: `Menimbang : a. bahwa ...` (1,141 of 3,794 Menimbang lines), `Menetapkan :
+  # PERATURAN DAERAH TENTANG ...` (1,826 of 3,817) and `Pasal 5 Cukup jelas.` (~1,700).
+  # `structural()` accepts a marker plus a SHORT title, ✗ a marker plus a clause, and
+  # widening it would turn amendment clauses into headings. Recorded as an engine gap in
+  # docs/SOURCE_ID_REG_MARKDOWN.md, not papered over with a looser regex.
+  sections:
+    - name: menimbang
+      level: 3
+      pattern: '^(?:MENIMBANG|Menimbang)\s*[:;]?\s*$'
+      ignorecase: false
+      article: Pembukaan
+    - name: mengingat
+      level: 3
+      pattern: '^(?:MENGINGAT|Mengingat)\s*[:;]?\s*$'
+      ignorecase: false
+      article: Pembukaan
+    - name: memutuskan
+      level: 3
+      # A trailing ellipsis is a catch-word artefact (`MEMUTUSKAN : ...`, 126 lines).
+      pattern: '^(?:MEMUTUSKAN|Memutuskan)\s*[:;]?\s*(?:(?:\.\s*){2,}|…)?\s*$'
+      ignorecase: false
+      article: Pembukaan
+    - name: menetapkan
+      level: 3
+      pattern: '^(?:MENETAPKAN|Menetapkan)\s*[:;]?\s*$'
+      ignorecase: false
+      article: Pembukaan
+    - name: penjelasan
+      level: 2
+      pattern: '^PENJELASAN(\s+ATAS)?\b'
+      # ! Case-sensitive, because `penjelasan` is also an ordinary word: lower-case
+      # `penjelasan ...` lines open sentences in this corpus (`penjelasan Bupati dalam
+      # rapat paripurna ...`).
+      ignorecase: false
+      region: PENJELASAN
+    - name: umum
+      level: 3
+      # `I. UMUM` in 5,586 files, a lone `UMUM` in 1,264.
+      pattern: '^(?:(?:I|1)\s*[.)]\s*)?(?:UMUM|Umum)\s*$'
+      ignorecase: false
+      article: Pembukaan
+    - name: pasal_demi_pasal
+      level: 3
+      pattern: '^(?:(?:II|2)\s*[.)]\s*)?(?:PASAL\s+DEMI\s+PASAL|Pasal\s+Demi\s+Pasal)\s*$'
+      ignorecase: false
+    - name: lampiran
+      level: 2
+      # ! Consumes the whole line on purpose: `LAMPIRAN I PERATURAN BUPATI SAMPANG NOMOR
+      # 12 TAHUN 2016 TENTANG ...` is longer than any `max_title_chars`, and a marker plus
+      # a long tail would be refused. Upper-case only: `lampiran` is an ordinary word, and
+      # the 1,520 upper-case lines in the sample are all annex headings. A table row
+      # starts with `|` and never matches.
+      pattern: '^LAMPIRAN\b[^|]*$'
+      ignorecase: false
+      region: LAMPIRAN
+      article: LAMPIRAN
+    - name: penutup
+      level: 2
+      # The signing block: `Ditetapkan di Jakarta`. It closes the last pasal, and everything
+      # up to the explanation or the annex is the Pengesahan. Consumes the whole line (the
+      # signing office usually follows the date on it), is case-sensitive, and needs a
+      # capitalised place after `di`, so `ditetapkan dengan Peraturan ...` is not it.
+      pattern: '^Ditetapkan\s+di\s*:?\s*[A-Z][^|]{0,100}$'
+      ignorecase: false
+      region: PENUTUP
+      article: Pengesahan
+
+  # Sub-unit markers inside a body. The Markdown extractor strips the bullet and the
+  # `1.` list number before this sees the text, so `angka` only fires on plain text.
+  subunits:
+    ayat: '^\((\d+)\)\s*'
+    huruf: '^([a-z])[.)]\s+'
+    angka: '^(\d+)\.\s+'
+  # What precedes the first marker -- the title block -- is the Pembukaan.
+  opening: Pembukaan
+
+# ---------------------------------------------------------------------------
+# Identity. These are the patterns whose absence caused 10.66% `Unknown`
+# regulation_type and 8.62% `Unknown` enacting_body in the incumbent corpus: the
+# old parser matched only PERATURAN MENTERI KEUANGAN.
+# Ordered longest-first so "PERATURAN DAERAH KABUPATEN" wins over "PERATURAN DAERAH".
+# ---------------------------------------------------------------------------
+identity:
+  types:
+    - UNDANG-UNDANG DASAR
+    - PERATURAN PEMERINTAH PENGGANTI UNDANG-UNDANG
+    - PERATURAN DAERAH KABUPATEN
+    - PERATURAN DAERAH PROVINSI
+    - PERATURAN DAERAH KOTA
+    - PERATURAN PRESIDEN
+    - PERATURAN PEMERINTAH
+    - PERATURAN MENTERI
+    - PERATURAN GUBERNUR
+    - PERATURAN WALIKOTA
+    - PERATURAN WALI KOTA
+    - PERATURAN BUPATI
+    - PERATURAN BADAN
+    - PERATURAN LEMBAGA
+    - PERATURAN KOMISI
+    - PERATURAN BANK INDONESIA
+    - PERATURAN MAHKAMAH AGUNG
+    - PERATURAN DAERAH
+    - KEPUTUSAN PRESIDEN
+    - KEPUTUSAN MENTERI
+    - INSTRUKSI PRESIDEN
+    # Measured against the incumbent's 31 distinct type values, not added on spec
+    # (ABSORPTION.md §12). These are the decision instruments the list did not cover:
+    # 168 rows. The ~90-type vocabulary in the dataset-filter notebook was checked and
+    # deliberately NOT imported wholesale — POJK, PERKAP, PERJA and the rest are real
+    # Indonesian instruments that do not occur in this corpus, and every entry here
+    # widens a substring match that `identity.title` trusts completely.
+    #
+    # ! SURAT EDARAN is excluded on purpose, though 169 rows carry it. A circular
+    # letter is administrative guidance, not a binding instrument under UU 12/2011,
+    # so it does not belong in a list feeding the exact-citation path. That judgment
+    # is pinned by a negative case in `test_document_type_is_general_not_one_ministry`.
+    - KEPUTUSAN GUBERNUR
+    - KEPUTUSAN WALIKOTA
+    - KEPUTUSAN BUPATI
+    - KEPUTUSAN KEPALA
+    - UNDANG-UNDANG
+    # ! Extraction damage, listed on purpose. 432 rows spell it with a space because
+    # the hyphen was lost on the page, and the alternation is `re.escape`d literals —
+    # so without this entry those documents match no type at all and land in `Unknown`.
+    # It maps to the same abbreviation as the hyphenated form, so the two spellings
+    # converge on one identifier instead of splitting the corpus in half.
+    - UNDANG UNDANG
+
+    # --- added for this corpus ------------------------------------------------------
+    # Measured on a 1-in-6 sample (7,742 files): 359 had no recognisable type. These are
+    # the named groups, ✗ added on spec.
+    #
+    # Aceh's own regional regulation. An OCR'd `OANUN` is NOT listed: a misspelling is
+    # not worth a vocabulary entry, and a wrong identifier is worse than none.
+    - QANUN ACEH
+    - QANUN KABUPATEN
+    - QANUN KOTA
+    # ! Glued forms. In a heading set in capitals the converter drops the spaces
+    # (`PERATURANBUPATITABALONG NOMOR 29`, `KEPUTUSANPRESIDEN REPUBLIK INDONESIA`), and
+    # the alternation is `re.escape`d literals, so without these the document matches no
+    # type at all. Each maps to the same abbreviation as the spaced form.
+    - PERATURANDAERAHKABUPATEN
+    - PERATURANDAERAHPROVINSI
+    - PERATURANDAERAHKOTA
+    - PERATURANPEMERINTAH
+    - PERATURANPRESIDEN
+    - PERATURANMENTERI
+    - PERATURANGUBERNUR
+    - PERATURANWALIKOTA
+    - PERATURANBUPATI
+    - KEPUTUSANPRESIDEN
+
+  # The short forms Indonesian citations actually use. A query says "UU 28/2007",
+  # never "UNDANG-UNDANG NOMOR 28 TAHUN 2007", so this is what `identifier` carries
+  # into Vera's exact-match bypass.
+  abbreviations:
+    UNDANG-UNDANG DASAR: UUD
+    PERATURAN PEMERINTAH PENGGANTI UNDANG-UNDANG: Perppu
+    PERATURAN DAERAH KABUPATEN: Perda Kab.
+    PERATURAN DAERAH PROVINSI: Perda Prov.
+    PERATURAN DAERAH KOTA: Perda Kota
+    PERATURAN PRESIDEN: Perpres
+    PERATURAN PEMERINTAH: PP
+    PERATURAN MENTERI: Permen
+    PERATURAN GUBERNUR: Pergub
+    PERATURAN WALIKOTA: Perwali
+    PERATURAN WALI KOTA: Perwali
+    PERATURAN BUPATI: Perbup
+    PERATURAN BANK INDONESIA: PBI
+    PERATURAN MAHKAMAH AGUNG: Perma
+    PERATURAN DAERAH: Perda
+    KEPUTUSAN PRESIDEN: Keppres
+    KEPUTUSAN MENTERI: Kepmen
+    KEPUTUSAN GUBERNUR: Kepgub
+    KEPUTUSAN WALIKOTA: Kepwali
+    KEPUTUSAN BUPATI: Kepbup
+    KEPUTUSAN KEPALA: Kepka
+    INSTRUKSI PRESIDEN: Inpres
+    UNDANG-UNDANG: UU
+    UNDANG UNDANG: UU
+    QANUN ACEH: Qanun Aceh
+    QANUN KABUPATEN: Qanun Kab.
+    QANUN KOTA: Qanun Kota
+    PERATURANDAERAHKABUPATEN: Perda Kab.
+    PERATURANDAERAHPROVINSI: Perda Prov.
+    PERATURANDAERAHKOTA: Perda Kota
+    PERATURANPEMERINTAH: PP
+    PERATURANPRESIDEN: Perpres
+    PERATURANMENTERI: Permen
+    PERATURANGUBERNUR: Pergub
+    PERATURANWALIKOTA: Perwali
+    PERATURANBUPATI: Perbup
+    KEPUTUSANPRESIDEN: Keppres
+
+  # ---------------------------------------------------------------------------
+  # How binding each instrument is. The Art 7 ladder of UU 12/2011, with Art 8
+  # instruments — a governor's, regent's or mayor's own regulation — BELOW the
+  # Perda they implement.
+  #
+  # ! An earlier version of this table in Vera put PERATURAN BUPATI above
+  # PERATURAN DAERAH KOTA, inverting legislation and the regulation implementing
+  # it. Fitted against both, Recall@5 was identical (57.5% in-sample, 47.5%
+  # leave-one-out at n=40), and a coarse national-vs-local split did as well as
+  # either. So the fine ordering is NOT evidence-backed here, and it is still
+  # correct: a table stating something legally false is wrong whether or not the
+  # eval set is strong enough to notice. No claim is made that it helps.
+  #
+  # Unlisted types resolve to None, never 0 — "the profile does not know" and
+  # "ranked lowest" are different claims.
+  authority:
+    UNDANG-UNDANG DASAR: 9
+    UNDANG-UNDANG: 8
+    UNDANG UNDANG: 8
+    PERATURAN PEMERINTAH PENGGANTI UNDANG-UNDANG: 8
+    PERATURAN PEMERINTAH: 7
+    PERATURAN PRESIDEN: 6
+    KEPUTUSAN PRESIDEN: 6
+    INSTRUKSI PRESIDEN: 5
+    PERATURAN MENTERI: 5
+    KEPUTUSAN MENTERI: 5
+    PERATURAN BANK INDONESIA: 5
+    PERATURAN MAHKAMAH AGUNG: 5
+    PERATURAN BADAN: 4
+    PERATURAN LEMBAGA: 4
+    PERATURAN KOMISI: 4
+    PERATURAN DAERAH PROVINSI: 4
+    PERATURAN GUBERNUR: 3
+    KEPUTUSAN GUBERNUR: 3
+    PERATURAN DAERAH KABUPATEN: 3
+    PERATURAN DAERAH KOTA: 3
+    PERATURAN DAERAH: 3
+    PERATURAN BUPATI: 2
+    KEPUTUSAN BUPATI: 2
+    PERATURAN WALIKOTA: 2
+    PERATURAN WALI KOTA: 2
+    KEPUTUSAN WALIKOTA: 2
+    KEPUTUSAN KEPALA: 1
+    QANUN ACEH: 4
+    QANUN KABUPATEN: 3
+    QANUN KOTA: 3
+    PERATURANDAERAHKABUPATEN: 3
+    PERATURANDAERAHPROVINSI: 4
+    PERATURANDAERAHKOTA: 3
+    PERATURANPEMERINTAH: 7
+    PERATURANPRESIDEN: 6
+    PERATURANMENTERI: 5
+    PERATURANGUBERNUR: 3
+    PERATURANWALIKOTA: 2
+    PERATURANBUPATI: 2
+    KEPUTUSANPRESIDEN: 6
+
+  # {types} expands to an alternation of the list above.
+  title: '(?P<type>{types})\s*(?P<body>[A-Z][A-Z\s.''-]{{0,80}}?)?\s*NOMOR\s*:?\s*(?P<number>\d+(?:[./-]\w+)*?)\s*TAHUN\s*:?\s*(?P<year>\d{{4}})(?:\s*TENTANG\s+(?P<about>.+?))?$'
+  # ! Case-SENSITIVE on purpose (no `ignorecase` flag): a document's own title is set in
+  # capitals (`PERATURAN BUPATI SUBANG NOMOR 3 TAHUN 2018`) and the laws it merely CITES in
+  # Mengingat are Title-case (`Undang-Undang Nomor 28 Tahun 2009 tentang ...`). Matching
+  # case-insensitively returned the first law cited, not the document's own number. Measured
+  # on a 1-in-12 sample (3,871 files), against the number and year each file's NAME carries:
+  #
+  #                       cited    agrees with the name    type family agrees
+  #   case-insensitive    90.2%    2,226 of 2,674 (83.2%)         91.3%
+  #   case-sensitive      81.7%    2,227 of 2,430 (91.6%)         99.0%
+  #
+  # The same number of correct citations, 245 fewer wrong ones. An identifier that is wrong
+  # is worse than one that is absent -- the exact-match path trusts it completely.
+  #
+  # The number must START with a digit: `J8`, `S`, `L` and `4S` are OCR'd digits, and the
+  # `[\w./-]` it replaces accepted them (`Perbup J8/2013`). Real numbers with letters in
+  # them (`123/PMK.03/2019`) still match through the `[./-]\w+` tail.
+  #
+  # `NOMOR`/`TAHUN` may be glued to their neighbours (`NOMOR1TAHUN1966`, `NOMOR8TAHUN1970`,
+  # `PERATURANBUPATITABALONG NOMOR 29`): the converter drops spaces inside capitalised
+  # headings, so every `\s+` of the 1.0 profile is `\s*` here.
+  #
+  # ! The 18% that stay uncited are mostly files whose title block is not in the chunker's
+  # first CITATION_BLOCKS blocks: `<!-- image -->` furniture, a displaced `Menimbang`, and
+  # single-character layout lines fill the window before the title does. That is an engine
+  # window (it counts furniture), not something a pattern here can reach.
+  citation: '(?P<type>{types})(?:\s*[A-Z][A-Za-z\s.''-]{{0,60}}?)?\s*NOMOR\s*:?\s*(?P<number>\d+(?:[./-]\w+)*?)\s*TAHUN\s*:?\s*(?P<year>\d{{4}})'
+  # ! `(?i:...)` here because `flags` is empty for this profile; `Pasal` is Title-case.
+  cross_ref: '(?i:Pasal\s+(?P<pasal>\d+[A-Z]?)(?:\s+ayat\s+\((?P<ayat>\d+)\))?(?:\s+huruf\s+(?P<huruf>[a-z]))?)'
+  # ! Port of the notebook's `extract_regulation_type_and_body` / `_about` / `_effective_date`
+  # as DATA. The notebook kept three lists of 20-60 patterns each in Python and fell back to
+  # `Unknown`; a group that does not match here is None, which a count can find.
+  #
+  # `body` is whatever sits between the type and `NOMOR`, so a regional regulation names its
+  # region without a list of every region.
+  enacting_body: '(?:{types})\s*(?P<body>[A-Z][A-Za-z\s.''-]{{0,60}}?)\s*NOMOR\b'
+  # The subject runs from `TENTANG` to the line that opens the preamble (`DENGAN RAHMAT TUHAN`,
+  # the issuing office, or `Menimbang`). Lazy, bounded, and None when no such line follows
+  # within 400 characters -- a missing subject beats a subject that swallows the preamble.
+  about: '(?s:\bTENTANG\b\s*(?P<about>.{{3,400}}?)\s*(?=\n\s*(?:DENGAN\b|PRESIDEN\b|BUPATI\b|WALI\s?KOTA\b|GUBERNUR\b|MENTERI\b|KEPALA\b|DEWAN\b|Menimbang\b|MENIMBANG\b)|\Z))'
+  # Most specific first; the first that validates wins. `mulai berlaku` is the effective date
+  # proper, then the date it was issued, then the date it was promulgated.
+  dates:
+    - '(?i:mulai\s+berlaku\s+(?:pada\s+)?(?:tanggal\s*:?\s*)?)(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})'
+    - '(?i:ditetapkan\s+di\s*:?\s*[A-Za-z. ]{2,40}?\s*[,:]?\s*(?:pada\s+)?(?:tanggal\s*:?\s*)?)(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})'
+    - '(?i:diundangkan\s+di\s*:?\s*[A-Za-z. ]{2,40}?\s*[,:]?\s*(?:pada\s+)?(?:tanggal\s*:?\s*)?)(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]+)\s+(?P<year>\d{4})'
+    - '(?i:(?:ditetapkan|disahkan|diundangkan)\s+(?:pada\s+)?(?:tanggal\s*:?\s*))(?P<day>\d{1,2})\s*[-/.]\s*(?P<month>\d{1,2})\s*[-/.]\s*(?P<year>\d{4})'
+  months: [Januari, Februari, Maret, April, Mei, Juni, Juli, Agustus, September, Oktober, November, Desember]
+  flags: []
+
+# ---------------------------------------------------------------------------
+# Cleanup. Stored, not applied at extraction — a chunker decides whether to drop.
+# ---------------------------------------------------------------------------
+cleanup:
+  # 30,520 rows of the incumbent corpus are exactly this string: thousands of
+  # near-identical vectors that distort ranking and answer no query.
+  boilerplate:
+    # Same as `id_regulation`: 30,520 incumbent rows were exactly this string.
+    - '^\s*cukup\s+jelas\.?\s*$'
+
+    # --- page furniture the converter leaves in the text, measured here -------------
+    # Lines repeated 3+ times inside one file (1-in-12 sample, 3,871 files): `<!-- image
+    # -->` in 1,890 files / 22,431 lines, a repeated `PRESIDEN REPUBLIK INDONESIA` page
+    # header in 401 / 4,719, `- 2 -` page numbers in 403 / 4,797. They are one block per
+    # page, so left in they become body text of whatever chunk spans a page break.
+    - '^<!--\s*image\s*-->$'
+    # The Markdown extractor strips the list bullet, so `- 2 -` arrives as `2 -`.
+    - '^-?\s*\d{1,3}\s*-$'
+    - '^(?:PRESIDEN|REPUBLIK\s+INDONESIA|PRESIDEN\s+REPUBLIK\s+INDONESIA)\s*,?$'
+    - '^SALINAN$'
+    - '^ttd\.?$'
+    # A line of one to three symbols and nothing else (`:`, `.`, `,`, `'`, `~`, U+FFFD):
+    # the residue of a layout the converter could not place, 348 files for `:` alone.
+    # ! Lone DIGITS are deliberately not here: a bare `Pasal` followed by its number on
+    # the next line is real (114 bare `Pasal` lines in a 1-in-24 sample), and dropping
+    # the number would lose the article's identity.
+    - '^[^\w\s]{1,3}$'
+    # A catch-word at a page break: the last words of a page are repeated with an
+    # ellipsis and the full line follows on the next page (`Dalam . . .` / `Dalam rangka
+    # ...`, `1. Tindakan …`, `Pasal 5 ...`, `BAB I . . .`, `Mengingat : …`). Dropping the
+    # fragment loses nothing -- the complete line is next.
+    # ! Cost, accepted: a form blank such as `Nama : ...` or `NIP. ......` is also one to
+    # four short words and an ellipsis, and is dropped with them.
+    - '^(?:\d+\.\s*)?(?:[^\s.…]+\s+){0,3}[^\s.…]+\s*(?:…|(?:\.\s*){2,})$'
+  min_indexable_chars: 40
+
+# ---------------------------------------------------------------------------
+# Scoring vocabulary · the query-independent ranking factors (enrich/factors.py),
+# and the two fields Vera reads at query time.
+#
+# ! This block reproduces, exactly, what `enrich/factors.py` used to carry as
+# module-level constants. Moving it changes no number on this corpus -- which is
+# the point: the same data, somewhere a different corpus can replace it.
+# `identity.authority` above is the third table and was already here.
+# ---------------------------------------------------------------------------
+scoring:
+  # The Art 7 ladder tops out at 9 (UUD 1945), so the scale is 10 and no
+  # instrument reaches 1.0. Deliberate headroom: normalising against the highest
+  # rank PRESENT would make the same instrument score differently in a corpus
+  # that merely lacks a constitution.
+  authority_scale: 10
+
+  # 80,313 rows of the incumbent corpus are Pembukaan or Pengesahan, and 22.5% of
+  # the live corpus is LAMPIRAN. An annex is rarely the answer to a question
+  # about obligations; an operative article usually is.
+  annex: ['LAMPIRAN', 'PENJELASAN', 'ATTACHMENT', 'APPENDIX']
+  operative: ['PASAL', 'ARTICLE', 'ARTIKEL']
+  annex_score: 0.2
+  operative_score: 1.0
+  labelled_score: 0.6
+
+  # Density of these is the readable half of `completeness`: a whole provision
+  # states an obligation, a fragment usually does not.
+  #
+  # ! The claim generalises and the words never do. "States an obligation" is
+  # `wajib` here, `MUST` in an RFC and `shall` in a contract.
+  terms:
+    - wajib
+    - dilarang
+    - berhak
+    - dapat
+    - harus
+    - tidak
+    - sanksi
+    - pidana
+    - denda
+    - ketentuan
+    - peraturan
+    - pasal
+    - ayat
+    - huruf
+    - dimaksud
+    - berlaku
+    - ditetapkan
+    - menetapkan
+    - mengatur
+    - kewajiban
+    - larangan
+    - hak
+    - izin
+    - persetujuan
+    - penyelenggaraan
+    - pelaksanaan
+
+  # ! Read by VERA, not by Ravel: the input to the relevance floor
+  # (`SCORING.md` §3). Declared here so the engine stops compiling in a stop list
+  # that describes one language.
+  #
+  # ! `dapat`, `harus`, `wajib` and `tidak` appear in `terms` above AND here, and
+  # that is not a contradiction. As TERMS they are near-universal in this corpus
+  # and carry no discriminative power, so overlap drops them; as a DENSITY they
+  # are exactly what distinguishes a provision from a fragment.
+  stopwords:
+    - yang
+    - dan
+    - atau
+    - untuk
+    - dengan
+    - pada
+    - dari
+    - dalam
+    - oleh
+    - apakah
+    - bagaimana
+    - berapa
+    - siapa
+    - adalah
+    - itu
+    - ini
+    - ke
+    - di
+    - tidak
+    - dapat
+    - harus
+    - wajib
+    - jika
+    - akan
+    - sebagai
+  min_term_chars: 3
+
+# Per-extractor overrides. Absent keys fall back to the extractor's defaults.
+extract:
+  native:
+    # Measured: structural markers here are 2.7% bold at 1.0x body size, so
+    # typography is not the signal. The structurer owns heading assignment and
+    # demotes typographic guesses; these thresholds only affect `attrs`.
+    heading_size_ratio: 1.12
+    heading_max_chars: 120
+    running_page_share: 0.5

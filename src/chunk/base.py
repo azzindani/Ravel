@@ -25,7 +25,7 @@ from typing import Any, Protocol
 from canon import Block, BlockType, CanonicalDoc
 from canon.render import render_table
 from chunk.models import PATH_SEP, Chunk, chunk_id
-from spec import Profile
+from spec import Facts, Profile
 
 #: Block types that carry document content. Page furniture and captions are excluded
 #: from bodies — a running header repeated on 400 pages is noise that would otherwise
@@ -139,6 +139,9 @@ class Builder:
     config: ChunkConfig
     profile: Profile | None = None
     count_tokens: TokenCounter = estimate_tokens
+    facts: Facts | None = None
+    """The document's own facts, set once by a chunker that reads them. Stamped on every
+    chunk of the document, so the exact-identifier path never has to join to find them."""
 
     def body_of(self, blocks: Sequence[Block]) -> str:
         """Verbatim text of a block group, in reading order."""
@@ -154,6 +157,8 @@ class Builder:
         part: tuple[int, int] = (1, 1),
         attrs: dict[str, Any] | None = None,
         extra_block_ids: Sequence[str] = (),
+        chapter: str | None = None,
+        article: str | None = None,
     ) -> Chunk | None:
         """One chunk, or None when there is nothing worth emitting.
 
@@ -170,6 +175,7 @@ class Builder:
         if not text:
             return None
         attrs = attrs or {}
+        facts = self.facts or Facts()
 
         block_ids = [*extra_block_ids, *(b.id for b in blocks)]
         heading_path = self._heading_path(blocks)
@@ -204,6 +210,14 @@ class Builder:
             locator_section=locator or None,
             heading_path=heading_path or None,
             identifier=identifier,
+            regulation_type=facts.regulation_type,
+            enacting_body=facts.enacting_body,
+            regulation_number=facts.regulation_number,
+            year=facts.year,
+            about=facts.about,
+            effective_date=facts.effective_date,
+            chapter=chapter,
+            article=article,
             chunker=self.chunker,
             chunker_version=self.version,
             config_hash=self.config.config_hash,
@@ -220,6 +234,8 @@ class Builder:
         attrs: dict[str, Any] | None = None,
         lead: str = "",
         lead_block_ids: Sequence[str] = (),
+        chapter: str | None = None,
+        article: str | None = None,
     ) -> Iterator[Chunk]:
         """Emit a block group, splitting it into parts if it exceeds `max_tokens`.
 
@@ -241,6 +257,8 @@ class Builder:
                 part=(n, total),
                 attrs=attrs,
                 extra_block_ids=lead_block_ids if (lead and n == 1) else (),
+                chapter=chapter,
+                article=article,
             )
             if chunk:
                 yield chunk

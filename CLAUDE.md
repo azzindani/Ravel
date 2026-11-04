@@ -96,6 +96,7 @@ Ravel/
 │   ├── EVAL.md                    ← how a variant is scored and promoted
 │   ├── MIGRATION.md               ← absorbing notebooks, pre_embed, ID_Legal
 │   ├── ABSORPTION.md              ← measured survey of the existing corpus and code
+│   ├── SOURCE_ID_REG_MARKDOWN.md  ← measured reading of ID_REG_Markdown + the id_regulation_md profile
 │   └── OPEN_QUESTIONS.md          ← decisions still on the table
 │
 ├── ravel/                         ← Python package (libraries dictate language)

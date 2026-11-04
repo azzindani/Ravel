@@ -107,6 +107,8 @@ Every chunk carries:
 | `locator_section` | structural locator (`Pasal 9 ayat (3)`) | yes |
 | `heading_path` | joined block `heading_path` | yes |
 | `identifier` | canonical citation, if any | yes |
+| `regulation_type`, `enacting_body`, `regulation_number`, `year`, `about`, `effective_date` | `profile.describe()` over the title block (first 30 blocks) and, for the date, the whole document | yes |
+| `chapter`, `article` | the heading labels in force where the chunk sits (§5.1) | yes |
 | `source_sha256` | `doc.source.sha256` | no |
 | `config_hash` | the chunk config this row came from | no |
 
@@ -152,6 +154,26 @@ what the human verifies against the source.
 exact blocks and bounding boxes that produced it.
 
 ---
+
+### 5.1 `chapter` and `article`
+
+Two labels a reader cites a chunk by, derived from the document's headings and the roles
+its profile declares (`PROFILES.md` §2). One forward pass, no lookup: the label in force at a
+heading is the last `chapter` unit, inside the last `region`.
+
+| Where the chunk sits | `chapter` | `article` |
+|---|---|---|
+| Title block, before any marker | `N/A` | `Pembukaan` (`structure.opening`) |
+| Under `BAB III KETENTUAN UMUM` | `BAB III - KETENTUAN UMUM` | `Pasal 5` |
+| The signing block | `PENUTUP` | `Pengesahan` |
+| The explanation | `PENJELASAN` | `Pasal 5` |
+| Its chapters, if it repeats them | `PENJELASAN - BAB I - …` | |
+| An annex | `LAMPIRAN` | `LAMPIRAN` |
+
+These are the labels the incumbent corpus used, so Vera's existing filters keep working.
+The document-level facts are stamped on every chunk of the document rather than joined at
+query time, because the exact-identifier path indexes `(regulation_type, regulation_number,
+year)` on `chunks` and a join would put the index on the wrong table.
 
 ## 6. Chunk ids must be deterministic
 

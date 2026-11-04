@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     regulation_number   TEXT,
     year                INTEGER,
     about               TEXT,
+    effective_date      TEXT,
     chapter             TEXT,
     article             TEXT,
     identifier          TEXT,

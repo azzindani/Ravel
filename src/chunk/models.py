@@ -78,6 +78,22 @@ class Chunk(Base):
     regulation never loses it to semantic drift.
     """
 
+    # -- what the document says about itself ----------------------------------
+    # Hard columns for the same reason provenance is: Vera's exact-identifier path keys
+    # on `(regulation_type, regulation_number, year)`, and a value inside `attrs` cannot
+    # be indexed. All None when the profile could not read them -- never `Unknown`.
+    regulation_type: str | None = None
+    enacting_body: str | None = None
+    regulation_number: str | None = None
+    year: int | None = None
+    about: str | None = None
+    effective_date: str | None = None
+    chapter: str | None = None
+    """The grouping this chunk sits in: `BAB III - KETENTUAN UMUM`, `PENJELASAN`,
+    `LAMPIRAN`, or `N/A` for a document with none."""
+    article: str | None = None
+    """The thing a reader cites: `Pasal 5`, `Pembukaan`, `Pengesahan`."""
+
     # -- lineage ------------------------------------------------------------
     chunker: str
     chunker_version: str
