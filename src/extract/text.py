@@ -35,7 +35,7 @@ HEADINGS = {f"h{n}": n for n in range(1, 7)}
 LIST_TAGS = frozenset({"li", "dd", "dt"})
 
 MD_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
-MD_LIST = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
+MD_LIST = re.compile(r"^\s*(?:[-*+]|(?P<number>\d+[.)]))\s+(?P<text>.*)$")
 MD_SETEXT = re.compile(r"^(=+|-+)\s*$")
 
 
@@ -151,7 +151,12 @@ def _markdown_blocks(raw: str, builder: BlockBuilder) -> None:
         if m := MD_HEADING.match(text):
             builder.add(BlockType.HEADING, normalize(m.group(2)), level=len(m.group(1)))
         elif m := MD_LIST.match(text):
-            builder.add(BlockType.LIST_ITEM, normalize(m.group(1)))
+            # ! A bullet is markup and is dropped; a number is text and is kept. On the
+            # 46,451-file ID_REG_Markdown corpus stripping `1.` removed 1.8M words (0.95%
+            # of everything the files say), and a citation to "angka 3" needs the 3.
+            item = normalize(m.group("text"))
+            number = m.group("number")
+            builder.add(BlockType.LIST_ITEM, f"{number} {item}" if number else item)
         else:
             builder.add(BlockType.PARAGRAPH, text)
 
@@ -169,7 +174,9 @@ class TextExtractor:
     # 1.1 — heading_path was built by indexing the stack by depth, so two headings at
     # the same profile level nested instead of displacing each other. Every document
     # extracted at 1.0 carries a wrong path; the bump invalidates them deliberately.
-    version = "1.1"
+    # 1.2 — a numbered list item keeps its number (`1. Daerah adalah`); only a bullet is
+    # markup. Every document extracted at 1.1 lacks the numbers; the bump re-extracts them.
+    version = "1.2"
 
     SUPPORTED = {
         "text/html": _html_blocks,

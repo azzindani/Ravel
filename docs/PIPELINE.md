@@ -171,6 +171,53 @@ Written down so a declared-but-ignored field cannot hide in a schema.
 - **A corpus file for `ID_REG_Markdown`.** Its files sit inside zips, so a path under
   `provenance.base_url` would name a location that does not exist; it needs a `url_map` or a
   zip-aware source before it can be built. Not guessed.
-- **Short Bagian / Paragraf title lines** still become their own 2–6 token chunks (about
-  4.6% of rows on the sample). Chapter titles are consumed as labels; these have no label to
-  go to.
+- **Short Bagian / Paragraf title lines** still become their own 2–6 token chunks. Chapter
+  titles are consumed as labels; these have no label to go to, so they are kept as chunks
+  rather than lost.
+
+---
+
+## 8. Verification
+
+`tools/verify_kb.py` runs the real layers 2–6 in memory over a directory and answers one
+question per document: *did anything the document says fail to reach a chunk, and where did
+it go?* It is read-only, and it gates (non-zero exit) on the invariants that must hold:
+
+| Gate | Asserts |
+|---|---|
+| no document failed | no exception in extract, structure or chunk |
+| no unaccounted block | every canonical block is in exactly one bucket: emitted, heading carried by a label, consumed chapter title, dropped by a named profile rule, empty section, non-body type, empty |
+| no titled heading lost | a heading that says more than its marker reaches a chunk, a path or a label |
+| every chunk body is verbatim | `body` equals its own blocks' text joined, character for character |
+| every zero-chunk document held only boilerplate | a document may yield nothing only if it contained nothing |
+| profile's `expected` floors met | layer 7 |
+
+Beside the gates it reports **word recall** (the multiset of source words against the
+canonical blocks and against chunk bodies, with what went missing at each step), throughput
+per stage, peak memory, the size distribution, fact and label coverage, and the lowest-recall
+documents to open by hand.
+
+### 8.1 Measured: `id_regulation_md@1.1` over all 46,451 files
+
+16 workers, 145 s wall. Every gate passes.
+
+| | |
+|---|---|
+| chunks | 1,323,160 (28.5 per file) |
+| source words in a chunk body | 96.69% |
+| lost at extraction | 0.14%: 0.13% decoded HTML entities (`&lt;` becomes `<`, still present), 0.01% encoding damage and hyphen joins, 0.00% list numbers |
+| lost at chunking | 0.64%: the words of removed `<!-- image -->`, `Cukup jelas.`, repeated `PRESIDEN REPUBLIK INDONESIA` headers, `ttd` |
+| blocks by bucket | 80.7% emitted, 10.7% heading carried, 7.4% boilerplate (by rule, counted), 0.9% chapter title consumed, 0.3% empty section |
+| zero-chunk documents | 150, median 62 bytes, every character boilerplate: image-only scans that need OCR, not a parser fix |
+| chunk tokens p10 / p50 / p90 / p99 | 13 / 91 / 553 / 4,112; 6.2% under 8, 3.5% split into parts, 31 over the 8,192 cap |
+| coverage | type 82.9%, issuer 89.1%, subject 89.4%, date 71.4%, article 87.5%, chapter 100% |
+| throughput | 29 files/s/core, 1.1 MB/s/core (extract 540 s, structure 307 s, chunk 745 s of CPU); peak 753 MB per worker |
+
+What the first full run found, and the fixes: stripping `1.` list numbers dropped 1.8M words
+(0.95%), now kept (`TextExtractor` 1.2); a titled heading with nothing under it, or inside a
+chapter segment, reached no chunk (277K characters), now kept as its own chunk
+(`attrs.orphan`, `unit` 1.2); and a heading judged carried because neighbouring labels
+happened to spell it when joined, now matched against whole labels.
+
+`verify_kb.py` measures the layers, not the CLI: the corpus file that `ravel chunk` needs is
+the open item in §7.

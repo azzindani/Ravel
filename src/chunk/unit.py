@@ -27,6 +27,7 @@ What it does, in order:
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 
@@ -35,7 +36,7 @@ from chunk.base import BODY_TYPES, Builder, ChunkConfig, chunker
 from chunk.models import Chunk
 from spec import Facts, Profile, Unit
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 #: Blocks scanned for the document's own citation. The identity of a regulation is in
 #: its title block; reading further invites matching a cross-reference to a *different*
@@ -116,7 +117,8 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
     use_subunits = bool(config.params.get("subunits", True)) and profile is not None
     citation = _citation(doc, profile)
     builder.facts = _facts(doc, profile)
-    where, titles = _where(doc, profile)
+    where, title_of = _where(doc, profile)
+    titles = {b.id for b in title_of.values()}
 
     plans: list[Plan] = []
     for segment in _segments(doc, split_on, where):
@@ -155,6 +157,8 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
         # the pasal's — a locator pointing at the wrong section, which is the one defect
         # in a chunk that no downstream stage can detect.
         plans.extend(_coalesce(here, builder))
+
+    _keep_orphan_headings(plans, doc, where, title_of, profile, citation)
 
     for plan in plans:
         yield from builder.split(
@@ -319,11 +323,13 @@ def _facts(doc: CanonicalDoc, profile: Profile | None) -> Facts | None:
 # ---------------------------------------------------------------------------
 # Where a chunk sits: chapter and article labels
 # ---------------------------------------------------------------------------
-def _where(doc: CanonicalDoc, profile: Profile | None) -> tuple[dict[str, Where], set[str]]:
+def _where(
+    doc: CanonicalDoc, profile: Profile | None
+) -> tuple[dict[str, Where], dict[str, Block]]:
     """The labels in force at every heading, keyed by block id; `""` is the opening.
 
-    Also the ids of the title blocks that were consumed as chapter labels, which the
-    caller must not emit as body.
+    Also, by heading id, the title block each chapter heading consumed as its label, which
+    the caller must not emit as body.
 
     A single forward pass over reading order. A `region` unit (`PENJELASAN`) opens a
     region that lasts until the next one, and a chapter inside it reads
@@ -336,12 +342,12 @@ def _where(doc: CanonicalDoc, profile: Profile | None) -> tuple[dict[str, Where]
     own roles and gets the same behaviour.
     """
     if profile is None:
-        return {}, set()
+        return {}, {}
     opening = profile.spec.structure.opening
     out: dict[str, Where] = {"": Where(_compose(None, None), opening)}
     units = {u.name: u for u in profile.units}
     blocks = sorted(doc.blocks, key=lambda b: b.reading_order)
-    consumed: set[str] = set()
+    consumed: dict[str, Block] = {}
     region: str | None = None
     chapter: str | None = None
     for index, block in enumerate(blocks):
@@ -357,11 +363,84 @@ def _where(doc: CanonicalDoc, profile: Profile | None) -> tuple[dict[str, Where]
             title = rest
             if not title and (below := _title_below(blocks, index, profile)):
                 title = below.text.strip()
-                consumed.add(below.id)
+                consumed[block.id] = below
             chapter = f"{marker} - {title}" if title else marker
         article = unit.article or (marker if unit.role == "article" else None)
         out[block.id] = Where(_compose(region, chapter), article)
     return out, consumed
+
+
+def _keep_orphan_headings(
+    plans: list[Plan],
+    doc: CanonicalDoc,
+    where: dict[str, Where],
+    title_of: dict[str, Block],
+    profile: Profile | None,
+    citation: str | None,
+) -> None:
+    """Emit a heading's own text when nothing else carries it.
+
+    ! A heading with a title and nothing under it -- `LAMPIRAN XV : PERATURAN DAERAH ...`,
+    a `Bagian Kedua` that holds no pasal, a chapter with no articles -- is text in the
+    document, and without this it reached no chunk. Measured on 46,451 files that was 277K
+    characters; small, and exactly the kind of loss nothing downstream can notice.
+
+    Every heading is considered, not only those that open a segment: a `Bagian` inside a
+    `BAB` is a block of the chapter's segment, and the segment only emits body blocks.
+
+    Only a heading whose text no chunk path or label already holds, and only one that says
+    more than its marker: `Pasal 10` with an empty explanation under it carries nothing a
+    chunk is missing. The plan goes where the heading stood, so `seq` keeps document order.
+    """
+    units = {u.name: u for u in profile.units} if profile else {}
+    # ! A set of whole labels, never one joined string. Squashed and concatenated,
+    # `BAB I` + `Pasal 1` + `BAB II` contain the heading `BAB I Pasal 1 BAB II`, and a
+    # heading was judged carried by text that merely sat next to it.
+    held = {
+        squash_text(part)
+        for plan in plans
+        for part in (
+            plan.where.chapter,
+            plan.where.article,
+            plan.locator,
+            *(plan.blocks[0].heading_path if plan.blocks else ()),
+        )
+        if part
+    }
+    starts = [plan.blocks[0].reading_order for plan in plans if plan.blocks]
+    for heading in sorted(doc.blocks, key=lambda b: b.reading_order):
+        if heading.type is not BlockType.HEADING or not heading.text.strip():
+            continue
+        title = title_of.get(heading.id)
+        unit = units.get(str(heading.attrs.get("unit")))
+        rest = _split_marker(unit, heading.text)[1] if unit else heading.text.strip()
+        if not rest and title is None:
+            continue
+        text = heading.text.strip() + (f" {title.text.strip()}" if title else "")
+        wanted = squash_text(text)
+        if wanted in held or any(wanted in part for part in held):
+            continue
+        label = heading.text.strip().rstrip(":;.")
+        at = bisect_left(starts, heading.reading_order)
+        starts.insert(at, heading.reading_order)
+        plans.insert(
+            at,
+            Plan(
+                blocks=[heading, *([title] if title else [])],
+                locator=label,
+                identifier=_identifier(citation, label),
+                attrs={
+                    **({"unit": str(u)} if (u := heading.attrs.get("unit")) else {}),
+                    "orphan": "heading",
+                },
+                where=where.get(heading.id, Where()),
+            ),
+        )
+
+
+def squash_text(text: str) -> str:
+    """Letters and digits only, lower-cased: how two renderings of one title are compared."""
+    return re.sub(r"\W+", "", text).lower()
 
 
 def _compose(region: str | None, chapter: str | None) -> str:

@@ -1,7 +1,7 @@
 # SOURCE_ID_REG_MARKDOWN.md — Ravel
 
 A measured reading of `Azzindani/ID_REG_Markdown` and the profile written from it,
-`registry/profiles/id_regulation_md@1.0.yaml`. Everything below was counted, not recalled;
+`registry/profiles/id_regulation_md@1.1.yaml`. (Measured with 1.0, whose structure and identity are identical to 1.1's; 1.0 was removed as superseded.) Everything below was counted, not recalled;
 the commands that reproduce it are in §8. Nothing here has been run through
 `ravel extract` / `ravel chunk` yet — the profile is tested against lines, not against a
 build (§7).
@@ -106,7 +106,7 @@ repetition: `<!-- image -->` 1,890 files / 22,431 lines; `PRESIDEN REPUBLIK INDO
 
 ---
 
-## 4. The profile · `id_regulation_md@1.0`
+## 4. The profile · `id_regulation_md@1.1`
 
 A **separate profile, not `id_regulation@1.1`**: the family is the same, the noise model is
 not, and `id_regulation@1.0` is named explicitly by `test_chunk_run`, `test_extract_run` and
@@ -123,7 +123,7 @@ abbreviations and `scoring` block are copied from `id_regulation@1.0`.
 ### Measured on a 1-in-12 sample (3,871 files, 1,305,005 blocks)
 
 Through Ravel's own Markdown extractor, `Profile.structural()` against a deliberately loose
-detector. `id_regulation@1.0` → `id_regulation_md@1.0`:
+detector. `id_regulation@1.0` → `id_regulation_md@1.1`:
 
 | unit | claimed | loose lines not claimed |
 |---|---|---|
@@ -286,10 +286,10 @@ for z in sorted(src.glob("*.zip")):
 EOF
 
 uv run python tools/probe_markdown_corpus.py structure id_regulation@1.0    work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py structure id_regulation_md@1.0 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py cite      id_regulation_md@1.0 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.0 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py facts    id_regulation_md@1.0 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py labels   id_regulation_md@1.0 work/id_reg_markdown --every 48
+uv run python tools/probe_markdown_corpus.py structure id_regulation_md@1.1 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py cite      id_regulation_md@1.1 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.1 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py facts    id_regulation_md@1.1 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py labels   id_regulation_md@1.1 work/id_reg_markdown --every 48
 uv run pytest tests/test_profile_id_regulation_md.py tests/test_document_facts.py
 ```

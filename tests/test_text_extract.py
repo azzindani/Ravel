@@ -111,3 +111,22 @@ def test_normalize_repairs_transport_damage(raw: str, expected: str) -> None:
     document that legitimately contains the text `&lt;`, which legal and technical
     corpora routinely do."""
     assert normalize(raw) == expected
+
+
+def test_a_list_number_is_text_and_a_bullet_is_markup(tmp_path: Path) -> None:
+    """! 1.8M words on the ID_REG_Markdown corpus: `1. Daerah adalah` lost its `1.`, and a
+    citation to "angka 3" needs the 3. A bullet carries nothing and is still dropped."""
+    source = write(
+        tmp_path,
+        "list.md",
+        "Dalam peraturan ini:\n\n1. Daerah adalah wilayah.\n\n2) Bupati adalah kepala.\n\n"
+        "- a. orang pribadi;\n\n* badan usaha\n",
+    )
+    doc = TextExtractor().extract(source, title="t")
+    items = [b.text for b in doc.blocks if b.type is BlockType.LIST_ITEM]
+    assert items == [
+        "1. Daerah adalah wilayah.",
+        "2) Bupati adalah kepala.",
+        "a. orang pribadi;",
+        "badan usaha",
+    ]

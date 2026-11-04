@@ -18,7 +18,7 @@ from chunk import SCHEMA, Builder, ChunkConfig, get, read_chunks, write_chunks
 from load.plan import CHUNK_COLUMNS
 from spec import Profile, default_registry
 
-REF = "id_regulation_md@1.0"
+REF = "id_regulation_md@1.1"
 
 TITLE = (
     "PERATURAN BUPATI BANYUWANGI\n"
@@ -285,3 +285,132 @@ def test_every_column_the_loader_stages_is_in_the_chunk_shard() -> None:
         assert column in CHUNK_COLUMNS
     for column in ("effective_date", "chapter", "article"):
         assert column in CHUNK_COLUMNS
+
+
+# ---------------------------------------------------------------------------
+# a heading that says something is not lost because nothing sits under it
+# ---------------------------------------------------------------------------
+def _doc_from(
+    base: CanonicalDoc, rows: list[tuple[BlockType, str, int | None, str | None]]
+) -> CanonicalDoc:
+    built = base.model_copy(deep=True)
+    built.source.url = "hf://datasets/example/fixture/perbup.md"
+    built.source.title = "perbup"
+    built.tables = []
+    blocks: list[Block] = []
+    stack: list[tuple[int, str]] = []
+    for order, (btype, text, level, unit) in enumerate(rows):
+        if btype is BlockType.HEADING:
+            while stack and stack[-1][0] >= (level or 1):
+                stack.pop()
+            stack.append((level or 1, text))
+        blocks.append(
+            Block(
+                id=f"b{order:05d}",
+                type=btype,
+                text=text,
+                level=level,
+                heading_path=[t for _, t in stack],
+                page=1,
+                reading_order=order,
+                attrs={"unit": unit} if unit else {},
+            )
+        )
+    built.blocks = blocks
+    return built
+
+
+P = BlockType.PARAGRAPH
+H = BlockType.HEADING
+TITLE_ROW = (P, "PERATURAN BUPATI BANYUWANGI NOMOR 26 TAHUN 2011 TENTANG ANGGARAN", None, None)
+
+
+def test_a_titled_heading_with_nothing_beneath_is_kept_in_order(
+    doc: CanonicalDoc, profile: Profile
+) -> None:
+    built = _doc_from(
+        doc,
+        [
+            TITLE_ROW,
+            (H, "BAB I", 3, "bab"),
+            (P, "KETENTUAN UMUM", None, None),
+            (H, "Bagian Kedua Ketentuan Khusus", 4, "bagian"),
+            (H, "BAB II", 3, "bab"),
+            (P, "KETENTUAN PENUTUP", None, None),
+            (H, "Pasal 1", 6, "pasal"),
+            (
+                P,
+                "Peraturan ini mulai berlaku pada tanggal diundangkan oleh Bupati.",
+                None,
+                None,
+            ),
+        ],
+    )
+    chunks = _chunks(built, profile)
+    orphans = [c for c in chunks if c.attrs.get("orphan")]
+    assert [c.body for c in orphans if "Bagian" in c.body] == ["Bagian Kedua Ketentuan Khusus"]
+    # Verbatim, traceable to the heading block, and in document order.
+    kept = next(c for c in orphans if "Bagian" in c.body)
+    assert kept.block_ids == ["b00003"]
+    assert [c.seq for c in chunks] == sorted(c.seq for c in chunks)
+    assert chunks.index(kept) < next(i for i, c in enumerate(chunks) if c.article == "Pasal 1")
+
+
+def test_a_bare_marker_with_nothing_beneath_is_not_a_chunk(
+    doc: CanonicalDoc, profile: Profile
+) -> None:
+    built = _doc_from(
+        doc,
+        [
+            TITLE_ROW,
+            (H, "Pasal 9", 6, "pasal"),
+            (P, "Cukup jelas.", None, None),
+            (H, "Pasal 10", 6, "pasal"),
+            (
+                P,
+                "Peraturan ini mulai berlaku pada tanggal diundangkan oleh Bupati.",
+                None,
+                None,
+            ),
+        ],
+    )
+    bodies = {c.body for c in _chunks(built, profile)}
+    assert "Pasal 9" not in bodies  # an empty section says nothing a chunk is missing
+
+
+def test_a_heading_a_label_already_carries_is_not_repeated(
+    labelled: CanonicalDoc, profile: Profile
+) -> None:
+    assert not [c for c in _chunks(labelled, profile) if c.attrs.get("orphan")]
+
+
+def test_neighbouring_labels_do_not_stand_in_for_a_heading(
+    doc: CanonicalDoc, profile: Profile
+) -> None:
+    """! Squashed and concatenated, `BAB I` + `Pasal 1` + `BAB II` contain the heading
+    `BAB I Pasal 1 BAB II`. A heading was once judged carried by text merely beside it."""
+    built = _doc_from(
+        doc,
+        [
+            TITLE_ROW,
+            (H, "BAB I", 3, "bab"),
+            (H, "Pasal 1", 6, "pasal"),
+            (
+                P,
+                "Peraturan ini mulai berlaku pada tanggal diundangkan oleh Bupati.",
+                None,
+                None,
+            ),
+            (H, "BAB II", 3, "bab"),
+            (H, "Pasal 2", 6, "pasal"),
+            (
+                P,
+                "Ketentuan lebih lanjut diatur dengan Peraturan Bupati tersendiri nanti.",
+                None,
+                None,
+            ),
+            (H, "BAB I Pasal 1 BAB II", 3, "bab"),
+        ],
+    )
+    bodies = [c.body for c in _chunks(built, profile)]
+    assert "BAB I Pasal 1 BAB II" in bodies

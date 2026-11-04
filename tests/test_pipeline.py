@@ -223,7 +223,10 @@ def test_the_pipeline_section_is_in_the_chunking_key_but_not_the_extraction_key(
 # ---------------------------------------------------------------------------
 def test_routing_considers_only_the_newest_version_of_each_id() -> None:
     registry = default_registry()
-    old, new = registry.get("id_regulation_md@1.0"), registry.get(MD)
+    new = registry.get(MD)
+    older = new.spec.model_dump(mode="json")
+    older["version"] = "1.0"
+    old = Profile.compile(ProfileSpec.model_validate(older))
     sample = "PERATURAN BUPATI X NOMOR 1 TAHUN 2010\nDENGAN RAHMAT TUHAN YANG MAHA ESA"
     for order in ([old, new], [new, old]):
         routed = Registry(order).route(mime="text/markdown", sample=sample)
