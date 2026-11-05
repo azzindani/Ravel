@@ -85,6 +85,7 @@ Ravel/
 │   ├── PROFILES.md                ← document profiles: corpus knowledge as data, not code
 │   ├── PIPELINE.md                ← the layers, what each may write, what the profile decides
 │   ├── CHUNKING.md                ← chunker registry; provenance capture rules
+│   ├── RELATIONS.md               ← revokes / amends / based_on from citations; status; no NER
 │   ├── ENRICHMENT.md              ← NER, entities, KG edges, signals, keyword stats
 │   ├── EMBEDDING.md               ← pluggable embedders; dimension; omni; consistency
 │   ├── BUNDLE.md                  ← output contract: parquet + manifest + schema gen
@@ -248,7 +249,8 @@ parsing as a stateless service.
 - [x] Bundle writer: manifest, generated schema, parquet shards, inventory — `src/bundle/`
 - [x] Clustering: anchors, spherical k-means, streamed assignment, generations — `src/cluster/`
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
-- [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`; NER still to build
+- [x] Relations: revokes / replaces / amends / based_on from the verb beside each citation, resolved to documents, status derived — `src/enrich/relations.py`, `docs/RELATIONS.md`; no NER, by decision
+- [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`
 - [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
 - [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;
       Vera's 50-case seed set imported to `eval/id_legal/queries@v1.jsonl` by

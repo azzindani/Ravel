@@ -610,3 +610,49 @@ extract:
     heading_size_ratio: 1.12
     heading_max_chars: 120
     running_page_share: 0.5
+
+# How regulations cite each other (docs/RELATIONS.md). Read from the finished chunks, so a
+# rule corrected here invalidates no chunk. Measured on 46,451 files before writing:
+# 13,387 say `dinyatakan tidak berlaku`/`dicabut`, 9,939 say `dicabut dan dinyatakan tidak
+# berlaku`, 7,092 open `Pada saat ... ini mulai berlaku`, 31,080 contain `perubahan atas`.
+relations:
+  # An inline citation. Case-insensitive on the type and on `Nomor`/`Tahun`; the issuing
+  # region is whatever capitalised words sit between them (`Kabupaten Lahat`). The short
+  # forms are what text says (`UU No. 40 Tahun 2007`); `identity.citation` is upper-case
+  # title blocks only and would miss every one of these.
+  reference: '(?i:\b(?P<type>{types}|UU|PP|Perpres|Perda|Permen|Perppu|Pergub|Perbup|Perwal|Keppres|Inpres|Kepmen))\b(?P<body>(?:\s+(?:[A-Z][\w''.-]*|dan|di|ke|dari))*?)\s*(?i:Nomor|No\.?)\s*:?\s*(?P<number>\d+[A-Za-z]?(?:[./-]\w+)*?)\s*(?i:Tahun|Th\.?)\s*(?P<year>\d{{4}})'
+  # Not a bare full stop: `Kab.` and `Prov.` sit inside citations.
+  sentence_end: ';\s+|(?<!\bKab)(?<!\bProv)(?<!\bNo)(?<!\bTh)(?<!\bdll)(?<!\bdsb)(?<!\bdst)(?<!\bTkt)\.\s+(?=[A-Z])'
+  window: 400
+  adjacent: 40
+  # ! `diubah dengan` is NOT an amends cue. `Perda X sebagaimana telah diubah dengan Perda Y`
+  # is history: it says Y changed X, not that this document did.
+  # ! A cue on the wrong side of a citation binds the wrong instrument: the title of a cited
+  # history instrument (`... tentang Perubahan Ketiga atas Peraturan Daerah Nomor 10`) holds
+  # `perubahan atas`, and with cues allowed on either side it claimed every citation near it.
+  # So each rule says which side its cue may stand on.
+  rules:
+    - {relation: revokes, side: before, window: 40, cue: '(?i)\b(?:men|pen)cabut(?:an)?\b'}
+    - {relation: revokes, side: after, cue: '(?i)\b(?:di)?cabut(?:kan)?\b|dinyatakan\s+(?:tidak\s+berlaku|dicabut)|tidak\s+berlaku\s+lagi|\bdihapus\b'}
+    - {relation: replaces, side: before, window: 40, cue: '(?i)\bmenggantikan\b|\bmengganti\b'}
+    - {relation: replaces, side: after, cue: '(?i)\bdigantikan\b|\bdiganti\s+dengan\b'}
+    - {relation: amends, side: before, window: 40, cue: '(?i)\b(?:perubahan\s+(?:(?:yang\s+)?\w+\s+)?(?:atas|terhadap)|mengubah)\b'}
+    - {relation: amends, side: after, cue: '(?i)\bdiubah\s+(?:sebagai\s+berikut|menjadi)\b|\bdilakukan\s+perubahan\b'}
+    # ! The preamble quotes other instruments by their titles (`UU 43/1999 tentang Perubahan
+    # Atas UU 8/1974`), so a verb inside it is that instrument's, not this document's. Two
+    # zones, found by their own markers because the `Menimbang`/`Mengingat` words are often
+    # headings that never reach a chunk body: considerations open at `bahwa`, and the legal
+    # basis opens at `Mengingat` or at a numbered item that begins with an instrument.
+    - relation: references
+      region_start: '(?i)\bMenimbang\b|\bbahwa\b'
+      region_end: '(?i)\bMengingat\b|\bMEMUTUSKAN\b|\bDengan\s+Persetujuan\b|^[\s:]*\d+\s*[.:]\s*(?:Pasal|Undang|Peraturan|Keputusan|Instruksi)'
+    - relation: based_on
+      region_start: '(?i)\bMengingat\b|^[\s:]*\d+\s*[.:]\s*(?:Pasal|Undang|Peraturan|Keputusan|Instruksi)'
+      region_end: '(?i)\b(?:MEMUTUSKAN|Menetapkan)\b|\bDengan\s+Persetujuan\b'
+  demote: '(?i)(?:sebagaimana\s+(?:telah\s+)?(?:\w+\s+){0,3}?(?:diubah|ditambah|diganti|dicabut|dinyatakan)|terakhir\s+(?:kali\s+)?dengan|diubah\s+dengan|diubah\s+terakhir|\bbelum\b|\b(?:peraturan|ketentuan|petunjuk)\s+(?:pelaksana\w*|teknis)\b[^;]{0,40}$)'
+  title_marker: '(?i)\btentang\b'
+  negate: '(?i)\b(?:belum|masih|sepanjang|sebelum|apabila|jika|perlu)(?:\s+\w+){0,3}\s*$'
+  demote_unless_adjacent: '(?i)\btentang\b[^;]*$'
+  partial: '(?i)\b(?:Pasal|ayat|huruf|Bab|Bagian)\s+[\dIVXLa-z]+\b[^.;]{0,30}$'
+  skip_chapters: [PENJELASAN, LAMPIRAN]
+  national_bodies: [Republik Indonesia, Negara Republik Indonesia, Indonesia]

@@ -454,6 +454,113 @@ class PipelineSpec(Base):
     expected: ExpectedSpec = Field(default_factory=ExpectedSpec)
 
 
+class RelationRule(Base):
+    """One way a document can relate to another, and the words that say so."""
+
+    relation: str = Field(pattern=r"^[a-z][a-z_]*$")
+    """`revokes`, `amends`, `based_on` -- the name is the profile's, not the engine's."""
+
+    cue: str | None = None
+    """Words in the same sentence as a citation that make it this relation. The citation
+    is bound to the NEAREST cue, so a sentence naming two instruments and two verbs gives
+    each instrument its own."""
+
+    side: Literal["before", "after", "either"] = "either"
+    """Which side of the citation the cue may stand on. `mencabut <citation>` is `before`;
+    `<citation> ... dicabut` is `after`. A bare `either` lets the title of a cited history
+    instrument (`tentang Perubahan atas ...`) claim the citations around it."""
+
+    window: int | None = Field(default=None, ge=1)
+    """How far the cue may be from the citation; the section's `window` when absent."""
+
+    region_start: str | None = None
+    region_end: str | None = None
+    """For a relation stated by position and not by a verb: every citation between a
+    block matching `region_start` and the next matching `region_end` is this relation
+    (the legal basis of a regulation is whatever follows `Mengingat`)."""
+
+    @model_validator(mode="after")
+    def _one_way_to_say_it(self) -> Self:
+        by_cue = self.cue is not None
+        by_region = self.region_start is not None
+        if by_cue == by_region:
+            raise ValueError(
+                f"{self.relation}: give either `cue`, or `region_start`/`region_end`"
+            )
+        return self
+
+
+class RelationsSpec(Base):
+    """How documents cite each other (`RELATIONS.md`). Read after chunking, never before."""
+
+    reference: str | None = None
+    """An inline citation: `{types}` expands as in `identity`. Named groups `type`, `body`
+    (the issuing region, when the text names one), `number`, `year`."""
+
+    rules: list[RelationRule] = Field(default_factory=list)
+
+    sentence_end: str = r";\s+"
+    """Where one statement ends. Deliberately not a bare full stop: `Kab.` and `No.` are
+    inside citations, and splitting one in half loses its issuer."""
+
+    window: int = Field(default=400, ge=1)
+    """How far, in characters, a cue may sit from the citation it governs."""
+
+    adjacent: int = Field(default=40, ge=0)
+    """A cue this close BEFORE a citation (`mencabut Peraturan ...`) governs it whatever
+    else the sentence says."""
+
+    demote: str | None = None
+    """Text before a citation that means the citation is not the subject of the cue:
+    `sebagaimana telah diubah dengan X` names X as history, and `... tentang <title>`
+    names a regulation the target merely mentions. Such a citation is a plain reference."""
+
+    demote_unless_adjacent: str | None = None
+    """As `demote`, except when a cue stands right before the citation: `tentang <title>`
+    makes a later citation part of a title, but `tentang Perubahan atas <citation>` is
+    the amendment itself."""
+
+    negate: str | None = None
+    """Text just before a cue that cancels it: `sepanjang belum <diganti dengan>` says what
+    would end a regulation, not that it has ended."""
+
+    title_marker: str | None = None
+    """The word that opens an instrument's subject (`tentang`). A cue found after it,
+    following a citation of ANOTHER instrument, belongs to that instrument's title
+    (`Peraturan Presiden Nomor 6 Tahun 2000 tentang Pencabutan ...`), not to this document."""
+
+    partial: str | None = None
+    """Text before a citation that limits the relation to part of it (`Pasal 5 Peraturan
+    Daerah Nomor ...`): the target is only partly affected."""
+
+    list_item: str = r"^\s*(?:[a-z]|\d+|[ivx]+)[.)]\s|^\s*[-*]\s"
+    """A paragraph that starts a list. After a cue sentence ending `:` the items beneath it
+    carry the cue."""
+
+    skip_chapters: list[str] = Field(default_factory=list)
+    """Chunks whose chapter label starts with one of these are not read: an explanation
+    discusses other instruments without acting on them."""
+
+    preamble_article: str = "Pembukaan"
+    """The article label of the chunks that hold the preamble."""
+
+    preamble_max_chars: int = Field(default=8000, ge=1)
+    """A `preamble_article` chunk longer than this is not a preamble. When a document's
+    structure was not found, the whole text lands under the opening label and its zones
+    would swallow the operative articles, where the revocations are."""
+
+    national_bodies: list[str] = Field(default_factory=list)
+    """Issuers that name the state and not a region (`Republik Indonesia`). A citation or
+    a document carrying one has no region, so `Undang-Undang Republik Indonesia Nomor 23
+    Tahun 2014` and `Undang-Undang Nomor 23 Tahun 2014` are the same instrument."""
+
+    @model_validator(mode="after")
+    def _rules_need_a_reference_pattern(self) -> Self:
+        if self.rules and not self.reference:
+            raise ValueError("relations.rules need relations.reference")
+        return self
+
+
 class ProfileSpec(Base):
     """The whole file. Validated from YAML; hashed into every downstream cache key."""
 
@@ -467,6 +574,7 @@ class ProfileSpec(Base):
     cleanup: CleanupSpec = Field(default_factory=CleanupSpec)
     scoring: ScoringSpec = Field(default_factory=ScoringSpec)
     pipeline: PipelineSpec = Field(default_factory=PipelineSpec)
+    relations: RelationsSpec = Field(default_factory=RelationsSpec)
     extract: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -487,7 +595,20 @@ class ProfileSpec(Base):
         key. A pattern edited without a version bump therefore invalidates the
         artifacts it produced, instead of silently reusing them (LOOPHOLES.md §1).
         """
-        return _digest(self.model_dump(mode="json"))
+        # ! `relations` is read from finished chunks and changes none of them, so a rule
+        # corrected there must not invalidate a million chunks. It has its own hash.
+        return _digest(self.model_dump(mode="json", exclude={"relations"}))
+
+    @property
+    def relations_hash(self) -> str:
+        """Hash of what the relation sidecar depends on: the rules, and the identity
+        patterns that decide what a document is called."""
+        return _digest(
+            {
+                "relations": self.relations.model_dump(mode="json"),
+                "identity": self.identity.model_dump(mode="json"),
+            }
+        )
 
     @property
     def structure_hash(self) -> str:

@@ -115,6 +115,13 @@ list is maintained once and every pattern stays in sync with it. Types are match
 
 ---
 
+`relations:` declares how documents cite each other: the inline citation pattern, the
+cues that make a citation a revocation, amendment or legal basis (each with the `side` it
+may stand on), the phrases that demote a citation to history, and the preamble zones. It is
+read after chunking and excluded from the chunk cache key; see `RELATIONS.md`.
+
+---
+
 `pipeline:` declares what the layers after extraction do for this kind of document -- chunk
 defaults, derived text for the embedder and the keyword index, and the `expected` floors a
 build is checked against. See `PIPELINE.md`; every field is a default that the corpus and the

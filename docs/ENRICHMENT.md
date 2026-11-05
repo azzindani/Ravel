@@ -74,6 +74,10 @@ as an auxiliary retrieval field; it may never be presented as source text.
 
 ## 4. Entities and the knowledge graph
 
+> **Decision: no NER.** The graph is citations plus the verb beside each one, resolved to
+> documents, with every edge carrying its sentence. See `RELATIONS.md`. The section below is
+> kept as the original design and for the incumbent corpus's column inventory.
+
 A graph is not per-chunk data, so it does not belong in a per-chunk sidecar.
 
 ```
