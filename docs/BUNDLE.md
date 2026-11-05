@@ -100,6 +100,8 @@ bundles/<corpus>/<variant>/<version>/
 ├── signals/part-*.parquet       chunk_id, data (JSONB-ready)
 ├── entities.parquet
 ├── edges.parquet
+├── relations.parquet            source_doc_id, relation, target, target_doc_id, resolution, quote
+├── doc_status.parquet           doc_id, status, revoked_by[], amended_by[]   (RELATIONS.md)
 └── failed.jsonl                 what did not make it, and why
 ```
 

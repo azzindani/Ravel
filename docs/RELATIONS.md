@@ -65,12 +65,18 @@ All of it is the profile's `relations:` section (`PROFILES.md`); the module is m
 ## 3. Resolving a citation to a document
 
 The index is `(number, year)`; then the type is compared as a prefix (`PERATURAN DAERAH`
-fits `PERATURAN DAERAH KABUPATEN`, `PERDA` fits `Perda Kab.`), then the region.
+fits `PERATURAN DAERAH KABUPATEN`, `PERDA` fits `Perda Kab.`), then the region. A region
+that contains another (`Bangka Tengah` and `Bangka`) resolves to the longer.
+
+The corpus holds some regulations more than once (a scan and its re-typed copy). Copies
+are one instrument: a citation of it is not ambiguous between them, and a revocation of it
+marks every copy.
 
 | Resolution | Confidence | When |
 |---|---|---|
 | `resolved` | 1.0 | one document fits, region included; or a national instrument |
 | `inferred` | 0.7 | the citation names no region; the citing document's own region is assumed |
+| `inferred` | 0.6 | the sentence about the cited instrument names exactly one of the regions that fit (`… Kabupaten Tapin`) |
 | `ambiguous` | 0 | several fit and nothing separates them; **linked to nothing** |
 | `unresolved` | 0 | none fits, including "a different region's" |
 
@@ -90,15 +96,15 @@ Measured on all 46,451 files (`id_regulation_md@1.2`):
 | documents that can be cited (title block gave type, number, year) | 36,819 (79.5%) |
 | `based_on` | 423,556 edges in 39,862 documents |
 | `references` | 292,243 edges in 41,344 documents |
-| `revokes` | 9,375 edges in 8,749 documents; 23% resolved, 2% inferred, 4% ambiguous, 71% unresolved |
-| `amends` | 7,197 edges in 5,466 documents; 40% resolved, 4% inferred, 4% ambiguous, 52% unresolved |
+| `revokes` | 9,375 edges in 8,749 documents; 24% resolved, 3% inferred, 2% ambiguous, 71% unresolved |
+| `amends` | 7,197 edges in 5,466 documents; 43% resolved, 5% inferred, 1% ambiguous, 51% unresolved |
 | `replaces` | 44 edges (mostly article-level `diganti dengan`, which is partial) |
-| status | 2,102 revoked (4.7%), 42 partially revoked, 1,548 amended (3.4%), 41,487 none known (91.8%) |
-| mutual revocations / revoking a later-year document | 0 / 0 |
+| status | 2,252 revoked (5.0%), 50 partially revoked, 1,708 amended (3.8%), 41,169 none known (91.1%) |
+| mutual revocations / revoking a later-year document | 1 / 1, both one pair of partial edits between a Konawe regulation and its amendments |
 
 The 71% unresolved is **the corpus, not the parser**: a regulation that revokes a 2008
-Perbup usually cites one that is not among these files. Splitting the unresolved, 6,139 of
-6,662 revokes have a document with that number and year but a different type or region, so
+Perbup usually cites one that is not among these files. Splitting the unresolved, 6,130 of
+6,653 revokes have a document with that number and year but a different type or region, so
 the target is simply elsewhere. The statuses are therefore a floor.
 
 Read by hand, 10 of 10 sampled `revokes/resolved` edges were correct, including partial
@@ -107,12 +113,24 @@ edges were citations with no region from a citing document whose own region was 
 
 ## 5. Left, and why
 
-- **Ambiguity (4%).** Needs the citing document's region; 20% of documents have no
-  identity at all (`SOURCE_ID_REG_MARKDOWN.md`). Reading the region out of the cited title
-  (`… Kabupaten Empat Lawang`) would resolve some; not done.
+- **Ambiguity (2% of revokes).** Every remaining one is a citing document with no identity
+  or no region of its own (20% of documents have none, `SOURCE_ID_REG_MARKDOWN.md`), citing
+  a number and year that several regions share, in a sentence that names none of them.
 - **Consolidated text.** An amending regulation holds only its changes, so the chunk for
   the old pasal stays as written and carries `amended_by`, not the merged text.
-- **Vera.** Not wired. The intended use: show `revoked_by` / `amended_by` on a result and
-  rank a revoked regulation below its replacement, without hiding it.
+- **Vera.** The tables are in the bundle and the load plan (below); Vera does not read them
+  yet. The intended use: show `revoked_by` / `amended_by` on a result and rank a revoked
+  regulation below its replacement, without hiding it.
 - **Temporal check.** A revoker whose year precedes its target's is a wrong link and is
-  counted (0 today), not repaired.
+  counted (1 today), not repaired.
+
+## 6. In the bundle
+
+`relations.parquet` and `doc_status.parquet` sit beside `chunks/` (`BUNDLE.md` §4) and load
+into `doc_relations` and `doc_status`, declared in the generated `schema.sql`. The load plan
+stages them (`corpus_id` is assigned by the merge, not carried by the file), copies with an
+explicit column list, merges inside the transaction, and builds `doc_relations_target_idx`
+("what revoked this?") and `doc_relations_source_idx` after the load. There is no foreign key
+to `chunks` or between documents: an edge to an instrument outside the corpus is a fact
+about the corpus. `tools/ci_bundle_check.py` loads a two-document fixture through the
+generated SQL on a real pgvector and answers "what revoked this?" from it.

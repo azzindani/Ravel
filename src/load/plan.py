@@ -118,6 +118,38 @@ class Step:
         return f"{self.name}{where}"
 
 
+RELATION_COLUMNS = (
+    "source_doc_id",
+    "relation",
+    "target_text",
+    "target_type",
+    "target_number",
+    "target_year",
+    "target_doc_id",
+    "resolution",
+    "confidence",
+    "partial",
+    "mentions",
+    "evidence_chunk_id",
+    "quote",
+)
+"""The columns of `relations.parquet`, in the bundle's order. Checked against the writer's
+schema in `tests/test_load.py`, so a column added on one side fails there and not in a
+database."""
+
+STATUS_COLUMNS = ("doc_id", "status", "revoked_by", "amended_by")
+
+_RELATION_STAGE = (
+    "CREATE UNLOGGED TABLE relations_stage (\n"
+    "    source_doc_id TEXT, relation TEXT, target_text TEXT, target_type TEXT,\n"
+    "    target_number TEXT, target_year INTEGER, target_doc_id TEXT, resolution TEXT,\n"
+    "    confidence REAL, partial BOOLEAN, mentions INTEGER, evidence_chunk_id TEXT,\n"
+    "    quote TEXT\n);\n"
+    "CREATE UNLOGGED TABLE status_stage (\n"
+    "    doc_id TEXT, status TEXT, revoked_by TEXT[], amended_by TEXT[]\n);"
+)
+
+
 def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
     """A `COPY ... FROM STDIN` statement naming its columns, and the file that feeds it.
 
@@ -302,12 +334,70 @@ def load_plan(
                 note="Disposable: droppable and rebuildable without touching chunks.",
             )
         )
-    sidecars = (("chunk_edges", "edges.parquet"), ("chunk_entities", "entities.parquet"))
-    for table, name in sidecars:
-        if name in counts:
-            steps.append(
-                Step(name=f"copy {table}", sql=f"-- COPY {table} FROM {name}", inputs=(name,))
+    has_relations = "relations.parquet" in counts
+    has_status = "doc_status.parquet" in counts
+    if has_relations or has_status:
+        steps.append(
+            Step(
+                name="stage relations",
+                sql=_RELATION_STAGE,
+                note=(
+                    "Declared from the bundle's columns for the same reason as `chunks_stage`: "
+                    "`corpus_id` is assigned by the merge, not supplied by the file."
+                ),
             )
+        )
+    if has_relations:
+        steps.append(
+            Step(
+                name="copy relations",
+                sql=copy_from(
+                    "relations_stage", RELATION_COLUMNS, str(root / "relations.parquet")
+                ),
+                inputs=("relations.parquet",),
+                note="Disposable: droppable and rebuildable without touching chunks.",
+            )
+        )
+        steps.append(
+            Step(
+                name="merge relations",
+                sql=(
+                    "INSERT INTO doc_relations (corpus_id, "
+                    + ", ".join(quote_ident(c) for c in RELATION_COLUMNS)
+                    + ")\nSELECT "
+                    + ", ".join([quote_literal(corpus_id), *map(quote_ident, RELATION_COLUMNS)])
+                    + "\nFROM relations_stage;"
+                ),
+            )
+        )
+    if has_status:
+        steps.append(
+            Step(
+                name="copy doc_status",
+                sql=copy_from("status_stage", STATUS_COLUMNS, str(root / "doc_status.parquet")),
+                inputs=("doc_status.parquet",),
+            )
+        )
+        steps.append(
+            Step(
+                name="merge doc_status",
+                sql=(
+                    "INSERT INTO doc_status (corpus_id, "
+                    + ", ".join(quote_ident(c) for c in STATUS_COLUMNS)
+                    + ")\nSELECT "
+                    + ", ".join([quote_literal(corpus_id), *map(quote_ident, STATUS_COLUMNS)])
+                    + "\nFROM status_stage;"
+                ),
+            )
+        )
+    if "entities.parquet" in counts:
+        steps.append(
+            Step(
+                name="copy chunk_entities",
+                sql="-- COPY chunk_entities FROM entities.parquet",
+                inputs=("entities.parquet",),
+            )
+        )
 
     steps.append(
         Step(
@@ -329,7 +419,14 @@ def load_plan(
     steps.append(
         Step(
             name="drop staging",
-            sql="DROP TABLE chunks_stage; DROP TABLE vectors_stage;",
+            sql=(
+                "DROP TABLE chunks_stage; DROP TABLE vectors_stage;"
+                + (
+                    " DROP TABLE relations_stage; DROP TABLE status_stage;"
+                    if has_relations or has_status
+                    else ""
+                )
+            ),
         )
     )
     steps.append(

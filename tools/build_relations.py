@@ -32,9 +32,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import pyarrow as pa  # noqa: E402
-import pyarrow.parquet as pq  # noqa: E402
-
+from bundle import write_doc_status, write_relations  # noqa: E402
 from chunk import Builder, get  # noqa: E402
 from enrich.relations import (  # noqa: E402
     DocIdentity,
@@ -90,34 +88,6 @@ def _one(args: tuple[str, str]) -> dict[str, Any]:
     }
 
 
-SCHEMA = pa.schema(
-    [
-        ("source_doc_id", pa.string()),
-        ("relation", pa.string()),
-        ("target_text", pa.string()),
-        ("target_type", pa.string()),
-        ("target_number", pa.string()),
-        ("target_year", pa.int32()),
-        ("target_doc_id", pa.string()),
-        ("resolution", pa.string()),
-        ("confidence", pa.float32()),
-        ("partial", pa.bool_()),
-        ("mentions", pa.int32()),
-        ("evidence_chunk_id", pa.string()),
-        ("quote", pa.string()),
-    ]
-)
-
-STATUS_SCHEMA = pa.schema(
-    [
-        ("doc_id", pa.string()),
-        ("status", pa.string()),
-        ("revoked_by", pa.list_(pa.string())),
-        ("amended_by", pa.list_(pa.string())),
-    ]
-)
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
@@ -152,6 +122,15 @@ def main() -> int:
         for rel in r["relations"]:
             target, how, confidence = resolve(rel, citing, index)
             resolution[(rel.relation, how)] += 1
+            if how == "ambiguous":
+                why = (
+                    "citing has no identity"
+                    if citing is None
+                    else "citing has no region"
+                    if not citing.enacting_body
+                    else "citing has a region, several fit"
+                )
+                resolution[(rel.relation, "ambiguous:" + why)] += 1
             if how == "unresolved":
                 peers = index.candidates(rel.target_number, rel.target_year)
                 resolution[
@@ -191,24 +170,21 @@ def main() -> int:
                 (r["name"], rel, how, rel.quote)
             )
 
-    status = derive_status(edges, [d["doc_id"] for d in docs])
+    status = derive_status(edges, [d["doc_id"] for d in docs], index.copies)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    pq.write_table(pa.Table.from_pylist(rows, schema=SCHEMA), out / "relations.parquet")
-    pq.write_table(
-        pa.Table.from_pylist(
-            [
-                {
-                    "doc_id": s.doc_id,
-                    "status": s.status,
-                    "revoked_by": sorted(set(s.revoked_by)),
-                    "amended_by": sorted(set(s.amended_by)),
-                }
-                for s in status.values()
-            ],
-            schema=STATUS_SCHEMA,
-        ),
+    write_relations(out / "relations.parquet", rows)
+    write_doc_status(
         out / "doc_status.parquet",
+        (
+            {
+                "doc_id": st.doc_id,
+                "status": st.status,
+                "revoked_by": sorted(set(st.revoked_by)),
+                "amended_by": sorted(set(st.amended_by)),
+            }
+            for st in status.values()
+        ),
     )
 
     # ---- report -----------------------------------------------------------------------
@@ -239,6 +215,10 @@ def main() -> int:
         absent = resolution[(relation, "unresolved:absent")]
         near = resolution[(relation, "unresolved:near")]
         print(f"  {relation:11s} absent {absent:>8,}   near {near:>8,}")
+    print("\nAMBIGUOUS, by why")
+    for (relation, reason), n in sorted(resolution.items()):
+        if reason.startswith("ambiguous:"):
+            print(f"  {relation:11s} {reason[10:]:36s} {n:>8,}")
     counts = Counter(s.status for s in status.values())
     print("\nSTATUS (derived from resolved edges; absence of an edge is not validity)")
     for name, n in counts.most_common():

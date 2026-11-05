@@ -59,7 +59,9 @@ __all__ = [
     "vector_schema",
     "write_clusters",
     "write_domains",
+    "write_doc_status",
     "write_edges",
+    "write_relations",
     "write_signals",
     "write_vectors",
 ]
@@ -265,6 +267,57 @@ def write_edges(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
     guess would put a wrong edge in a graph whose whole value is that its edges are real.
     """
     table = pa.Table.from_pylist(list(rows), schema=EDGE_SCHEMA)
+    pq.write_table(table, str(path), compression="zstd")
+    return int(table.num_rows)
+
+
+RELATION_SCHEMA = pa.schema(
+    [
+        ("source_doc_id", pa.string()),
+        ("relation", pa.string()),
+        ("target_text", pa.string()),
+        ("target_type", pa.string()),
+        ("target_number", pa.string()),
+        ("target_year", pa.int32()),
+        ("target_doc_id", pa.string()),
+        ("resolution", pa.string()),
+        ("confidence", pa.float32()),
+        ("partial", pa.bool_()),
+        ("mentions", pa.int32()),
+        ("evidence_chunk_id", pa.string()),
+        ("quote", pa.large_string()),
+    ]
+)
+
+STATUS_SCHEMA = pa.schema(
+    [
+        ("doc_id", pa.string()),
+        ("status", pa.string()),
+        ("revoked_by", pa.list_(pa.string())),
+        ("amended_by", pa.list_(pa.string())),
+    ]
+)
+
+
+def write_relations(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
+    """Which regulation revokes, replaces, amends or rests on which (`RELATIONS.md`).
+
+    One row per (document, relation, target). `target_doc_id` is null when the cited
+    instrument is not in this corpus or cannot be told apart from another; `resolution`
+    says which, and `quote` is the sentence the edge was read from. A sidecar: dropping and
+    rebuilding it never touches `chunks`.
+    """
+    table = pa.Table.from_pylist(list(rows), schema=RELATION_SCHEMA)
+    pq.write_table(table, str(path), compression="zstd")
+    return int(table.num_rows)
+
+
+def write_doc_status(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
+    """Each document's status, derived from the resolved relations that point at it.
+
+    `none_known` means no revocation was found, not that the regulation is in force.
+    """
+    table = pa.Table.from_pylist(list(rows), schema=STATUS_SCHEMA)
     pq.write_table(table, str(path), compression="zstd")
     return int(table.num_rows)
 

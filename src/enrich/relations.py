@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -439,17 +439,39 @@ def _body_match(cited_body: str, doc: DocIdentity) -> bool:
 
 
 class Index:
-    """Documents by (number, year): the cheap half of a citation, checked first."""
+    """Documents by (number, year): the cheap half of a citation, checked first.
+
+    The corpus holds some regulations more than once (a scan and its re-typed copy, a draft
+    and the final). Copies are one instrument: a citation of it is not ambiguous between
+    them, and a revocation of it ends every copy.
+    """
 
     def __init__(self, identities: Iterable[DocIdentity]) -> None:
         self._by_key: dict[tuple[str, int], list[DocIdentity]] = defaultdict(list)
+        self._group: dict[tuple[str, str, str, int], list[str]] = defaultdict(list)
+        self._of: dict[str, tuple[str, str, str, int]] = {}
         self.size = 0
-        for identity in identities:
-            self._by_key[(identity.number, identity.year)].append(identity)
+        for identity in sorted(identities, key=lambda i: i.doc_id):
+            key = (
+                identity.regulation_type,
+                identity.enacting_body,
+                identity.number,
+                identity.year,
+            )
+            if not self._group[key]:
+                self._by_key[(identity.number, identity.year)].append(identity)
+            self._group[key].append(identity.doc_id)
+            self._of[identity.doc_id] = key
             self.size += 1
 
     def candidates(self, number: str, year: int) -> list[DocIdentity]:
+        """One document per distinct instrument; the copies are `copies(doc_id)`."""
         return self._by_key.get((number, year), [])
+
+    def copies(self, doc_id: str) -> list[str]:
+        """Every document that is the same instrument as this one, itself included."""
+        key = self._of.get(doc_id)
+        return list(self._group[key]) if key else [doc_id]
 
 
 def resolve(
@@ -457,11 +479,13 @@ def resolve(
 ) -> tuple[str | None, Resolution, float]:
     """The cited document's id (or None), how sure that is, and why.
 
-    * `resolved` 1.0   -- a single document fits, region and all.
+    * `resolved` 1.0   -- a single instrument fits, region and all.
     * `inferred` 0.7  -- the citation names no region; the citing document's own region
       is assumed (`Peraturan Daerah Nomor 5 Tahun 2010` inside a Lahat regulation).
-    * `ambiguous` 0    -- several documents fit and nothing separates them.
-    * `unresolved` 0   -- no document fits, which includes "a different region's".
+    * `inferred` 0.6  -- the sentence about the cited instrument names exactly one of the
+      regions that fit (`... Pelimpahan Kewenangan Kabupaten Empat Lawang`).
+    * `ambiguous` 0    -- several instruments fit and nothing separates them.
+    * `unresolved` 0   -- none fits, which includes "a different region's".
     """
     cands = [
         c
@@ -471,11 +495,13 @@ def resolve(
     if not cands:
         return None, "unresolved", 0.0
     if rel.target_body:
-        named = [c for c in cands if _body_match(rel.target_body, c)]
+        named = _most_specific(
+            rel.target_body, [c for c in cands if _body_match(rel.target_body, c)]
+        )
         if len(named) == 1:
             return named[0].doc_id, "resolved", 1.0
         if len(named) > 1:
-            return None, "ambiguous", 0.0
+            return _hinted(rel, named)
         return None, "unresolved", 0.0  # the region the citation names is not in the corpus
     national = [c for c in cands if not c.enacting_body]
     if len(national) == 1:
@@ -486,7 +512,27 @@ def resolve(
             return local[0].doc_id, "inferred", 0.7
         if not local:
             return None, "unresolved", 0.0
-    return (None, "ambiguous", 0.0) if len(cands) > 1 else (None, "unresolved", 0.0)
+    if len(cands) > 1:
+        return _hinted(rel, cands)
+    return None, "unresolved", 0.0
+
+
+def _most_specific(cited_body: str, matched: list[DocIdentity]) -> list[DocIdentity]:
+    """`Bangka Tengah` contains `Bangka`; the citation means the longer region, not both."""
+    exact = [c for c in matched if c.enacting_body == cited_body]
+    if exact:
+        return exact
+    longest = max((len(c.enacting_body) for c in matched), default=0)
+    return [c for c in matched if len(c.enacting_body) == longest]
+
+
+def _hinted(rel: Relation, cands: list[DocIdentity]) -> tuple[str | None, Resolution, float]:
+    """Separate several fitting instruments by which region the sentence itself names."""
+    sentence = _squash(rel.quote)
+    named = [c for c in cands if c.enacting_body and c.enacting_body in sentence]
+    if len(named) == 1:
+        return named[0].doc_id, "inferred", 0.6
+    return None, "ambiguous", 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -503,23 +549,32 @@ class DocStatus:
 
 
 def derive_status(
-    edges: Iterable[tuple[str, str, str | None, bool]], doc_ids: Iterable[str]
+    edges: Iterable[tuple[str, str, str | None, bool]],
+    doc_ids: Iterable[str],
+    copies: Callable[[str], Sequence[str]] | None = None,
 ) -> dict[str, DocStatus]:
     """Status per document from `(source_doc, relation, target_doc, partial)` edges.
 
-    Only resolved edges count: an edge that points at nothing marks nothing.
+    Only resolved edges count: an edge that points at nothing marks nothing. `copies`
+    expands a target to every document that is the same instrument, so a revoked
+    regulation is revoked in each copy of it and not only the one a citation resolved to.
     """
     out = {d: DocStatus(d) for d in doc_ids}
+    expand = copies or (lambda d: (d,))
     full_revokers: set[str] = set()
     part_revokers: set[str] = set()
-    for source, relation, target, partial in edges:
-        if target is None or target not in out or target == source:
+    for source, relation, resolved, partial in edges:
+        if resolved is None:
             continue
-        if relation in SUPERSEDING:
-            out[target].revoked_by.append(source)
-            (part_revokers if partial else full_revokers).add(target)
-        elif relation == "amends":
-            out[target].amended_by.append(source)
+        mine = set(expand(source))
+        for target in expand(resolved):
+            if target not in out or target in mine:
+                continue
+            if relation in SUPERSEDING:
+                out[target].revoked_by.append(source)
+                (part_revokers if partial else full_revokers).add(target)
+            elif relation == "amends":
+                out[target].amended_by.append(source)
     for doc_id, status in out.items():
         if doc_id in full_revokers:
             status.status = "revoked"

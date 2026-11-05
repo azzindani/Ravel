@@ -203,7 +203,57 @@ CREATE INDEX IF NOT EXISTS chunks_doc_seq_idx   ON chunks (doc_id, seq);
 CREATE INDEX IF NOT EXISTS chunks_identifier_idx
     ON chunks (regulation_type, regulation_number, year);
 
+-- "What revoked this?" and "what does this revoke?" are the two questions asked of the graph.
+CREATE INDEX IF NOT EXISTS doc_relations_target_idx
+    ON doc_relations (corpus_id, target_doc_id, relation) WHERE target_doc_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS doc_relations_source_idx
+    ON doc_relations (corpus_id, source_doc_id, relation);
+
 ANALYZE chunks;
+ANALYZE doc_relations;
+ANALYZE doc_status;
+"""
+
+_RELATIONS = """
+-- ---------------------------------------------------------------------------
+-- doc_relations / doc_status · sidecars (CLAUDE.md §5.4, RELATIONS.md).
+--
+-- Which regulation revokes, replaces, amends or rests on which, with the sentence each
+-- edge was read from. Disposable: dropping and rebuilding these never touches `chunks`.
+--
+-- ! No foreign key to `chunks` or between documents. An edge to an instrument that is not
+-- in this corpus is a fact about the corpus, not a violation -- `target_doc_id` is NULL and
+-- `resolution` says why.
+--
+-- ! `doc_status.status` is `revoked`, `partially_revoked`, `amended` or `none_known`.
+-- `none_known` is the absence of a known revocation. It is never a claim that a regulation
+-- is in force, because the revoking regulation may not be in the corpus.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS doc_relations (
+    corpus_id           TEXT NOT NULL REFERENCES corpus_meta(id),
+    source_doc_id       TEXT NOT NULL,
+    relation            TEXT NOT NULL,   -- revokes | replaces | amends | based_on | references
+    target_text         TEXT NOT NULL,
+    target_type         TEXT NOT NULL,
+    target_number       TEXT NOT NULL,
+    target_year         INTEGER NOT NULL,
+    target_doc_id       TEXT,
+    resolution          TEXT NOT NULL,   -- resolved | inferred | ambiguous | unresolved
+    confidence          REAL NOT NULL,
+    partial             BOOLEAN NOT NULL DEFAULT FALSE,
+    mentions            INTEGER NOT NULL DEFAULT 1,
+    evidence_chunk_id   TEXT NOT NULL,
+    quote               TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS doc_status (
+    corpus_id           TEXT NOT NULL REFERENCES corpus_meta(id),
+    doc_id              TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    revoked_by          TEXT[] NOT NULL DEFAULT '{}',
+    amended_by          TEXT[] NOT NULL DEFAULT '{}',
+    PRIMARY KEY (corpus_id, doc_id)
+);
 """
 
 _PROGRESS = """
@@ -288,5 +338,5 @@ def render_schema(
         source_url_column=source_url,
         text_search_config=manifest.text_search_config,
     )
-    ddl = header + _CORPUS_META + chunks + _PROGRESS
+    ddl = header + _CORPUS_META + chunks + _RELATIONS + _PROGRESS
     return ddl + _INDEXES if with_indexes else ddl

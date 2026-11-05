@@ -23,8 +23,10 @@ from bundle.writer import (
     sha256_file,
     vector_schema,
     write_clusters,
+    write_doc_status,
     write_domains,
     write_edges,
+    write_relations,
     write_signals,
     write_vectors,
 )
@@ -45,8 +47,10 @@ __all__ = [
     "sha256_file",
     "vector_schema",
     "write_clusters",
+    "write_doc_status",
     "write_domains",
     "write_edges",
+    "write_relations",
     "write_signals",
     "write_vectors",
 ]

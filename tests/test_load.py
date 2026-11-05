@@ -449,3 +449,68 @@ def test_a_bundle_with_a_vocabulary_stamps_it_as_json(tmp_path: Path) -> None:
 
     assert "UNDANG-UNDANG" in stamp.sql
     assert "LAMPIRAN" in stamp.sql
+
+
+# -- relation sidecars ---------------------------------------------------------------
+
+
+def test_the_relation_columns_are_the_writers(tmp_path: Path) -> None:
+    """! The loader's column list and the file's columns are two copies of one fact. A
+    column added to one and not the other loads a shifted corpus or fails in a database."""
+    from bundle.writer import RELATION_SCHEMA, STATUS_SCHEMA
+    from load.plan import RELATION_COLUMNS, STATUS_COLUMNS
+
+    assert tuple(RELATION_SCHEMA.names) == RELATION_COLUMNS
+    assert tuple(STATUS_SCHEMA.names) == STATUS_COLUMNS
+
+
+def test_a_bundle_with_relations_plans_stage_copy_merge_and_drop(tmp_path: Path) -> None:
+    from bundle import write_doc_status, write_relations
+
+    manifest = BundleManifest(
+        corpus_id="with_relations",
+        run_id="r1",
+        chunk_count=2,
+        source_manifest_sha256="a" * 64,
+        dense=spec_for(dim=DIM, id="q"),
+    )
+    writer = BundleWriter(root=tmp_path / "v1", manifest=manifest)
+    writer.record(
+        "chunks/part-00000.parquet",
+        write_chunks(_chunks(2), str(writer.shard_path("chunks", 0))),
+    )
+    writer.record("relations.parquet", write_relations(writer.root / "relations.parquet", []))
+    writer.record(
+        "doc_status.parquet", write_doc_status(writer.root / "doc_status.parquet", [])
+    )
+    writer.write_failed([])
+    writer.seal()
+
+    plan = load_plan(read_bundle(writer.root), writer.root)
+    names = [s.name for s in plan]
+
+    assert names.index("stage relations") < names.index("copy relations")
+    assert names.index("copy relations") < names.index("merge relations")
+    assert names.index("copy doc_status") < names.index("merge doc_status")
+    assert names.index("merge relations") < names.index("verify counts") < names.index("commit")
+    merge = next(s for s in plan if s.name == "merge relations").sql
+    assert "'with_relations'" in merge  # corpus_id is assigned here, not by the file
+    assert "relations_stage" in next(s for s in plan if s.name == "drop staging").sql
+
+
+def test_a_bundle_without_relations_plans_none(built) -> None:
+    root, _ = built
+    names = [s.name for s in load_plan(read_bundle(root), root)]
+
+    assert not [n for n in names if "relations" in n or "doc_status" in n]
+
+
+def test_the_schema_declares_the_sidecars_and_indexes_them_after_the_load(built) -> None:
+    root, _ = built
+    schema = (root / "schema.sql").read_text(encoding="utf-8")
+    indexes = (root / "indexes.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS doc_relations" in schema
+    assert "CREATE TABLE IF NOT EXISTS doc_status" in schema
+    assert "doc_relations_target_idx" in indexes
+    assert "doc_relations_target_idx" not in schema

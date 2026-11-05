@@ -388,3 +388,75 @@ def test_relations_do_not_invalidate_chunks(profile: Profile) -> None:
     )
     assert changed.config_hash == profile.spec.config_hash
     assert changed.relations_hash != profile.spec.relations_hash
+
+
+# ---------------------------------------------------------------------------
+# copies, and the sentence's own region
+# ---------------------------------------------------------------------------
+def test_copies_of_one_instrument_are_not_ambiguous_and_are_revoked_together(
+    extractor: RelationExtractor,
+) -> None:
+    index = Index(
+        [
+            doc("scan", "PERATURAN BUPATI", "lahat", "15", 2017, "PERBUP"),
+            doc("typed", "PERATURAN BUPATI", "lahat", "15", 2017, "PERBUP"),
+        ]
+    )
+    rel = rel_of(extractor, "Peraturan Bupati Lahat Nomor 15 Tahun 2017 dicabut.")
+    target, how, _ = resolve(rel, None, index)
+
+    assert how == "resolved"
+    status = derive_status(
+        [("new", "revokes", target, False)], ["scan", "typed", "new"], index.copies
+    )
+    assert status["scan"].status == status["typed"].status == "revoked"
+
+
+def test_a_document_is_not_revoked_by_its_own_copy() -> None:
+    index = Index(
+        [
+            doc("a1", "PERATURAN BUPATI", "lahat", "15", 2017, "PERBUP"),
+            doc("a2", "PERATURAN BUPATI", "lahat", "15", 2017, "PERBUP"),
+        ]
+    )
+    status = derive_status([("a1", "revokes", "a2", False)], ["a1", "a2"], index.copies)
+
+    assert status["a2"].status == "none_known"
+
+
+def test_the_longer_region_wins_when_one_name_contains_another(
+    extractor: RelationExtractor,
+) -> None:
+    index = Index(
+        [
+            doc("bangka", "PERATURAN DAERAH KABUPATEN", "bangka", "2", 2007, "PERDA KAB."),
+            doc(
+                "tengah", "PERATURAN DAERAH KABUPATEN", "bangkatengah", "2", 2007, "PERDA KAB."
+            ),
+        ]
+    )
+    rel = rel_of(
+        extractor, "Peraturan Daerah Kabupaten Bangka Tengah Nomor 2 Tahun 2007 diubah."
+    )
+
+    assert resolve(rel, None, index)[:2] == ("tengah", "resolved")
+
+
+def test_the_region_named_in_the_sentence_separates_instruments_that_fit(
+    extractor: RelationExtractor,
+) -> None:
+    index = Index(
+        [
+            doc("a", "PERATURAN BUPATI", "lahat", "15", 2017, "PERBUP"),
+            doc("b", "PERATURAN BUPATI", "tapin", "15", 2017, "PERBUP"),
+        ]
+    )
+    named = rel_of(
+        extractor,
+        "Peraturan Bupati Nomor 15 Tahun 2017 tentang Pelimpahan Kewenangan Kabupaten Tapin "
+        "dicabut.",
+    )
+    unnamed = rel_of(extractor, "Peraturan Bupati Nomor 15 Tahun 2017 dicabut.")
+
+    assert resolve(named, None, index) == ("b", "inferred", 0.6)
+    assert resolve(unnamed, None, index)[:2] == (None, "ambiguous")

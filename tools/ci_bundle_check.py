@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -48,6 +49,8 @@ from bundle import (  # noqa: E402
     BundleWriter,
     SparseSpec,
     read_bundle,
+    write_doc_status,
+    write_relations,
     write_vectors,
 )
 from chunk.models import Chunk  # noqa: E402
@@ -114,6 +117,56 @@ def build_bundle(root: Path) -> Path:
         "vectors/part-00000.parquet",
         write_vectors(writer.shard_path("vectors", 0), [c.id for c in chunks], matrix, dim=DIM),
     )
+    # ! The sidecars. Two documents, one revoking the other, one edge to an instrument that
+    # is not in the corpus: the three shapes a real relations file has.
+    writer.record(
+        "relations.parquet",
+        write_relations(
+            writer.root / "relations.parquet",
+            [
+                {
+                    "source_doc_id": "d1",
+                    "relation": "revokes",
+                    "target_text": "Peraturan Bupati Nomor 3 Tahun 2015",
+                    "target_type": "PERATURAN BUPATI",
+                    "target_number": "3",
+                    "target_year": 2015,
+                    "target_doc_id": "d0",
+                    "resolution": "resolved",
+                    "confidence": 1.0,
+                    "partial": False,
+                    "mentions": 1,
+                    "evidence_chunk_id": "c0",
+                    "quote": "Peraturan Bupati Nomor 3 Tahun 2015 dicabut dan dinyatakan",
+                },
+                {
+                    "source_doc_id": "d1",
+                    "relation": "based_on",
+                    "target_text": "Undang-Undang Nomor 23 Tahun 2014",
+                    "target_type": "UNDANG-UNDANG",
+                    "target_number": "23",
+                    "target_year": 2014,
+                    "target_doc_id": None,
+                    "resolution": "unresolved",
+                    "confidence": 0.0,
+                    "partial": False,
+                    "mentions": 2,
+                    "evidence_chunk_id": "c1",
+                    "quote": "Undang-Undang Nomor 23 Tahun 2014 tentang Pemerintahan Daerah;",
+                },
+            ],
+        ),
+    )
+    writer.record(
+        "doc_status.parquet",
+        write_doc_status(
+            writer.root / "doc_status.parquet",
+            [
+                {"doc_id": "d0", "status": "revoked", "revoked_by": ["d1"], "amended_by": []},
+                {"doc_id": "d1", "status": "none_known", "revoked_by": [], "amended_by": []},
+            ],
+        ),
+    )
     writer.write_reference(matrix[0], "Pasal 1")
     writer.write_failed([])
     writer.seal(clustering={"algo": "kmeans/cosine", "k": 2, "generation": 1})
@@ -172,6 +225,9 @@ def main() -> int:
             )
 
             conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
+            conn.execute(
+                "DROP TABLE IF EXISTS relations_stage, status_stage, doc_relations, doc_status"
+            )
             conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
 
             # 1. the generated schema, at the manifest's dimensions.
@@ -222,6 +278,42 @@ def main() -> int:
             # 4. staging tables at the manifest's width.
             conn.execute(step_sql(plan, "stage"))
             check("staging tables create", True)
+
+            # 4b. the sidecars, through the same COPY the executor will use: an explicit
+            #     column list, FROM STDIN, rows converted from parquet as they go.
+            conn.execute(step_sql(plan, "stage relations"))
+            for name in ("relations", "doc_status"):
+                sql = step_sql(plan, f"copy {name}")
+                statement = " ".join(
+                    line for line in sql.splitlines() if not line.startswith("--")
+                )
+                rows = pq.read_table(root / f"{name}.parquet").to_pylist()
+                with conn.cursor() as cur, cur.copy(statement) as copy:
+                    for row in rows:
+                        copy.write_row(tuple(row.values()))
+            conn.execute(step_sql(plan, "merge relations"))
+            conn.execute(step_sql(plan, "merge doc_status"))
+            revoked_by = one(
+                conn.execute(
+                    "SELECT r.source_doc_id, s.status FROM doc_relations r "
+                    "JOIN doc_status s ON s.doc_id = r.target_doc_id "
+                    "AND s.corpus_id = r.corpus_id "
+                    "WHERE r.relation = 'revokes' AND r.target_doc_id = 'd0'"
+                ).fetchone(),
+                "the revocation joins to the status it caused",
+            )
+            check(
+                "relation sidecars load and answer 'what revoked this?'",
+                tuple(revoked_by) == ("d1", "revoked"),
+                f"{revoked_by[0]} -> {revoked_by[1]}",
+            )
+            dangling = one(
+                conn.execute(
+                    "SELECT count(*) FROM doc_relations WHERE target_doc_id IS NULL"
+                ).fetchone(),
+                "dangling edges counted",
+            )
+            check("an edge to an instrument outside the corpus is kept", dangling[0] == 1)
 
         # 5. the count guard must fire on a short load...
         with psycopg.connect(dsn) as conn:
