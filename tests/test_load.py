@@ -558,6 +558,10 @@ def test_a_bundle_with_quality_plans_stage_copy_merge_and_drop(tmp_path: Path) -
     merge = next(s for s in plan if s.name == "merge doc_quality").sql
     assert "'with_quality'" in merge
     assert "quality_stage" in next(s for s in plan if s.name == "drop staging").sql
+    apply = next(s for s in plan if s.name == "apply quality").sql
+    assert "SET indexable = FALSE" in apply and "'with_quality'" in apply
+    assert names.index("merge doc_quality") < names.index("apply quality")
+    assert names.index("apply quality") < names.index("verify counts")
 
 
 def test_the_schema_declares_doc_quality(built) -> None:

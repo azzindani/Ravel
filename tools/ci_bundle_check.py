@@ -372,6 +372,28 @@ def main() -> int:
                 f"{skipped[0]}: {skipped[1]}",
             )
 
+            # ! The step that carries the verdict to the engine, which already searches
+            # `WHERE indexable`. Two throwaway chunks, removed again so the count guard
+            # below still sees exactly the bundle's rows.
+            conn.execute(
+                "INSERT INTO chunks (id, corpus_id, body, source_title, source_url, doc_id) "
+                "VALUES ('q0', %s, 'isi', 't', 'https://example/q', 'd0'), "
+                "('q1', %s, 'isi', 't', 'https://example/q', 'd1')",
+                (CORPUS, CORPUS),
+            )
+            conn.execute(step_sql(plan, "apply quality"))
+            flags: dict[str, bool] = dict(
+                conn.execute(
+                    "SELECT id, indexable FROM chunks WHERE id IN ('q0', 'q1')"
+                ).fetchall()
+            )
+            conn.execute("DELETE FROM chunks WHERE id IN ('q0', 'q1')")
+            check(
+                "an unindexable document's chunks leave the arms, the others stay",
+                flags == {"q0": True, "q1": False},
+                str(flags),
+            )
+
         # 5. the count guard must fire on a short load...
         with psycopg.connect(dsn) as conn:
             fired = False

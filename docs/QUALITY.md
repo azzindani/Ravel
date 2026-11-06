@@ -107,7 +107,8 @@ language would fix it and is not built.
 
 `doc_quality.parquet` sits beside `chunks/` (`BUNDLE.md` §4) and loads into `doc_quality`,
 declared in the generated `schema.sql`. The load plan stages it (`corpus_id` is assigned by
-the merge), copies with an explicit column list and merges inside the transaction.
+the merge), copies with an explicit column list, merges inside the transaction, then
+applies the verdict to `chunks.indexable` (§6).
 `tools/ci_bundle_check.py` loads a two-document fixture on a real pgvector and asks for the
 documents to leave out.
 
@@ -117,9 +118,12 @@ thresholds and the word list's SHA-256.
 
 ## 6. Left
 
-- **The index half does not read it yet.** There is no embed or keyword stage to skip the
-  unindexable documents; when there is, it asks `indexable` (or `chunk_damaged` per chunk).
-  Vera can already filter on `doc_quality.indexable`.
+- **The engine honours it through `chunks.indexable`.** The load plan's `apply quality` step
+  sets `indexable = FALSE` on every chunk of an unindexable document, inside the load
+  transaction, and Vera's arms already search `WHERE indexable`: no engine change. The
+  chunk bodies are as sealed; re-running the gate with other thresholds sets the flag again.
+  A future embed stage should skip those documents before spending a GPU on them
+  (`QualityGate.chunk_damaged` is there for a per-chunk question).
 - **Repair is not attempted.** The 924 unusable and 201 absent documents are the work list
   for the OCR extractor (`EXTRACTION.md`): the same files, re-read from the page.
 - **No second language** (§4), and no look at tables beyond leaving them out.

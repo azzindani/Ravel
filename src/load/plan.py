@@ -436,6 +436,25 @@ def load_plan(
                 ),
             )
         )
+    if has_quality:
+        steps.append(
+            Step(
+                name="apply quality",
+                sql=(
+                    "UPDATE chunks c SET indexable = FALSE\n"
+                    "FROM doc_quality q\n"
+                    f"WHERE c.corpus_id = {quote_literal(corpus_id)}\n"
+                    "  AND q.corpus_id = c.corpus_id AND q.doc_id = c.doc_id\n"
+                    "  AND NOT q.indexable;"
+                ),
+                note=(
+                    "! The engine already searches `WHERE indexable`, so a document the gate "
+                    "rejected leaves every arm without a change to the engine. A flag set at "
+                    "load from a sidecar: the chunk bodies are as sealed, and re-running the "
+                    "gate with other thresholds sets it again."
+                ),
+            )
+        )
     if "entities.parquet" in counts:
         steps.append(
             Step(
