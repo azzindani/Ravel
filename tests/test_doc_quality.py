@@ -158,3 +158,12 @@ def test_the_shipped_lexicon_loads_and_holds_the_words_of_the_domain() -> None:
     assert len(lex) > 5000 and lex.sha256
     assert {"pemerintah", "peraturan", "pasal", "daerah"} <= lex.words
     assert not {"scbagairnana", "doeroh", "kobupaten"} & lex.words
+
+
+def test_a_lexicon_hashes_the_same_with_either_line_ending(tmp_path: Path) -> None:
+    unix = tmp_path / "a.txt"
+    windows = tmp_path / "b.txt"
+    unix.write_bytes(b"# t\nalpha\nbeta\n")
+    windows.write_bytes(b"# t\r\nalpha\r\nbeta\r\n")
+    assert Lexicon.load(unix).sha256 == Lexicon.load(windows).sha256
+    assert Lexicon.load(windows).words == {"alpha", "beta"}
