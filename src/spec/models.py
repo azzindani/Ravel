@@ -31,6 +31,7 @@ import json
 import re
 import string
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -561,6 +562,71 @@ class RelationsSpec(Base):
         return self
 
 
+QualityVerdict = Literal["degraded", "unusable", "absent"]
+
+
+def _unindexable() -> list[QualityVerdict]:
+    return ["unusable", "absent"]
+
+
+class QualitySpec(Base):
+    """Is this document worth indexing? (`QUALITY.md`). Read after chunking, never before.
+
+    A scan whose OCR was bad is not a document with a few typos: its words match nothing a
+    reader would type. The gate counts, per chunk, the share of words no clean document
+    ever uses, and judges the document by how much of it is damaged.
+    """
+
+    lexicon: str | None = None
+    """A word list in the registry (`lexicons/<name>.txt`, one word per line, `#` comments).
+    Without one the gate can still see replacement characters and absent text, but not
+    misspelled text."""
+
+    min_word_chars: int = Field(default=3, ge=1)
+    """Shorter words are not judged: OCR noise is full of them and so is real prose."""
+
+    acronym_max_chars: int = Field(default=5, ge=0)
+    """All-capital words up to this long are not judged: `DPN`, `KSPN`, `NIP` are not in any
+    word list and are not damage. Longer capitals are still judged, so a title run together
+    (`WALIKOTATENTANG`) and a garbled one count."""
+
+    min_chunk_words: int = Field(default=12, ge=1)
+    """A chunk with fewer judged words is not judged: a table row or a heading is not
+    evidence of damage, and a share of three words is noise."""
+
+    chunk_unknown: float = Field(default=0.30, ge=0, le=1)
+    """A chunk is damaged when this share of its judged words is unknown."""
+
+    chunk_replacement: float = Field(default=10.0, ge=0)
+    """...or when it holds this many U+FFFD per 1000 characters."""
+
+    degraded_unknown: float = Field(default=0.10, ge=0, le=1)
+    """A document with this share of unknown words overall is `degraded`: usable, but
+    keyword search will miss what the typos hide."""
+
+    degraded_replacement: float = Field(default=2.0, ge=0)
+    """...or with this many U+FFFD per 1000 characters."""
+
+    unusable_share: float = Field(default=0.5, ge=0, le=1)
+    """A document is `unusable` when this share of its judged words sit in damaged chunks."""
+
+    absent_max_words: int = Field(default=12, ge=0)
+    """A document whose chunks hold fewer words than this has no text layer worth reading
+    (`<!-- image -->` and nothing else): it needs OCR, not indexing. Low on purpose: a real
+    decree can be one sentence (Perpres 12/1965, "tidak diumumkan", is 20 words)."""
+
+    not_indexable: list[QualityVerdict] = Field(default_factory=_unindexable)
+    """The verdicts that set `indexable` to false. The chunks stay in the knowledge base
+    either way; this only tells the index half which documents to skip."""
+
+    @model_validator(mode="after")
+    def _lexicon_is_a_name_not_a_path_out_of_the_registry(self) -> Self:
+        path = PurePosixPath((self.lexicon or "").replace("\\", "/"))
+        if self.lexicon and (".." in path.parts or path.is_absolute()):
+            raise ValueError(f"quality.lexicon {self.lexicon!r} must be inside the registry")
+        return self
+
+
 class ProfileSpec(Base):
     """The whole file. Validated from YAML; hashed into every downstream cache key."""
 
@@ -575,6 +641,7 @@ class ProfileSpec(Base):
     scoring: ScoringSpec = Field(default_factory=ScoringSpec)
     pipeline: PipelineSpec = Field(default_factory=PipelineSpec)
     relations: RelationsSpec = Field(default_factory=RelationsSpec)
+    quality: QualitySpec = Field(default_factory=QualitySpec)
     extract: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -596,8 +663,9 @@ class ProfileSpec(Base):
         artifacts it produced, instead of silently reusing them (LOOPHOLES.md §1).
         """
         # ! `relations` is read from finished chunks and changes none of them, so a rule
-        # corrected there must not invalidate a million chunks. It has its own hash.
-        return _digest(self.model_dump(mode="json", exclude={"relations"}))
+        # corrected there must not invalidate a million chunks. It has its own hash. `quality`
+        # is the same: it judges finished chunks and changes none of them.
+        return _digest(self.model_dump(mode="json", exclude={"relations", "quality"}))
 
     @property
     def relations_hash(self) -> str:

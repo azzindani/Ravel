@@ -212,6 +212,7 @@ CREATE INDEX IF NOT EXISTS doc_relations_source_idx
 ANALYZE chunks;
 ANALYZE doc_relations;
 ANALYZE doc_status;
+ANALYZE doc_quality;
 """
 
 _RELATIONS = """
@@ -252,6 +253,34 @@ CREATE TABLE IF NOT EXISTS doc_status (
     status              TEXT NOT NULL,
     revoked_by          TEXT[] NOT NULL DEFAULT '{}',
     amended_by          TEXT[] NOT NULL DEFAULT '{}',
+    PRIMARY KEY (corpus_id, doc_id)
+);
+"""
+
+_QUALITY = """
+-- ---------------------------------------------------------------------------
+-- doc_quality · sidecar (CLAUDE.md §5.4, QUALITY.md).
+--
+-- Whether each document is worth indexing. `verdict` is clean | degraded | unusable |
+-- absent; `indexable` is the profile's decision about it. Disposable: dropping and
+-- rebuilding it never touches `chunks`.
+--
+-- ! A document with indexable = FALSE still has its chunks. The knowledge base keeps what
+-- the source said; this only tells a query which documents to leave out, and a repair
+-- pass (OCR) which ones to re-read.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS doc_quality (
+    corpus_id             TEXT NOT NULL REFERENCES corpus_meta(id),
+    doc_id                TEXT NOT NULL,
+    verdict               TEXT NOT NULL,
+    indexable             BOOLEAN NOT NULL,
+    chunks                INTEGER NOT NULL,
+    damaged_chunks        INTEGER NOT NULL,
+    words                 INTEGER NOT NULL,
+    unknown_share         REAL NOT NULL,
+    damaged_share         REAL NOT NULL,
+    replacement_per_1000  REAL NOT NULL,
+    reasons               TEXT[] NOT NULL DEFAULT '{}',
     PRIMARY KEY (corpus_id, doc_id)
 );
 """
@@ -338,5 +367,5 @@ def render_schema(
         source_url_column=source_url,
         text_search_config=manifest.text_search_config,
     )
-    ddl = header + _CORPUS_META + chunks + _RELATIONS + _PROGRESS
+    ddl = header + _CORPUS_META + chunks + _RELATIONS + _QUALITY + _PROGRESS
     return ddl + _INDEXES if with_indexes else ddl

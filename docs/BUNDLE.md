@@ -102,6 +102,7 @@ bundles/<corpus>/<variant>/<version>/
 ├── edges.parquet
 ├── relations.parquet            source_doc_id, relation, target, target_doc_id, resolution, quote
 ├── doc_status.parquet           doc_id, status, revoked_by[], amended_by[]   (RELATIONS.md)
+├── doc_quality.parquet          doc_id, verdict, indexable, damaged_chunks, reasons[]   (QUALITY.md)
 └── failed.jsonl                 what did not make it, and why
 ```
 

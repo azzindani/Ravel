@@ -149,6 +149,27 @@ _RELATION_STAGE = (
     "    doc_id TEXT, status TEXT, revoked_by TEXT[], amended_by TEXT[]\n);"
 )
 
+QUALITY_COLUMNS = (
+    "doc_id",
+    "verdict",
+    "indexable",
+    "chunks",
+    "damaged_chunks",
+    "words",
+    "unknown_share",
+    "damaged_share",
+    "replacement_per_1000",
+    "reasons",
+)
+"""The columns of `doc_quality.parquet`, in the bundle's order (see `tests/test_load.py`)."""
+
+_QUALITY_STAGE = (
+    "CREATE UNLOGGED TABLE quality_stage (\n"
+    "    doc_id TEXT, verdict TEXT, indexable BOOLEAN, chunks INTEGER,\n"
+    "    damaged_chunks INTEGER, words INTEGER, unknown_share REAL, damaged_share REAL,\n"
+    "    replacement_per_1000 REAL, reasons TEXT[]\n);"
+)
+
 
 def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
     """A `COPY ... FROM STDIN` statement naming its columns, and the file that feeds it.
@@ -390,6 +411,31 @@ def load_plan(
                 ),
             )
         )
+    has_quality = "doc_quality.parquet" in counts
+    if has_quality:
+        steps.append(Step(name="stage quality", sql=_QUALITY_STAGE))
+        steps.append(
+            Step(
+                name="copy doc_quality",
+                sql=copy_from(
+                    "quality_stage", QUALITY_COLUMNS, str(root / "doc_quality.parquet")
+                ),
+                inputs=("doc_quality.parquet",),
+                note="Disposable: droppable and rebuildable without touching chunks.",
+            )
+        )
+        steps.append(
+            Step(
+                name="merge doc_quality",
+                sql=(
+                    "INSERT INTO doc_quality (corpus_id, "
+                    + ", ".join(quote_ident(c) for c in QUALITY_COLUMNS)
+                    + ")\nSELECT "
+                    + ", ".join([quote_literal(corpus_id), *map(quote_ident, QUALITY_COLUMNS)])
+                    + "\nFROM quality_stage;"
+                ),
+            )
+        )
     if "entities.parquet" in counts:
         steps.append(
             Step(
@@ -426,6 +472,7 @@ def load_plan(
                     if has_relations or has_status
                     else ""
                 )
+                + (" DROP TABLE quality_stage;" if has_quality else "")
             ),
         )
     )

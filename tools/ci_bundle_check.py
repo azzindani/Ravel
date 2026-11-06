@@ -49,6 +49,7 @@ from bundle import (  # noqa: E402
     BundleWriter,
     SparseSpec,
     read_bundle,
+    write_doc_quality,
     write_doc_status,
     write_relations,
     write_vectors,
@@ -167,6 +168,38 @@ def build_bundle(root: Path) -> Path:
             ],
         ),
     )
+    writer.record(
+        "doc_quality.parquet",
+        write_doc_quality(
+            writer.root / "doc_quality.parquet",
+            [
+                {
+                    "doc_id": "d0",
+                    "verdict": "clean",
+                    "indexable": True,
+                    "chunks": 1,
+                    "damaged_chunks": 0,
+                    "words": 120,
+                    "unknown_share": 0.01,
+                    "damaged_share": 0.0,
+                    "replacement_per_1000": 0.0,
+                    "reasons": [],
+                },
+                {
+                    "doc_id": "d1",
+                    "verdict": "unusable",
+                    "indexable": False,
+                    "chunks": 1,
+                    "damaged_chunks": 1,
+                    "words": 80,
+                    "unknown_share": 0.6,
+                    "damaged_share": 1.0,
+                    "replacement_per_1000": 0.0,
+                    "reasons": ["100% of words sit in damaged chunks (1 of 1)"],
+                },
+            ],
+        ),
+    )
     writer.write_reference(matrix[0], "Pasal 1")
     writer.write_failed([])
     writer.seal(clustering={"algo": "kmeans/cosine", "k": 2, "generation": 1})
@@ -226,7 +259,8 @@ def main() -> int:
 
             conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
             conn.execute(
-                "DROP TABLE IF EXISTS relations_stage, status_stage, doc_relations, doc_status"
+                "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
+                "doc_relations, doc_status, doc_quality"
             )
             conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
 
@@ -314,6 +348,29 @@ def main() -> int:
                 "dangling edges counted",
             )
             check("an edge to an instrument outside the corpus is kept", dangling[0] == 1)
+
+            conn.execute(step_sql(plan, "stage quality"))
+            quality_sql = " ".join(
+                line
+                for line in step_sql(plan, "copy doc_quality").splitlines()
+                if not line.startswith("--")
+            )
+            with conn.cursor() as cur, cur.copy(quality_sql) as copy:
+                for row in pq.read_table(root / "doc_quality.parquet").to_pylist():
+                    copy.write_row(tuple(row.values()))
+            conn.execute(step_sql(plan, "merge doc_quality"))
+            skipped = one(
+                conn.execute(
+                    "SELECT array_agg(doc_id), min(reasons[1]) FROM doc_quality "
+                    "WHERE NOT indexable"
+                ).fetchone(),
+                "the unindexable documents are listed",
+            )
+            check(
+                "quality sidecar loads and names the documents to leave out",
+                list(skipped[0]) == ["d1"] and "damaged" in skipped[1],
+                f"{skipped[0]}: {skipped[1]}",
+            )
 
         # 5. the count guard must fire on a short load...
         with psycopg.connect(dsn) as conn:

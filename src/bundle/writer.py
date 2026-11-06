@@ -59,6 +59,7 @@ __all__ = [
     "vector_schema",
     "write_clusters",
     "write_domains",
+    "write_doc_quality",
     "write_doc_status",
     "write_edges",
     "write_relations",
@@ -318,6 +319,33 @@ def write_doc_status(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
     `none_known` means no revocation was found, not that the regulation is in force.
     """
     table = pa.Table.from_pylist(list(rows), schema=STATUS_SCHEMA)
+    pq.write_table(table, str(path), compression="zstd")
+    return int(table.num_rows)
+
+
+QUALITY_SCHEMA = pa.schema(
+    [
+        ("doc_id", pa.string()),
+        ("verdict", pa.string()),
+        ("indexable", pa.bool_()),
+        ("chunks", pa.int32()),
+        ("damaged_chunks", pa.int32()),
+        ("words", pa.int32()),
+        ("unknown_share", pa.float32()),
+        ("damaged_share", pa.float32()),
+        ("replacement_per_1000", pa.float32()),
+        ("reasons", pa.list_(pa.string())),
+    ]
+)
+
+
+def write_doc_quality(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
+    """Whether each document is worth indexing, and why (`QUALITY.md`).
+
+    `verdict` is `clean`, `degraded`, `unusable` or `absent`; `indexable` is the profile's
+    decision about it. A sidecar: the chunks of an unindexable document stay in `chunks`.
+    """
+    table = pa.Table.from_pylist(list(rows), schema=QUALITY_SCHEMA)
     pq.write_table(table, str(path), compression="zstd")
     return int(table.num_rows)
 

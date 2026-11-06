@@ -86,6 +86,7 @@ Ravel/
 │   ├── PIPELINE.md                ← the layers, what each may write, what the profile decides
 │   ├── CHUNKING.md                ← chunker registry; provenance capture rules
 │   ├── RELATIONS.md               ← revokes / amends / based_on from citations; status; no NER
+│   ├── QUALITY.md                 ← per-document verdict: clean / degraded / unusable / absent
 │   ├── ENRICHMENT.md              ← NER, entities, KG edges, signals, keyword stats
 │   ├── EMBEDDING.md               ← pluggable embedders; dimension; omni; consistency
 │   ├── BUNDLE.md                  ← output contract: parquet + manifest + schema gen
@@ -250,6 +251,7 @@ parsing as a stateless service.
 - [x] Clustering: anchors, spherical k-means, streamed assignment, generations — `src/cluster/`
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
 - [x] Relations: revokes / replaces / amends / based_on from the verb beside each citation, resolved to documents, status derived — `src/enrich/relations.py`, `docs/RELATIONS.md`; no NER, by decision
+- [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/QUALITY.md`; the index half does not read it yet
 - [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`
 - [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
 - [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;

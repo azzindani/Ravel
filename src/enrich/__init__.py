@@ -9,6 +9,7 @@ re-ingesting a corpus.
 from enrich.entities import Reference, ReferenceKind, extract_references, reference_counts
 from enrich.factors import Factors, compute_factors
 from enrich.graph import CitationGraph, GraphMetrics, build_graph
+from enrich.quality import DocQuality, Lexicon, QualityGate
 from enrich.relations import (
     DocIdentity,
     DocStatus,
@@ -23,8 +24,11 @@ from enrich.sparse import K1, TOKEN_RE, B, Bm25Vectorizer, TokeniserDrift, token
 
 __all__ = [
     "DocIdentity",
+    "DocQuality",
     "DocStatus",
     "Index",
+    "Lexicon",
+    "QualityGate",
     "Relation",
     "RelationExtractor",
     "derive_status",

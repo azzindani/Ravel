@@ -502,7 +502,7 @@ def test_a_bundle_without_relations_plans_none(built) -> None:
     root, _ = built
     names = [s.name for s in load_plan(read_bundle(root), root)]
 
-    assert not [n for n in names if "relations" in n or "doc_status" in n]
+    assert not [n for n in names if "relations" in n or "doc_status" in n or "quality" in n]
 
 
 def test_the_schema_declares_the_sidecars_and_indexes_them_after_the_load(built) -> None:
@@ -514,3 +514,54 @@ def test_the_schema_declares_the_sidecars_and_indexes_them_after_the_load(built)
     assert "CREATE TABLE IF NOT EXISTS doc_status" in schema
     assert "doc_relations_target_idx" in indexes
     assert "doc_relations_target_idx" not in schema
+
+
+# -- quality sidecar -----------------------------------------------------------------
+
+
+def test_the_quality_columns_are_the_writers() -> None:
+    from bundle.writer import QUALITY_SCHEMA
+    from load.plan import QUALITY_COLUMNS
+
+    assert tuple(QUALITY_SCHEMA.names) == QUALITY_COLUMNS
+
+
+def test_a_bundle_with_quality_plans_stage_copy_merge_and_drop(tmp_path: Path) -> None:
+    from bundle import write_doc_quality
+
+    manifest = BundleManifest(
+        corpus_id="with_quality",
+        run_id="r1",
+        chunk_count=2,
+        source_manifest_sha256="a" * 64,
+        dense=spec_for(dim=DIM, id="q"),
+    )
+    writer = BundleWriter(root=tmp_path / "v1", manifest=manifest)
+    writer.record(
+        "chunks/part-00000.parquet",
+        write_chunks(_chunks(2), str(writer.shard_path("chunks", 0))),
+    )
+    writer.record(
+        "doc_quality.parquet", write_doc_quality(writer.root / "doc_quality.parquet", [])
+    )
+    writer.write_failed([])
+    writer.seal()
+
+    plan = load_plan(read_bundle(writer.root), writer.root)
+    names = [s.name for s in plan]
+
+    assert names.index("stage quality") < names.index("copy doc_quality")
+    assert names.index("copy doc_quality") < names.index("merge doc_quality")
+    assert (
+        names.index("merge doc_quality") < names.index("verify counts") < names.index("commit")
+    )
+    merge = next(s for s in plan if s.name == "merge doc_quality").sql
+    assert "'with_quality'" in merge
+    assert "quality_stage" in next(s for s in plan if s.name == "drop staging").sql
+
+
+def test_the_schema_declares_doc_quality(built) -> None:
+    root, _ = built
+    assert "CREATE TABLE IF NOT EXISTS doc_quality" in (root / "schema.sql").read_text(
+        encoding="utf-8"
+    )

@@ -656,3 +656,19 @@ relations:
   partial: '(?i)\b(?:Pasal|ayat|huruf|Bab|Bagian)\s+[\dIVXLa-z]+\b[^.;]{0,30}$'
   skip_chapters: [PENJELASAN, LAMPIRAN]
   national_bodies: [Republik Indonesia, Negara Republik Indonesia, Indonesia]
+
+# ---------------------------------------------------------------------------
+# Quality · is the document worth indexing? (docs/QUALITY.md)
+#
+# Read after chunking and changes no chunk, so editing it does not touch `config_hash`.
+# Thresholds were set by reading samples at each level over the whole corpus, not chosen
+# on counts: see QUALITY.md §3.
+# ---------------------------------------------------------------------------
+quality:
+  lexicon: lexicons/id_regulation_md@1.txt
+  chunk_unknown: 0.30
+  chunk_replacement: 10
+  degraded_unknown: 0.10
+  degraded_replacement: 2
+  unusable_share: 0.5
+  absent_max_words: 12

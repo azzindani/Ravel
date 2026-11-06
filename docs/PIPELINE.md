@@ -246,10 +246,23 @@ fixed as profile data (`id_regulation_md@1.2`) plus the engine support it needed
 
 Known and left, because the source is the cause or the fix is a decision, not a pattern:
 bare page-number lines inside a body (93,001 lines, 24.4% of files); pasal numbers absent from
-the source (43.5% of the remaining gaps); unreadable OCR scans (about 1 to 2% of files, which
-word recall does not detect); `�` replacement characters already in the source (2.9% of
-files); a preamble displaced when a document has no `PENJELASAN` heading; 150 image-only
-files that need OCR. A document-level quality flag is the open question.
+the source (43.5% of the remaining gaps); `�` replacement characters already in the source
+(2.9% of files); a preamble displaced when a document has no `PENJELASAN` heading. Unreadable
+OCR scans and image-only files, which word recall does not detect, are now judged per
+document by the quality gate (§8.3, `QUALITY.md`).
 
 `verify_kb.py` measures the layers, not the CLI: the corpus file that `ravel chunk` needs is
 the open item in §7.
+
+### 8.3 The quality gate
+
+The knowledge base can pass every check above and still hold a document nobody should
+search: a scan whose OCR turned `Peraturan Daerah Kabupaten` into `Peroluron Doeroh
+Kobupolen`. Every block is accounted for and every chunk is verbatim, because the noise is
+what the source says. `tools/build_quality.py` judges each document's chunks by the share of
+words no clean document uses, and writes `doc_quality.parquet` (`QUALITY.md`).
+
+Over all 46,451 files: 88.0% clean, 9.5% degraded, 2.0% unusable (924), 0.4% absent (201,
+the image-only files). It is a sidecar, so the chunks stay, and `indexable` is what the
+index half reads.
+

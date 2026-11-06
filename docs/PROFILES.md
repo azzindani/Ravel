@@ -122,6 +122,13 @@ read after chunking and excluded from the chunk cache key; see `RELATIONS.md`.
 
 ---
 
+`quality:` declares when a document is not worth indexing: a word list in the registry
+(`lexicons/<name>.txt`), the share of unknown words that makes a chunk damaged, and the
+share of damaged text that makes a document `unusable`. Read after chunking and excluded
+from the chunk cache key; see `QUALITY.md`.
+
+---
+
 `pipeline:` declares what the layers after extraction do for this kind of document -- chunk
 defaults, derived text for the embedder and the keyword index, and the `expected` floors a
 build is checked against. See `PIPELINE.md`; every field is a default that the corpus and the

@@ -266,8 +266,8 @@ repairs OCR'd numbering by guessing, which this project does not do.
 - The census is on all files; the profile measurements are on a 1-in-12 sample (deterministic,
   sorted order). A second sample at a different stride was not taken.
 - The `.pkl` files were not inspected.
-- No per-file quality gate was run, so the share of unusable scans is unknown (1,449 files
-  contain U+FFFD, which bounds it from below only loosely).
+- Unusable scans were unmeasured here; `QUALITY.md` measures them: 924 files (2.0%) are
+  unusable and 201 (0.4%) have no text, out of 46,451.
 
 ## 8. Reproduce
 
