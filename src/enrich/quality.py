@@ -49,9 +49,7 @@ class Lexicon:
     def load(cls, path: Path) -> Lexicon:
         # ! Line endings are normalised before hashing: git on Windows may check the file out
         # with CRLF, and the same list must not hash differently on two machines.
-        raw = path.read_bytes().replace(b"
-", b"
-")
+        raw = path.read_bytes().replace(b"\r\n", b"\n")
         words = frozenset(
             line.strip().lower()
             for line in raw.decode("utf-8").splitlines()
