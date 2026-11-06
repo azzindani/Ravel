@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -177,6 +177,52 @@ class ChunkSpec(Base):
         return str(profile.spec.pipeline.chunk.chunker or self.chunker)
 
 
+class EmbedSpec(Base):
+    """Which embedder builds this corpus's vectors (`EMBEDDING.md`).
+
+    Everything that changes a vector is required and spelled out, because a manifest that
+    records the easy fields and omits pooling, padding side and instruction is the
+    incumbent's defect (`ABSORPTION.md` §11). The dimension, batch sizes and shard size live
+    here and nowhere in code (`CLAUDE.md` §7.8).
+    """
+
+    kind: Literal["local", "api", "hash"] = "local"
+    """`hash` is the deterministic test embedder: never use it to score retrieval."""
+
+    id: str = "embedder"
+    model: str
+    revision: str
+    """The manifest's `model_version`: an exact commit, never `main` or `latest`."""
+    dim: int = Field(ge=1)
+    pooling: Literal["last_token", "mean", "cls"] = "last_token"
+    padding_side: Literal["left", "right"] = "left"
+    normalize: bool = True
+    instruction_style: Literal["none", "prefix", "chat_system"] = "none"
+    doc_instruction: str = ""
+    query_instruction: str = ""
+    max_length: int = Field(default=8192, ge=16)
+    dtype: Literal["float16", "bfloat16", "float32"] = "float16"
+    """Compute precision. Storage precision is `vector_dtype`."""
+    vector_dtype: Literal["float16", "float32"] = "float16"
+    device: str | None = None
+
+    base_url: str | None = None
+    api_key_env: str = "EMBED_API_KEY"
+    provider: str | None = None
+    provider_pin: str | None = None
+
+    batch_items: int = Field(default=32, ge=1)
+    batch_bytes: int = Field(default=1_200_000, ge=1)
+    shard_rows: int = Field(default=20_000, ge=1)
+    """Vectors per shard: the resume unit. A dead box costs at most this many."""
+
+    @model_validator(mode="after")
+    def _api_needs_an_endpoint(self) -> Self:
+        if self.kind == "api" and not self.base_url:
+            raise ValueError("embed.kind 'api' needs base_url")
+        return self
+
+
 class CorpusSpec(Base):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     title: str
@@ -185,6 +231,7 @@ class CorpusSpec(Base):
     provenance: ProvenanceSpec
     extract: ExtractSpec = Field(default_factory=ExtractSpec)
     chunk: ChunkSpec = Field(default_factory=ChunkSpec)
+    embed: EmbedSpec | None = None
 
     @property
     def config_hash(self) -> str:

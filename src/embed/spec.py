@@ -185,6 +185,12 @@ def _render(spec: EmbedderSpec, text: str, instruction: str) -> str | list[dict[
         case InstructionStyle.NONE:
             return text
         case InstructionStyle.PREFIX:
+            # ! No instruction, no prefix. Qwen3 text puts the instruction on the QUERY and
+            # embeds a document bare (`doc_instruction` is ""), so a document rendered as
+            # "Instruct: <empty> Query: <body>" would sit in a space no query is asked from.
+            # An empty instruction on one side is legitimate; an empty template is not.
+            if not instruction.strip():
+                return text
             # ! The space after `Query:` is Qwen3's own template. The lab notebook in
             # §11 omitted it; a different string is a different vector.
             return f"Instruct: {instruction}\nQuery: {text}"

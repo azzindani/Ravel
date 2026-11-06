@@ -90,5 +90,8 @@ strict = true
 # `types-PyYAML` is a dev dependency rather than an entry here — a real type is always
 # worth more than a silenced one.
 [[tool.mypy.overrides]]
-module = ["fsspec.*", "pyarrow.*", "pymupdf.*", "docling.*", "psycopg.*"]
+module = [
+    "fsspec.*", "pyarrow.*", "pymupdf.*", "docling.*", "psycopg.*",
+    "torch.*", "transformers.*", "openai.*", "huggingface_hub.*",
+]
 ignore_missing_imports = true

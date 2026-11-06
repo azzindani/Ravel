@@ -1,6 +1,6 @@
 """Declarative document profiles: the knowledge that must not live in code."""
 
-from spec.corpus import CorpusSpec, ExtractSpec, ProvenanceSpec, SourcesSpec
+from spec.corpus import CorpusSpec, EmbedSpec, ExtractSpec, ProvenanceSpec, SourcesSpec
 from spec.loader import ENV_VAR, Registry, RegistryError, default_registry, registry_root
 from spec.models import (
     CHUNK_FIELDS,
@@ -38,6 +38,7 @@ __all__ = [
     "Rewrite",
     "CleanupSpec",
     "CorpusSpec",
+    "EmbedSpec",
     "ExtractSpec",
     "Facts",
     "ProvenanceSpec",

@@ -320,6 +320,50 @@ def chunk_cmd(
         raise typer.Exit(1)
 
 
+@app.command(name="embed")
+def embed_cmd(
+    corpus_id: CorpusArg,
+    workspace: WORKSPACE = Path("."),
+    variant: Annotated[
+        str, typer.Option("--variant", help="The chunking variant to embed.")
+    ] = "default",
+    limit: Annotated[int, typer.Option("--limit", help="Stop after N vectors.")] = 0,
+    force: Annotated[bool, typer.Option("--force", help="Ignore the ledger.")] = False,
+) -> None:
+    """Phase B: chunks into vectors, by the embedder the corpus names.
+
+    Reads the chunk shards `chunk` produced and writes fp16 vector shards beside them.
+    Resumable to the shard: a run that dies costs at most `embed.shard_rows` vectors.
+    Needs the `embed` extra (`uv sync --extra embed`) for a real model.
+    """
+    from embed import Embedding, EmbedReport, build_embedder
+
+    spec = CorpusSpec.find(corpus_id)
+    if spec.embed is None:
+        err.print(f"[red]{spec.id} has no `embed:` section[/red]")
+        raise typer.Exit(1)
+    embedder = build_embedder(spec.embed)
+    run = Embedding(spec, workspace=workspace, embedder=embedder, variant=variant)
+
+    def progress(r: EmbedReport) -> None:
+        err.print(f"[dim]{r.vectors:,} vectors in {r.shards:,} shards[/dim]")
+
+    report = run.run(limit=limit, force=force, on_progress=progress)
+
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("corpus", f"{spec.id}  [dim]{report.variant}[/dim]")
+    summary.add_row("embedder", f"{embedder.spec.id}  [dim]{embedder.spec.fingerprint()}[/dim]")
+    summary.add_row("model", f"{embedder.spec.model} @ {embedder.spec.model_version[:12]}")
+    summary.add_row(
+        "windows", f"{report.windows:,}  [dim]({report.skipped_done:,} already done)[/dim]"
+    )
+    summary.add_row("vectors", f"[bold]{report.vectors:,}[/bold]")
+    summary.add_row("shards", f"{report.shards:,}  ({report.bytes_written / 1e6:.1f} MB)")
+    summary.add_row("speed", f"{report.per_second:,.0f} vectors/s")
+    summary.add_row("output", str(run.vector_dir))
+    out.print(summary)
+
+
 @app.command()
 def status(corpus_id: CorpusArg, workspace: WORKSPACE = Path(".")) -> None:
     """What has been done, and what a rerun would pick up."""

@@ -246,7 +246,7 @@ parsing as a stateless service.
 - [x] Chunker registry + profile-driven `unit` chunker with provenance
 - [x] Text-layer quality gate: clean/damaged/absent routing — `src/extract/quality.py`
 - [x] URI substrate (`file://`, `hf://`, `s3://`) — `src/uris.py`
-- [~] Embedder plugin interface + manifest + preflight — `src/embed/`; local (transformers/vLLM) and API backends still to write
+- [x] Embedder plugin interface + manifest + preflight, local (transformers) and API backends, resumable `ravel embed` stage — `src/embed/`; run end to end on 12 real documents with Qwen3-Embedding-0.6B on CPU (1.2 vectors/s: a GPU is needed for the 1.33M chunks); vLLM backend still to write
 - [x] Bundle writer: manifest, generated schema, parquet shards, inventory — `src/bundle/`
 - [x] Clustering: anchors, spherical k-means, streamed assignment, generations — `src/cluster/`
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write

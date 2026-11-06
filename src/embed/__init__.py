@@ -6,6 +6,7 @@ loader checks before a bundle is allowed into a database, and the thing whose ab
 the incumbent corpus its reproducibility (`ABSORPTION.md` §11, §18.2).
 """
 
+from embed.factory import build_embedder, spec_of
 from embed.hashing import HashEmbedder, RawHashEmbedder, ReferenceHashEmbedder, spec_for
 from embed.preflight import (
     PreflightError,
@@ -17,6 +18,7 @@ from embed.preflight import (
     preflight,
     round_trip,
 )
+from embed.run import Embedding, EmbedReport, check_vectors
 from embed.spec import (
     Embedder,
     EmbedderSpec,
@@ -29,6 +31,11 @@ from embed.spec import (
 )
 
 __all__ = [
+    "EmbedReport",
+    "Embedding",
+    "build_embedder",
+    "check_vectors",
+    "spec_of",
     "Embedder",
     "EmbedderSpec",
     "HashEmbedder",

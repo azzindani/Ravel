@@ -1,0 +1,51 @@
+id: id_reg_markdown
+title: Indonesian regulations (Markdown)
+description: >
+  Azzindani/ID_REG_Markdown: 46,451 regulation files already extracted to Markdown, read
+  with the id_regulation_md profile. The corpus Vera is rebuilt from
+  (docs/SOURCE_ID_REG_MARKDOWN.md). Sources are read-only inputs and are not in git.
+
+sources:
+  root: work/id_reg_markdown
+  include: ["**/*.md"]
+
+provenance:
+  # ! Where the exact hashed bytes authoritatively live, not a portal search URL
+  # constructed from parsed metadata (CHUNKING.md §4).
+  base_url: hf://datasets/Azzindani/ID_REG_Markdown/
+
+extract:
+  profile: id_regulation_md
+  extractors: [text]
+  failure_tolerance: 0.02
+
+chunk:
+  chunker: unit
+  max_tokens: 512
+  min_tokens: 24
+
+embed:
+  kind: local
+  id: qwen3-embedding-0.6b-local
+  model: Qwen/Qwen3-Embedding-0.6B
+  # ! An exact commit, never `main` (EMBEDDING.md §3). Read from the model's public API
+  # on 2026-11-06; bump it deliberately, because a new revision is a new space.
+  revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  dim: 1024
+  pooling: last_token
+  padding_side: left
+  normalize: true
+  # Qwen3 puts the instruction on the QUERY and embeds a document bare. The string is
+  # Vera's own (crates/embed/src/lib.rs); the two sides must agree or they are different
+  # spaces.
+  instruction_style: prefix
+  doc_instruction: ""
+  query_instruction: "Given a legal or regulatory question, retrieve passages that answer it"
+  max_length: 8192
+  dtype: float16
+  vector_dtype: float16
+  # Sized for an 8 GB card. The stage halves a batch on out-of-memory, so this is where it
+  # starts, not a limit.
+  batch_items: 32
+  batch_bytes: 400000
+  shard_rows: 20000

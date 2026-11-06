@@ -62,6 +62,26 @@ Two implementations to start:
 
 The same interface serves both, so a variant swaps embedders by id in config.
 
+**Built.** `embed/local.py` (`TransformersEmbedder`) and `embed/api.py`
+(`OpenAICompatEmbedder`), chosen by the corpus's `embed:` section (`kind: local | api |
+hash`) through `embed/factory.py`. Both import their heavy dependencies when an embedder is
+*built*, so a machine without torch still imports `embed` and runs every other stage.
+
+- *Local* pools `last_token` / `mean` / `cls`, honours `padding_side` (the rule is a pure
+  function, `last_token_index`, tested without torch), appends the end-of-text token itself
+  for last-token models (Qwen3's tokenizer does not), pins the revision, and **halves a batch
+  on out-of-memory** instead of dying hours in, because a legal corpus has 3-character
+  chunks and 30,000-character ones in one shard.
+- *API* reads the key from an environment variable the config names (never the config),
+  retries 429/5xx with backoff, orders the response by `index`, and sends `provider_pin` as
+  the only allowed provider with fallbacks off.
+
+**Fixed while building it: a document was rendered with an empty instruction.** Qwen3 puts
+the instruction on the query and embeds a document bare (`doc_instruction` is `""`), but
+`render_document` under `instruction_style: prefix` produced `Instruct: 
+Query: <body>` for
+it, a space no query is asked from. An empty instruction now renders the text unchanged.
+
 ---
 
 ## 2. Dimension is a variable, so the schema is generated
@@ -153,6 +173,9 @@ Not necessarily `body`. The **embedding input template** is a variant dimension:
 also a real trade-off: repeated path text is repeated tokens in every vector. Measure
 it; do not assume it (`EVAL.md`).
 
+The template is the profile's `pipeline.derive.embed_text` (`PIPELINE.md` §3.1). It is part
+of every window's key, so changing it re-embeds and never re-chunks.
+
 **Whatever the template, `body` stored in the bundle stays verbatim.** The template
 affects what the model saw, not what the human verifies. The template string is recorded
 in the manifest.
@@ -166,6 +189,28 @@ in the manifest.
 - Checkpoint every N shards; a vector shard is the resume unit (`EXECUTION.md`).
 - Vectors are staged to parquet as fp16 before load, so the database can be rebuilt
   without re-embedding — the single most important cost-saving property of the pipeline.
+**Built: `ravel embed <corpus> [--variant v]`** (`embed/run.py`).
+
+- The resume unit is a window of `embed.shard_rows` vectors (default 20,000). The shard is
+  sealed on disk before its key reaches the ledger, so a resumed run cannot skip work that
+  was never written. A dead box costs at most one window.
+- Every key carries the embedder's fingerprint, the template hash and the chunk
+  generation; so does the output directory. A different model, padding side, instruction or
+  template cannot reuse another's vectors.
+- Longest texts first, batched by payload bytes and item count (`runtime.batching`), results
+  returned to their own positions. An out-of-memory then surfaces in the first minute.
+- Every window is checked before it is written: the declared width, finite numbers, and unit
+  norm if the manifest says normalised. A NaN is a stack trace, not a corpus.
+- **Nothing is skipped.** A document the quality gate rejected is embedded too (about 2.4% of
+  the work): the bundle joins vectors to chunks one to one, and `indexable` already keeps it
+  out of search (`QUALITY.md` §6).
+- **Measured, on CPU only.** 12 real regulations (434 chunks) through `extract`, `chunk` and
+  `embed` with Qwen3-Embedding-0.6B: 434 vectors, unit norm to 4e-5, a second run does
+  nothing, and a question about retribution tariffs ranks the tariff articles first. A
+  text embeds the same alone and inside a padded batch (cosine > 0.99), and pooling the
+  wrong end visibly breaks the short text (the negative control, `tests/test_embed_local_real.py`,
+  run with `RAVEL_TEST_MODEL`). **Speed was 1.2 vectors/s on CPU, so the 1.33M chunks of
+  `id_reg_markdown` need a GPU; no GPU run has been done.** A CUDA torch wheel is 2.6 GB.
 - Cost is planning-relevant, not incidental: ~100M chunks × ~500 tokens ≈ 50B tokens is
   a multi-GPU-day job. Treat a re-embed as a scheduled event, not a crisis.
 
