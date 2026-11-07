@@ -7,7 +7,13 @@ the incumbent corpus its reproducibility (`ABSORPTION.md` §11, §18.2).
 """
 
 from embed.factory import build_embedder, spec_of
-from embed.hashing import HashEmbedder, RawHashEmbedder, ReferenceHashEmbedder, spec_for
+from embed.hashing import (
+    HashEmbedder,
+    HashOmniEmbedder,
+    RawHashEmbedder,
+    ReferenceHashEmbedder,
+    spec_for,
+)
 from embed.preflight import (
     PreflightError,
     PreflightReport,
@@ -24,7 +30,9 @@ from embed.spec import (
     Embedder,
     EmbedderSpec,
     InstructionStyle,
+    ModalItem,
     Modality,
+    OmniEmbedder,
     PaddingSide,
     Pooling,
     render_document,
@@ -40,8 +48,11 @@ __all__ = [
     "Embedder",
     "EmbedderSpec",
     "HashEmbedder",
+    "HashOmniEmbedder",
     "InstructionStyle",
+    "ModalItem",
     "Modality",
+    "OmniEmbedder",
     "PaddingSide",
     "Pooling",
     "PreflightError",

@@ -30,6 +30,7 @@ Usage:  DATABASE_URL="host=... dbname=..." python tools/ci_bundle_check.py
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 import tempfile
@@ -58,16 +59,18 @@ from bundle import (  # noqa: E402
 from chunk.models import Chunk  # noqa: E402
 from chunk.store import write_chunks  # noqa: E402
 from embed import spec_for  # noqa: E402
+from embed.spec import Modality  # noqa: E402
 from load import Step, load_plan, preflight  # noqa: E402
 from load.execute import LoadError, execute  # noqa: E402
 from spec import Registry
 
 DIM = 16
+OMNI_DIM = 24
 CHUNKS = 3
 CORPUS = "ci_fixture"
 
 
-def build_bundle(root: Path) -> Path:
+def build_bundle(root: Path, *, omni: bool = False) -> Path:
     """A complete, sealed bundle — small, and shaped like the real one.
 
     `text_search_config='indonesian'` on purpose: it is the setting `ABSORPTION.md` §8.3
@@ -91,8 +94,15 @@ def build_bundle(root: Path) -> Path:
         # let the profile and the bundle disagree without any test noticing.
         scoring_vocabulary=Registry.load().get("id_regulation").spec.scoring_vocabulary,
         text_search_config="indonesian",
+        omni=(
+            dataclasses.replace(
+                spec_for(dim=OMNI_DIM, id="ci-omni"), modality=Modality.OMNI, model="ravel/omni"
+            )
+            if omni
+            else None
+        ),
     )
-    writer = BundleWriter(root=root / "v1", manifest=manifest)
+    writer = BundleWriter(root=root / ("v2" if omni else "v1"), manifest=manifest)
 
     chunks = [
         Chunk(
@@ -120,6 +130,15 @@ def build_bundle(root: Path) -> Path:
         "vectors/part-00000.parquet",
         write_vectors(writer.shard_path("vectors", 0), [c.id for c in chunks], matrix, dim=DIM),
     )
+    if omni:
+        # ! Two of the three chunks have an image: the second space is partial by nature.
+        omni_matrix = np.random.default_rng(1).normal(size=(2, OMNI_DIM)).astype(np.float32)
+        writer.record(
+            "vectors_omni/part-00000.parquet",
+            write_vectors(
+                writer.shard_path("vectors_omni", 0), ["c0", "c2"], omni_matrix, dim=OMNI_DIM
+            ),
+        )
     # ! The sidecars. Two documents, one revoking the other, one edge to an instrument that
     # is not in the corpus: the three shapes a real relations file has.
     writer.record(
@@ -527,6 +546,65 @@ def main() -> int:
             again.replaced and after[0] == CHUNKS,
             f"{after[0]} chunks",
         )
+
+        # 10. the second vector space, through the same executor: its own column at its own
+        #     width, a partial fill, and a cosine query that touches no text vector.
+        omni_root = build_bundle(Path(tmp), omni=True)
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
+            conn.execute("DROP TABLE IF EXISTS vectors_omni_stage")
+            conn.execute(
+                "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
+                "doc_relations, doc_status, doc_quality"
+            )
+            conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
+        loaded_omni = execute(omni_root, dsn)
+        check(
+            "a bundle with a second space loads",
+            loaded_omni.committed and loaded_omni.rows.get("copy vectors_omni") == 2,
+            str(loaded_omni.rows),
+        )
+        with psycopg.connect(dsn) as conn:
+            fill = one(
+                conn.execute(
+                    "SELECT count(*), count(dense), count(embedding_omni) FROM chunks"
+                ).fetchone(),
+                "omni fill counted",
+            )
+            check(
+                "the second column is partial and the text column is whole",
+                tuple(fill) == (CHUNKS, CHUNKS, 2),
+                f"{fill[0]} chunks, {fill[1]} dense, {fill[2]} omni",
+            )
+            width = one(
+                conn.execute(
+                    "SELECT atttypmod FROM pg_attribute "
+                    "WHERE attrelid = 'chunks'::regclass AND attname = 'embedding_omni'"
+                ).fetchone(),
+                "the omni column exists",
+            )
+            check("the second column has its own width", width[0] == OMNI_DIM, str(width[0]))
+            nearest = one(
+                conn.execute(
+                    "SELECT id FROM chunks WHERE embedding_omni IS NOT NULL "
+                    "ORDER BY embedding_omni <=> (SELECT embedding_omni FROM chunks "
+                    "WHERE id = 'c2') LIMIT 1"
+                ).fetchone(),
+                "an omni nearest neighbour",
+            )
+            check("a cosine query runs on the second space alone", nearest[0] == "c2")
+            meta = one(
+                conn.execute("SELECT omni->>'dim' FROM corpus_meta").fetchone(),
+                "the omni block was stamped",
+            )
+            check("corpus_meta records the second space", meta[0] == str(OMNI_DIM), meta[0])
+            indexed = one(
+                conn.execute(
+                    "SELECT count(*) FROM pg_indexes WHERE indexname = 'chunks_omni_idx'"
+                ).fetchone(),
+                "the omni index counted",
+            )
+            check("the omni index was built after the load", indexed[0] == 1)
 
     print("\nall bundle SQL executed against a real server")
     return 0

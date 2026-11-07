@@ -25,13 +25,20 @@ from typing import Any
 from embed.spec import (
     EmbedderSpec,
     InstructionStyle,
+    ModalItem,
     PaddingSide,
     Pooling,
     render_document,
     render_query,
 )
 
-__all__ = ["HashEmbedder", "RawHashEmbedder", "ReferenceHashEmbedder", "spec_for"]
+__all__ = [
+    "HashEmbedder",
+    "HashOmniEmbedder",
+    "RawHashEmbedder",
+    "ReferenceHashEmbedder",
+    "spec_for",
+]
 
 
 def spec_for(
@@ -92,6 +99,26 @@ class HashEmbedder:
 
     def embed_queries(self, batch: list[str]) -> list[list[float]]:
         return [self._vector(render_query(self.spec, t)) for t in batch]
+
+
+@dataclass(slots=True)
+class HashOmniEmbedder(HashEmbedder):
+    """A deterministic multimodal embedder for tests: text and image bytes to a unit vector.
+
+    It exists so the second vector space can be written, bundled, loaded into a real pgvector
+    and queried end to end without a vision model. It says nothing about whether any real one
+    is good: the same caveat as `HashEmbedder`, never score retrieval with it.
+    """
+
+    def embed_items(self, batch: list[ModalItem]) -> list[list[float]]:
+        return [
+            self._vector(
+                repr(
+                    (item.text, hashlib.sha256(item.image).hexdigest() if item.image else None)
+                )
+            )
+            for item in batch
+        ]
 
 
 @dataclass(slots=True)

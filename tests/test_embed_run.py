@@ -586,3 +586,237 @@ def test_a_local_model_ignores_concurrency() -> None:
     from embed.local import TransformersEmbedder
 
     assert getattr(TransformersEmbedder, "thread_safe", False) is False
+
+
+# ===========================================================================
+# The workspace on a remote, and a corpus shared between workers.
+def _remote(name: str):  # type: ignore[no-untyped-def]
+    import fsspec
+
+    fs = fsspec.filesystem("memory")
+    base = f"/ravel-test/{name}"
+    if fs.exists(base):
+        fs.rm(base, recursive=True)
+    return fs, base
+
+
+def test_a_reclaimed_box_resumes_from_the_remote_without_recomputing(
+    corpus: CorpusSpec, workspace: Path, tmp_path: Path
+) -> None:
+    """The cloud case: the instance and its disk are gone; a new one pulls and carries on."""
+    from runtime.sync import AsyncPusher, RemoteMirror
+
+    fs, base = _remote("reclaimed")
+    first = stage(corpus, workspace, shard_rows=4)
+    pusher = AsyncPusher(RemoteMirror(workspace, base, fs=fs), "fixture")
+    report = first.run(on_progress=lambda r: pusher.submit())
+    pushed = pusher.close()
+    assert report.vectors > 0 and pushed.files > 0
+
+    # a fresh machine: an empty workspace, only the remote survives
+    fresh = tmp_path / "fresh"
+    mirror = RemoteMirror(fresh, base, fs=fs)
+    pulled = mirror.pull()
+    assert mirror.pull_ledger("fixture"), "the ledger snapshot must come down too"
+    assert pulled.files > 0
+
+    again = stage(corpus, fresh, shard_rows=4)
+    result = again.run()
+    assert result.vectors == 0, "a resumed run recomputed windows the remote already held"
+    assert result.skipped_done == report.windows
+    assert set(vectors_of(again)) == set(vectors_of(first))
+
+
+def test_a_push_adds_what_is_missing_and_repairs_a_short_upload(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    from runtime.sync import RemoteMirror
+
+    fs, base = _remote("push")
+    stage(corpus, workspace, shard_rows=4).run()
+    mirror = RemoteMirror(workspace, base, fs=fs)
+    first = mirror.push()
+    second = mirror.push()
+    assert first.files > 0 and second.files == 0 and second.skipped == first.files
+
+    victim = next(p for p in fs.find(base) if p.endswith(".parquet") and "/vectors/" in p)
+    fs.pipe_file(victim, b"cut short")
+    assert mirror.push().files == 1, "a shard of the wrong size is a cut upload: send it again"
+
+
+def test_no_database_file_and_no_partial_upload_reaches_the_remote(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    import sqlite3
+    import tempfile
+
+    from runtime.sync import RemoteMirror
+
+    fs, base = _remote("clean")
+    stage(corpus, workspace, shard_rows=4).run()
+    mirror = RemoteMirror(workspace, base, fs=fs)
+    mirror.push()
+    assert mirror.push_ledger("fixture")
+    names = [p for p in fs.find(base)]
+    assert not any(n.endswith((".part", ".db-wal", ".db-shm", ".tmp")) for n in names)
+    ledgers = [n for n in names if n.endswith("ledger.db")]
+    assert len(ledgers) == 1, "the ledger goes up once, as a snapshot"
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / "ledger.db"
+        copy.write_bytes(fs.cat_file(ledgers[0]))
+        db = sqlite3.connect(copy)
+        try:
+            count = db.execute("select count(*) from entries").fetchone()[0]
+        finally:
+            db.close()
+    assert count > 0, "the snapshot is a whole, readable database"
+
+
+def test_pull_never_overwrites_local_work(corpus: CorpusSpec, workspace: Path) -> None:
+    from runtime.sync import RemoteMirror
+
+    fs, base = _remote("pull")
+    stage(corpus, workspace, shard_rows=4).run()
+    mirror = RemoteMirror(workspace, base, fs=fs)
+    mirror.push()
+    mirror.push_ledger("fixture")
+
+    ledger = workspace / "state" / "fixture" / "ledger.db"
+    before = ledger.read_bytes()
+    assert not mirror.pull_ledger("fixture"), "a local ledger is at least as new as a snapshot"
+    assert ledger.read_bytes() == before
+    assert mirror.pull().files == 0, "nothing is missing locally"
+
+
+def test_workers_split_a_corpus_without_overlap_and_cover_all_of_it(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    shard_rows = 4
+    reference = stage(corpus, workspace, shard_rows=shard_rows)
+    chunks = list(iter_chunk_shards(workspace, "fixture"))
+
+    for index in range(3):
+        cfg = EmbedSpec.model_validate(embed_config(shard_rows=shard_rows))
+        run = Embedding(
+            corpus,
+            workspace=workspace,
+            embedder=build_embedder(cfg),
+            config=cfg,
+            worker=(index, 3),
+        )
+        run.run()
+        assert run.ledger_path.name == f"ledger-embed-w{index}of3.db"
+    # the three share one vector directory: every chunk exactly once across all of them
+    final = vectors_of(reference)
+    assert set(final) == {c.id for c in chunks}
+    assert len(final) == len(chunks)
+
+
+def test_a_worker_embeds_only_its_windows_and_a_rerun_does_nothing(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    cfg = EmbedSpec.model_validate(embed_config(shard_rows=3))
+
+    def worker(i: int) -> Embedding:
+        return Embedding(
+            corpus, workspace=workspace, embedder=build_embedder(cfg), config=cfg, worker=(i, 2)
+        )
+
+    zero, one = worker(0), worker(1)
+    first = zero.run()
+    only_zero = set(vectors_of(zero))
+    assert 0 < len(only_zero) < len(list(iter_chunk_shards(workspace, "fixture")))
+    assert first.windows == zero.count_rows()[1]
+    one.run()
+    assert len(vectors_of(zero)) == len(list(iter_chunk_shards(workspace, "fixture")))
+    assert worker(0).run().vectors == 0, "a worker's own ledger makes its rerun a no-op"
+
+
+def test_force_is_refused_for_a_worker(corpus: CorpusSpec, workspace: Path) -> None:
+    cfg = EmbedSpec.model_validate(embed_config(shard_rows=3))
+    run = Embedding(
+        corpus, workspace=workspace, embedder=build_embedder(cfg), config=cfg, worker=(0, 2)
+    )
+    with pytest.raises(ValueError, match="other workers"):
+        run.run(force=True)
+
+
+def test_a_bad_worker_spec_is_refused(corpus: CorpusSpec, workspace: Path) -> None:
+    cfg = EmbedSpec.model_validate(embed_config())
+    with pytest.raises(ValueError, match="worker"):
+        Embedding(
+            corpus, workspace=workspace, embedder=build_embedder(cfg), config=cfg, worker=(3, 3)
+        )
+
+
+def test_a_row_range_is_exactly_those_rows_whatever_the_batch_size(workspace: Path) -> None:
+    from chunk.store import iter_chunk_range, iter_chunks
+
+    shard = sorted((workspace / "chunks" / "fixture" / "default").rglob("part-*.parquet"))[0]
+    everything = [c.id for c in iter_chunks(str(shard))]
+    assert len(everything) > 6
+    for begin, end in (
+        (0, 3),
+        (2, 6),
+        (4, len(everything)),
+        (len(everything), len(everything)),
+    ):
+        for batch in (1, 2, 3, 8192):
+            got = [c.id for c in iter_chunk_range(str(shard), begin, end, batch_size=batch)]
+            assert got == everything[begin:end], (begin, end, batch)
+
+
+def test_a_resume_does_not_read_the_rows_of_windows_it_skips(
+    corpus: CorpusSpec, workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import embed.run as run_module
+
+    stage(corpus, workspace, shard_rows=4).run()
+    reads: list[tuple[int, int]] = []
+    real = run_module.iter_chunk_range
+
+    def spy(path: str, begin: int, end: int, *a: Any, **k: Any):  # type: ignore[no-untyped-def]
+        reads.append((begin, end))
+        return real(path, begin, end, *a, **k)
+
+    monkeypatch.setattr(run_module, "iter_chunk_range", spy)
+    again = stage(corpus, workspace, shard_rows=4).run()
+    assert again.vectors == 0 and again.skipped_done > 0
+    assert reads == [], "a sealed window was read just to be skipped"
+
+
+def test_the_progress_file_says_where_the_time_went_outside_the_model(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    from embed import read_progress
+
+    run = stage(corpus, workspace, shard_rows=4)
+    run.run()
+    data = read_progress(run.progress_path)
+    assert data is not None
+    assert set(data["phases"]) >= {"read", "prepare", "write"}
+    assert all(seconds >= 0 for seconds in data["phases"].values())
+
+
+def test_a_file_the_run_is_rewriting_is_left_for_the_next_push(
+    corpus: CorpusSpec, workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from runtime.sync import RemoteMirror
+
+    fs, base = _remote("busy")
+    stage(corpus, workspace, shard_rows=4).run()
+    mirror = RemoteMirror(workspace, base, fs=fs)
+    real = fs.put_file
+    refused = {"left": 1}
+
+    def busy(local: str, remote: str, *a: Any, **k: Any) -> None:
+        if local.endswith(".json") and refused["left"]:
+            refused["left"] -= 1
+            raise PermissionError("the file is being replaced")
+        return real(local, remote, *a, **k)
+
+    monkeypatch.setattr(fs, "put_file", busy)
+    first = mirror.push()
+    assert len(first.errors) == 1 and first.files > 0, "one busy file must not stop the push"
+    second = mirror.push()
+    assert not second.errors and second.files == 1, "the busy file goes up next time"

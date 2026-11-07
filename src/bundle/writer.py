@@ -419,7 +419,9 @@ class BundleWriter:
         self.counts[relative] = rows
 
     def shard_path(self, kind: str, index: int) -> Path:
-        return self.root / kind / f"part-{index:05d}.parquet"
+        path = self.root / kind / f"part-{index:05d}.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)  # a second vector space is a kind too
+        return path
 
     def rows_of(self, kind: str) -> int:
         prefix = f"{kind}/"

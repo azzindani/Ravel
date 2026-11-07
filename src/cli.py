@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -203,12 +205,61 @@ def sources_scan(
         out.print(f"[bold]{written:,}[/bold] entries -> {manifest}")
 
 
+REMOTE = Annotated[
+    str,
+    typer.Option(
+        "--remote",
+        envvar="RAVEL_REMOTE",
+        help="Mirror the workspace to this URI (s3://, hf://, gs://, file://): pulled before "
+        "the run, pushed as it goes, so a reclaimed GPU box costs minutes.",
+    ),
+]
+
+
+@contextmanager
+def _mirrored(
+    workspace: Path,
+    remote: str,
+    corpus_id: str,
+    *,
+    pull_ledgers: tuple[str, ...] = ("ledger.db",),
+    push_ledgers: tuple[str, ...] = ("ledger.db",),
+) -> Iterator[Any]:
+    """Pull what a resumed run needs, yield a pusher, and push the rest on the way out.
+
+    The push is in a `finally`: a run that dies still uploads the windows it sealed.
+    """
+    if not remote:
+        yield None
+        return
+    from runtime.sync import AsyncPusher, RemoteMirror
+
+    mirror = RemoteMirror(workspace, remote)
+    pulled = mirror.pull()
+    for name in pull_ledgers:
+        mirror.pull_ledger(corpus_id, name)
+    err.print(
+        f"[dim]remote {remote}: pulled {pulled.files:,} files "
+        f"({pulled.bytes / 1e6:.1f} MB)[/dim]"
+    )
+    pusher = AsyncPusher(mirror, corpus_id, push_ledgers)
+    try:
+        yield pusher
+    finally:
+        pushed = pusher.close()
+        err.print(
+            f"[dim]remote {remote}: pushed {pushed.files:,} files "
+            f"({pushed.bytes / 1e6:.1f} MB), {pushed.skipped:,} already there[/dim]"
+        )
+
+
 @app.command()
 def extract(
     corpus_id: CorpusArg,
     workspace: WORKSPACE = Path("."),
     limit: Annotated[int, typer.Option("--limit", help="Stop after N documents.")] = 0,
     force: Annotated[bool, typer.Option("--force", help="Ignore the ledger.")] = False,
+    remote: REMOTE = "",
 ) -> None:
     """Phase A: source documents into canonical parquet shards.
 
@@ -217,7 +268,8 @@ def extract(
     """
     spec = CorpusSpec.find(corpus_id)
     run = Extraction(spec, workspace=workspace)
-    report = run.run(limit=limit, force=force)
+    with _mirrored(workspace, remote, spec.id):
+        report = run.run(limit=limit, force=force)
 
     summary = RichTable(show_header=False, box=None)
     summary.add_row("corpus", f"{spec.id}  [dim]{spec.config_hash}[/dim]")
@@ -277,6 +329,7 @@ def chunk_cmd(
             help="Exit non-zero when the build falls below the profile's `expected` floors.",
         ),
     ] = True,
+    remote: REMOTE = "",
 ) -> None:
     """Phase B: canonical documents into chunks with immutable provenance.
 
@@ -288,7 +341,8 @@ def chunk_cmd(
 
     spec = CorpusSpec.find(corpus_id)
     run = chunking.Chunking(spec, workspace=workspace, chunker=chunker or None, variant=variant)
-    report = run.run(limit=limit, force=force)
+    with _mirrored(workspace, remote, spec.id):
+        report = run.run(limit=limit, force=force)
 
     summary = RichTable(show_header=False, box=None)
     summary.add_row("corpus", f"{spec.id}  [dim]{report.variant}[/dim]")
@@ -353,6 +407,14 @@ def embed_cmd(
             "--concurrency", help="Batches in flight (serving endpoints only; 0 = corpus)."
         ),
     ] = 0,
+    worker: Annotated[
+        str,
+        typer.Option(
+            "--worker",
+            help="`i/N`: embed only windows k with k % N == i, so N machines share a corpus.",
+        ),
+    ] = "",
+    remote: REMOTE = "",
 ) -> None:
     """Phase B: chunks into vectors, by the embedder the corpus names.
 
@@ -393,6 +455,13 @@ def embed_cmd(
                 f"[dim]  chunks {label:>5}: {b['items']:,.0f} done, {b['per_second']:.1f}/s, "
                 f"{b['seconds'] / 60:.1f} min[/dim]"
             )
+        phases = data.get("phases") or {}
+        if phases:
+            out.print(
+                "[dim]  outside the model: "
+                + ", ".join(f"{k} {v / 60:.1f} min" for k, v in sorted(phases.items()))
+                + "[/dim]"
+            )
         if data.get("note"):
             out.print(f"[dim]{data['note']}[/dim]")
         return
@@ -414,18 +483,38 @@ def embed_cmd(
                 f"[dim]hardware: {why} · items {profile.batch_items}, "
                 f"bytes {profile.batch_bytes:,}, square {profile.batch_square:,}[/dim]"
             )
+    share: tuple[int, int] | None = None
+    if worker:
+        try:
+            index, _, count = worker.partition("/")
+            share = (int(index), int(count))
+        except ValueError:
+            err.print(f"[red]--worker takes i/N, e.g. 0/4; got {worker!r}[/red]")
+            raise typer.Exit(2) from None
     embedder = build_embedder(cfg)
-    run = Embedding(spec, workspace=workspace, embedder=embedder, config=cfg, variant=variant)
-
-    def progress(r: EmbedReport) -> None:
-        err.print(f"[dim]sealed: {r.vectors:,} vectors in {r.shards:,} shards[/dim]")
-
-    def line(p: Progress) -> None:
-        err.print(format_progress(p), highlight=False)
-
-    report = run.run(
-        limit=limit, force=force, on_progress=progress, on_status=line, status_every=every
+    run = Embedding(
+        spec, workspace=workspace, embedder=embedder, config=cfg, variant=variant, worker=share
     )
+
+    with _mirrored(
+        Path(workspace),
+        remote,
+        spec.id,
+        pull_ledgers=("ledger.db", run.ledger_path.name),
+        push_ledgers=(run.ledger_path.name,),
+    ) as pusher:
+
+        def progress(r: EmbedReport) -> None:
+            err.print(f"[dim]sealed: {r.vectors:,} vectors in {r.shards:,} shards[/dim]")
+            if pusher is not None:
+                pusher.submit()  # the upload overlaps the next window's compute
+
+        def line(p: Progress) -> None:
+            err.print(format_progress(p), highlight=False)
+
+        report = run.run(
+            limit=limit, force=force, on_progress=progress, on_status=line, status_every=every
+        )
 
     summary = RichTable(show_header=False, box=None)
     summary.add_row("corpus", f"{spec.id}  [dim]{report.variant}[/dim]")
@@ -1140,3 +1229,43 @@ def verify_backend_cmd(
             "end-of-text handling, padding side and truncation[/red]"
         )
         raise typer.Exit(1)
+
+
+sync_app = typer.Typer(help="Mirror a workspace to and from a remote URI.")
+app.add_typer(sync_app, name="sync")
+
+
+@sync_app.command("pull")
+def sync_pull(
+    corpus_id: CorpusArg,
+    remote: Annotated[str, typer.Option("--remote", envvar="RAVEL_REMOTE")],
+    workspace: WORKSPACE = Path("."),
+) -> None:
+    """Download what a resumed run needs. Never overwrites local files or a local ledger."""
+    from runtime.sync import RemoteMirror
+
+    mirror = RemoteMirror(workspace, remote)
+    report = mirror.pull()
+    ledger = mirror.pull_ledger(corpus_id)
+    out.print(
+        f"pulled {report.files:,} files ({report.bytes / 1e6:.1f} MB), "
+        f"{report.skipped:,} already here" + (", ledger restored" if ledger else "")
+    )
+
+
+@sync_app.command("push")
+def sync_push(
+    corpus_id: CorpusArg,
+    remote: Annotated[str, typer.Option("--remote", envvar="RAVEL_REMOTE")],
+    workspace: WORKSPACE = Path("."),
+) -> None:
+    """Upload every sealed artifact the remote lacks, then the ledger snapshot."""
+    from runtime.sync import RemoteMirror
+
+    mirror = RemoteMirror(workspace, remote)
+    report = mirror.push()
+    mirror.push_ledger(corpus_id)
+    out.print(
+        f"pushed {report.files:,} files ({report.bytes / 1e6:.1f} MB), "
+        f"{report.skipped:,} already there"
+    )

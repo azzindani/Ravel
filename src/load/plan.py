@@ -195,7 +195,7 @@ def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
     )
 
 
-def _merge(corpus_id: str, *, with_vectors: bool) -> str:
+def _merge(corpus_id: str, *, with_vectors: bool, with_omni: bool = False) -> str:
     """The one pass that moves staged rows into `chunks`.
 
     Every staged column is carried across. A column that reaches the staging table and
@@ -208,15 +208,22 @@ def _merge(corpus_id: str, *, with_vectors: bool) -> str:
     if with_vectors:
         targets.append("dense")
         sources.append("v.embedding")
+    if with_omni:
+        targets.append("embedding_omni")
+        sources.append("o.embedding")
 
     into = ", ".join(quote_ident(c) for c in ["corpus_id", *targets])
     select = ", ".join([quote_literal(corpus_id), *sources])
     join = (
-        "FROM chunks_stage c JOIN vectors_stage v ON v.chunk_id = c.id;"
+        "FROM chunks_stage c JOIN vectors_stage v ON v.chunk_id = c.id"
         if with_vectors
-        else "FROM chunks_stage c;"
+        else "FROM chunks_stage c"
     )
-    return f"INSERT INTO chunks ({into})\nSELECT {select}\n{join}"
+    if with_omni:
+        # ! LEFT, not inner: only chunks that have an image have an omni vector, and a text
+        # chunk with none is a chunk, not a missing row.
+        join += "\nLEFT JOIN vectors_omni_stage o ON o.chunk_id = c.id"
+    return f"INSERT INTO chunks ({into})\nSELECT {select}\n{join};"
 
 
 def load_plan(
@@ -240,6 +247,14 @@ def load_plan(
 
     chunk_files = files("chunks/")
     vector_files = files("vectors/")
+    omni_files = files("vectors_omni/")
+    omni = document.get("omni")
+    if bool(omni) != bool(omni_files):
+        raise ValueError(
+            "the manifest declares an omni space and the bundle has no vectors_omni shards, "
+            "or the reverse: a second space with no vectors (or vectors with no declared "
+            "space) cannot be loaded"
+        )
     signal_files = files("signals/")
 
     steps: list[Step] = [
@@ -273,6 +288,12 @@ def load_plan(
                 + "\n);\n"
                 "CREATE UNLOGGED TABLE vectors_stage (chunk_id TEXT, embedding "
                 f"halfvec({int(document['dense']['dim'])}));"
+                + (
+                    "\nCREATE UNLOGGED TABLE vectors_omni_stage (chunk_id TEXT, embedding "
+                    f"halfvec({int(omni['dim'])}));"
+                    if omni
+                    else ""
+                )
             ),
             note=(
                 "! Declared from the bundle's columns, never `LIKE chunks`. `LIKE` copies "
@@ -294,6 +315,21 @@ def load_plan(
         ),
     ]
 
+    if omni_files:
+        steps.append(
+            Step(
+                name="copy vectors_omni",
+                sql="\n".join(
+                    copy_from("vectors_omni_stage", ("chunk_id", "embedding"), str(root / name))
+                    for name in omni_files
+                ),
+                inputs=omni_files,
+                note=(
+                    "The second space (EMBEDDING.md §4): its own width, its own column. Not "
+                    "every chunk has one."
+                ),
+            )
+        )
     if vector_files:
         steps.append(
             Step(
@@ -308,7 +344,7 @@ def load_plan(
         steps.append(
             Step(
                 name="merge",
-                sql=_merge(corpus_id, with_vectors=True),
+                sql=_merge(corpus_id, with_vectors=True, with_omni=bool(omni)),
                 note=(
                     "One write per row. An UPDATE would write a second version of every "
                     "row and leave the first as a dead tuple — see the module docstring."
@@ -343,6 +379,22 @@ def load_plan(
             )
         )
 
+    if omni_files:
+        steps.append(
+            Step(
+                name="verify omni",
+                sql=(
+                    "DO $$ DECLARE orphans BIGINT; BEGIN\n"
+                    "  SELECT count(*) INTO orphans FROM vectors_omni_stage o\n"
+                    "    LEFT JOIN chunks_stage c ON c.id = o.chunk_id\n"
+                    "   WHERE c.id IS NULL;\n"
+                    "  IF orphans > 0 THEN RAISE EXCEPTION\n"
+                    "    'ravel: % omni vectors belong to no chunk', orphans;\n"
+                    "  END IF;\nEND $$;"
+                ),
+                note="An image vector for a chunk that is not in the corpus is a mis-join.",
+            )
+        )
     if signal_files:
         steps.append(
             Step(
@@ -486,6 +538,7 @@ def load_plan(
             name="drop staging",
             sql=(
                 "DROP TABLE chunks_stage; DROP TABLE vectors_stage;"
+                + (" DROP TABLE vectors_omni_stage;" if omni else "")
                 + (
                     " DROP TABLE relations_stage; DROP TABLE status_stage;"
                     if has_relations or has_status
@@ -551,6 +604,10 @@ def _corpus_meta_insert(document: dict[str, Any]) -> str:
         "manifest_sha256": document["manifest_sha256"],
         "notes": document.get("notes", ""),
     }
+    if document.get("omni"):
+        # ! Only when there is one. A text bundle must still load into a database whose
+        # `corpus_meta` predates the column, and naming it would fail that insert.
+        columns["omni"] = _json_or_null(document["omni"])
     names = ", ".join(quote_ident(k) for k in columns)
     values = ", ".join(quote_literal(v) for v in columns.values())
     return f"INSERT INTO corpus_meta ({names})\nVALUES ({values});"

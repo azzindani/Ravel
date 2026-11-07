@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from embed.spec import EmbedderSpec
+from embed.spec import EmbedderSpec, Modality
 
 __all__ = ["BundleManifest", "SparseSpec", "ManifestError"]
 
@@ -95,6 +95,10 @@ class BundleManifest:
     source_manifest_sha256: str
     dense: EmbedderSpec
     sparse: SparseSpec | None = None
+    omni: EmbedderSpec | None = None
+    """A second vector space (page images, scans), with its own model, width and column
+    (`embedding_omni`). Never blended with `dense` (`EMBEDDING.md` §4). Absent for a text
+    corpus, and then absent from the manifest too: a text bundle's fingerprint is unchanged."""
     chunker: str = ""
     chunker_version: str = ""
     profile_ref: str = ""
@@ -116,12 +120,28 @@ class BundleManifest:
     def __post_init__(self) -> None:
         if self.chunk_count < 0:
             raise ManifestError(f"chunk_count cannot be negative, got {self.chunk_count}")
+        if self.omni is not None:
+            if self.omni.modality is not Modality.OMNI:
+                raise ManifestError(
+                    f"the omni space needs a model declared modality 'omni', got "
+                    f"{self.omni.modality.value!r}: a second text embedder is a second "
+                    "variant, not a second space"
+                )
+            if self.omni.same_space(self.dense):
+                raise ManifestError(
+                    "the omni embedder is the same space as dense: one vector column already "
+                    "holds it, and a duplicate would be two copies that can drift"
+                )
 
     # -- identity ------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
         out = asdict(self)
         out["dense"] = self.dense.manifest()
+        if self.omni is None:
+            del out["omni"]  # a text bundle's manifest, and its fingerprint, are unchanged
+        else:
+            out["omni"] = self.omni.manifest()
         return out
 
     def fingerprint(self) -> str:

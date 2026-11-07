@@ -37,10 +37,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow.parquet as pq
 
 from chunk.derive import embed_text
-from chunk.models import Chunk
-from chunk.store import iter_chunks
+from chunk.store import iter_chunk_range
 from embed.progress import Progress, Tracker
 from embed.spec import Embedder
 from runtime.batching import batched
@@ -193,7 +193,13 @@ class Embedding:
         variant: str = "default",
         chunk_generation: str | None = None,
         registry: Registry | None = None,
+        worker: tuple[int, int] | None = None,
     ) -> None:
+        if worker is not None:
+            index, of = worker
+            if of < 1 or not 0 <= index < of:
+                raise ValueError(f"worker {index}/{of}: need 0 <= index < count")
+        self.worker = worker
         cfg = config or corpus.embed
         if cfg is None:
             raise ValueError(f"{corpus.id}: no `embed:` section, and none was passed")
@@ -250,8 +256,17 @@ class Embedding:
         )
 
     @property
+    def worker_tag(self) -> str:
+        """`-w2of5` for worker 2 of 5, empty for a single process."""
+        return f"-w{self.worker[0]}of{self.worker[1]}" if self.worker else ""
+
+    @property
     def ledger_path(self) -> Path:
-        return self.workspace / "state" / self.corpus.id / "ledger.db"
+        # ! One ledger per worker. Two processes writing one SQLite file over a synced object
+        # store is how a ledger is corrupted; each worker's windows are disjoint, so each
+        # needs only its own record (and reads the shared one, below, for earlier work).
+        name = f"ledger-embed{self.worker_tag}.db" if self.worker else "ledger.db"
+        return self.workspace / "state" / self.corpus.id / name
 
     def _stage(self) -> str:
         return f"{STAGE}:{self.variant}"
@@ -259,18 +274,31 @@ class Embedding:
     # -- one window -------------------------------------------------------------
     @property
     def progress_path(self) -> Path:
-        return self.workspace / "state" / self.corpus.id / f"embed-progress-{self.variant}.json"
+        name = f"embed-progress-{self.variant}{self.worker_tag}.json"
+        return self.workspace / "state" / self.corpus.id / name
+
+    def owns(self, window_index: int) -> bool:
+        """Whether this process embeds the window at this position in corpus order.
+
+        Static round-robin, so workers need no coordination and cannot collide: window k is
+        worker `k % count`'s. A window's file name is a function of (shard, start), so a
+        window embedded twice (a changed worker count) overwrites itself with identical bytes.
+        """
+        return self.worker is None or window_index % self.worker[1] == self.worker[0]
 
     def count_rows(self) -> tuple[int, int]:
-        """(chunks, windows) the whole stage will cover, from the parquet footers alone."""
+        """(chunks, windows) this process will cover, from the parquet footers alone."""
         import pyarrow.parquet as pq
 
         rows = self.config.shard_rows
-        total = windows = 0
+        total = windows = index = 0
         for shard in sorted(self.chunk_dir.glob("part-*.parquet")):
             n = int(pq.ParquetFile(str(shard)).metadata.num_rows)
-            total += n
-            windows += -(-n // rows)
+            for begin in range(0, n, rows):
+                if self.owns(index):
+                    total += min(rows, n - begin)
+                    windows += 1
+                index += 1
         return total, windows
 
     def embed_texts(
@@ -382,35 +410,32 @@ class Embedding:
     ) -> EmbedReport:
         spec = self.embedder.spec
         rows = self.config.shard_rows
+        window_index = [0]
 
+        if force and self.worker:
+            raise ValueError(
+                "--force with --worker would delete the shards other workers wrote; "
+                "force from a single process"
+            )
         with Ledger(self.ledger_path) as ledger:
             if force:
                 ledger.forget(self._stage())
                 for stale in self.vector_dir.glob("part-*.parquet"):
                     stale.unlink()
             done = ledger.done_keys(self._stage())
+            shared = self.workspace / "state" / self.corpus.id / "ledger.db"
+            if self.worker and shared.exists():  # windows an earlier single process sealed
+                with Ledger(shared) as earlier:
+                    done |= earlier.done_keys(self._stage())
 
-            for shard in sorted(self.chunk_dir.glob("part-*.parquet")):
-                window: list[Chunk] = []
-                start = 0
-
-                def flush(chunks: list[Chunk], begin: int, shard: Path = shard) -> bool:
-                    """Embed one window. False once `limit` has been reached."""
-                    key = window_key(
-                        shard=shard.name,
-                        start=begin,
-                        end=begin + len(chunks),
-                        fingerprint=spec.fingerprint(),
-                        template=self.template_hash,
-                        chunk_generation=self.chunk_dir.name,
-                    )
-                    report.windows += 1
-                    if key in done:
-                        report.skipped_done += 1
-                        tracker.skip(len(chunks))
-                        return True
+            def embed_window(shard: Path, begin: int, end: int, key: str) -> bool:
+                """Embed one window. False once `limit` has been reached."""
+                with tracker.phase("read"):
+                    chunks = list(iter_chunk_range(str(shard), begin, end))
+                with tracker.phase("prepare"):
                     texts = [embed_text(c, self.profile) for c in chunks]
-                    matrix = self.embed_texts(texts, on_batch=tracker.advance)
+                matrix = self.embed_texts(texts, on_batch=tracker.advance)
+                with tracker.phase("write"):
                     check_vectors(
                         matrix, dim=spec.dim, rows=len(chunks), normalized=spec.normalize
                     )
@@ -428,27 +453,45 @@ class Embedding:
                     )
                     # ! After the shard is durable, never before.
                     ledger.record_many([(key, self._stage(), Status.DONE, None, str(path))])
-                    tracker.seal(len(chunks))
-                    report.vectors += len(chunks)
-                    report.shards += 1
-                    report.bytes_written += path.stat().st_size
-                    report.characters += sum(len(t) for t in texts)
-                    report.longest = max(report.longest, max(len(t) for t in texts))
-                    if on_progress:
-                        on_progress(report)
-                    return not (limit and report.vectors >= limit)
+                tracker.seal(len(chunks))
+                report.vectors += len(chunks)
+                report.shards += 1
+                report.bytes_written += path.stat().st_size
+                report.characters += sum(len(t) for t in texts)
+                report.longest = max(report.longest, max(len(t) for t in texts))
+                if on_progress:
+                    on_progress(report)
+                return not (limit and report.vectors >= limit)
 
-                for chunk in iter_chunks(str(shard)):
-                    window.append(chunk)
-                    if len(window) >= rows:
-                        if not flush(window, start):
-                            report.seconds = time.time() - started
-                            tracker.finish("done", f"stopped at --limit {limit:,}")
-                            return report
-                        start += len(window)
-                        window = []
-                if window and not flush(window, start):
-                    break
+            for shard in sorted(self.chunk_dir.glob("part-*.parquet")):
+                total = int(pq.ParquetFile(str(shard)).metadata.num_rows)
+                for begin in range(0, total, rows):
+                    end = min(begin + rows, total)
+                    index = window_index[0]
+                    window_index[0] += 1
+                    if not self.owns(index):
+                        continue
+                    key = window_key(
+                        shard=shard.name,
+                        start=begin,
+                        end=end,
+                        fingerprint=spec.fingerprint(),
+                        template=self.template_hash,
+                        chunk_generation=self.chunk_dir.name,
+                    )
+                    report.windows += 1
+                    # ! A sealed window is skipped without reading its rows. A resume used to
+                    # rebuild every earlier chunk object just to throw it away, and that cost
+                    # grows with progress: the later a box is reclaimed, the longer its
+                    # replacement idles before the first new vector.
+                    if key in done:
+                        report.skipped_done += 1
+                        tracker.skip(end - begin)
+                        continue
+                    if not embed_window(shard, begin, end, key):
+                        report.seconds = time.time() - started
+                        tracker.finish("done", f"stopped at --limit {limit:,}")
+                        return report
 
         self._write_manifest(report)
         report.seconds = time.time() - started

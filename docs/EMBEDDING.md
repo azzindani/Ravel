@@ -118,6 +118,52 @@ and the machine this was built on has one 8 GB card. The first run on a rented L
 start with `ravel verify-backend`, then `ravel hardware tune`, and its measured profile should
 be committed.
 
+### 1.2 Cloud runs: a workspace on a remote, and a corpus shared between machines
+
+A rented GPU's disk goes with the instance, and a day of embedding with it (`CLAUDE.md` §7.5).
+`--remote <URI>` on `extract`, `chunk` and `embed` (or `$RAVEL_REMOTE`) mirrors the workspace:
+`runtime/sync.py` pulls what a resumed run needs before it starts, and `embed` pushes each
+sealed window in a background thread while the next one computes. Any fsspec URI works
+(`s3://`, `gs://`, `hf://`, `file://`). Three rules keep it safe: shards are immutable, so a push
+is "add what is missing" (and re-send one of the wrong size, a cut upload); the ledger goes up as
+a SQLite *backup snapshot*, after the shards it names, never as the live WAL files; and a pull
+never overwrites local work. `ravel sync pull|push` does the same by hand. The test that
+matters deletes the local workspace, pulls, and runs again: nothing is recomputed.
+
+`--worker i/N` splits a corpus across machines with no coordination: window `k` belongs to
+worker `k % N`. Each worker has its own ledger (`ledger-embed-w{i}of{N}.db`) and reads the shared
+one for windows an earlier single run sealed. A window's file name is a function of its shard and
+offset, so a window done twice (a changed worker count) overwrites itself with identical bytes;
+`--force` is refused for a worker because it would delete the others' shards. Static round-robin
+balances equal machines only: a slower card finishes late, and the fix is more workers on the
+slow window range, not a smarter scheduler. Dynamic claiming needs an object store with
+conditional writes and is not built.
+
+A resume used to rebuild every earlier chunk object just to discard it, a cost that grew with
+progress; a sealed window is now skipped from its row count alone (`chunk.store.iter_chunk_range`
+reads only the rows a window needs).
+
+**Not yet verified.** All of this runs against fsspec's in-memory filesystem and local disk in
+CI. No real S3, GCS or Hugging Face bucket has been used, and no two machines have shared a
+corpus.
+
+### 1.3 A second vector space (multimodal)
+
+A manifest may carry an `omni` block: a second embedder (page images, scans) with its own
+model, width and column, never blended with the text space (§4). The schema gains
+`embedding_omni halfvec(M)` and an HNSW index only for such a bundle, plus idempotent `ALTER`s so
+it also loads into a database an earlier Ravel built; a text bundle's manifest, fingerprint,
+schema and plan are byte-for-byte what they were. The load plan stages `vectors_omni/` shards and
+merges them with a `LEFT JOIN` (only chunks with an image have a vector), and refuses an omni
+vector for a chunk that is not in the corpus. The interface is `embed.ModalItem` (text, image
+bytes, or both) and `OmniEmbedder`. Verified against real pgvector with a deterministic test
+embedder (`tools/ci_bundle_check.py` §10): partial fill, own width, cosine query on the second
+space alone.
+
+**Not built:** a real vision-language backend, image extraction (the extractor reads text and
+layout, not page images), and `ravel bundle build` for the second space. Nothing here says a real
+VL model embeds well.
+
 ---
 
 ## 2. Dimension is a variable, so the schema is generated

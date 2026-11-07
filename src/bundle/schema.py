@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 
     cluster_id          INTEGER,
 
-    dense               halfvec({dense_dim}){sparse_column}
+    dense               halfvec({dense_dim}){omni_column}{sparse_column}
 
     -- ! '{text_search_config}' — set from the manifest, not assumed.
     tsv tsvector GENERATED ALWAYS AS (to_tsvector('{text_search_config}', body)) STORED,
@@ -300,6 +300,35 @@ CREATE INDEX IF NOT EXISTS ingest_progress_run_idx ON ingest_progress (run_id, s
 """
 
 
+def _omni_columns(manifest: BundleManifest) -> str:
+    """Idempotent column adds for a database whose tables predate the second space.
+
+    `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so a corpus with an omni
+    space loaded into a database an earlier Ravel built would find neither column. Emitted
+    only for a bundle that has the space: a text bundle's schema stays exactly as it was.
+    """
+    if manifest.omni is None:
+        return ""
+    return (
+        "\n-- The second space, for a database whose tables predate it (a no-op otherwise).\n"
+        "ALTER TABLE corpus_meta ADD COLUMN IF NOT EXISTS omni JSONB;\n"
+        "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS "
+        f"embedding_omni halfvec({manifest.omni.dim});\n"
+    )
+
+
+def _omni_index(manifest: BundleManifest) -> str:
+    """The vector index of the second space, when the bundle has one."""
+    if manifest.omni is None:
+        return ""
+    return (
+        "\n-- The omni space is searched on its own column; there is no shared index.\n"
+        "CREATE INDEX IF NOT EXISTS chunks_omni_idx\n"
+        "    ON chunks USING hnsw (embedding_omni halfvec_cosine_ops)\n"
+        "    WHERE embedding_omni IS NOT NULL;\n"
+    )
+
+
 def render_indexes(manifest: BundleManifest) -> str:
     """The index DDL, separated so the loader can apply it after `COPY`.
 
@@ -307,8 +336,7 @@ def render_indexes(manifest: BundleManifest) -> str:
     corpus: a bundle with no sparse arm needs no sparse index, and a future variant that
     adds one must not silently inherit the last variant's indexes.
     """
-    _ = manifest
-    return _INDEXES
+    return _INDEXES + _omni_index(manifest)
 
 
 def render_schema(
@@ -340,6 +368,14 @@ def render_schema(
     )
 
     sparse_column = f",\n    sparse              sparsevec({sparse.dim})," if sparse else ","
+    omni = manifest.omni
+    omni_column = (
+        ",\n    -- ! A second space (EMBEDDING.md §4): its own width and index, never\n"
+        "    -- compared with `dense`. NULL where a chunk has no image.\n"
+        f"    embedding_omni      halfvec({omni.dim})"
+        if omni
+        else ""
+    )
     sparse_desc = (
         f"{sparse.scheme} · {sparse.dim}d · k1={sparse.k1} b={sparse.b} · "
         f"vocab fitted over {sparse.fit_docs:,} docs"
@@ -363,9 +399,11 @@ def render_schema(
     )
     chunks = _CHUNKS.format(
         dense_dim=dense.dim,
+        omni_column=omni_column,
         sparse_column=sparse_column,
         source_url_column=source_url,
         text_search_config=manifest.text_search_config,
     )
     ddl = header + _CORPUS_META + chunks + _RELATIONS + _QUALITY + _PROGRESS
-    return ddl + _INDEXES if with_indexes else ddl
+    ddl += _omni_columns(manifest)
+    return ddl + _INDEXES + _omni_index(manifest) if with_indexes else ddl

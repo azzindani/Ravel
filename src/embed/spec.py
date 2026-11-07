@@ -48,6 +48,8 @@ __all__ = [
     "Embedder",
     "InstructionStyle",
     "Modality",
+    "ModalItem",
+    "OmniEmbedder",
     "PaddingSide",
     "Pooling",
     "render_document",
@@ -210,6 +212,35 @@ def render_document(spec: EmbedderSpec, text: str) -> str | list[dict[str, Any]]
 def render_query(spec: EmbedderSpec, text: str) -> str | list[dict[str, Any]]:
     """Model input for a query. Vera calls the equivalent; the two must agree."""
     return _render(spec, text, spec.query_instruction)
+
+
+@dataclass(frozen=True, slots=True)
+class ModalItem:
+    """One thing to embed in an omni space: text, an image, or both (a scanned page and its
+    caption). Image bytes, not a path, so the embedder never has to know where a source lives
+    (`CLAUDE.md` §9: every path is a URI, and resolving it is the caller's job)."""
+
+    text: str | None = None
+    image: bytes | None = None
+    ref: str = ""
+    """Where it came from (page, bbox, block id), for the failure message; never embedded."""
+
+    def __post_init__(self) -> None:
+        if not self.text and not self.image:
+            raise ValueError("a ModalItem needs text, an image, or both")
+
+
+@runtime_checkable
+class OmniEmbedder(Protocol):
+    """A multimodal plugin. Its vectors live in their own space: never compared with a text
+    embedder's, never averaged or concatenated with them (`EMBEDDING.md` §4). Fusion happens at
+    rank level, over two result lists."""
+
+    spec: EmbedderSpec
+
+    def embed_items(self, batch: list[ModalItem]) -> Any: ...
+
+    def embed_queries(self, batch: list[str]) -> Any: ...
 
 
 @runtime_checkable

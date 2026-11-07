@@ -133,6 +133,27 @@ def read_chunks(path: str) -> list[Chunk]:
     return [_chunk(row) for row in pq.read_table(path, schema=SCHEMA).to_pylist()]
 
 
+def iter_chunk_range(
+    path: str, begin: int, end: int, batch_size: int = 8192
+) -> Iterator[Chunk]:
+    """Rows `[begin, end)` of a shard, building chunk objects only for those.
+
+    Batches wholly outside the range are skipped as Arrow, never converted: validating a
+    chunk is the slow part, and a resumed run asks for a window deep inside a shard.
+    """
+    offset = 0
+    for batch in pq.ParquetFile(path).iter_batches(batch_size=batch_size):
+        low, high = offset, offset + batch.num_rows
+        offset = high
+        if high <= begin:
+            continue
+        if low >= end:
+            break
+        first, last = max(begin, low) - low, min(end, high) - low
+        for row in batch.slice(first, last - first).to_pylist():
+            yield _chunk(row)
+
+
 def iter_chunks(path: str, batch_size: int = 2048) -> Iterator[Chunk]:
     """Stream a shard without materializing it. Phase C reads millions of these."""
     for batch in pq.ParquetFile(path).iter_batches(batch_size=batch_size):

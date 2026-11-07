@@ -23,7 +23,8 @@ import json
 import os
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,10 @@ class Progress:
     """Where the time went, by average chunk length in the batch: items, characters, seconds
     and the resulting vectors/s. The head of a window (its longest chunks) and its body are
     different workloads, and a single rate hides which one is slow."""
+    phases: dict[str, float] = field(default_factory=dict)
+    """Seconds spent outside the model call: reading chunks, building texts, writing and
+    sealing a window. Beside the per-length buckets (inside the call), it says whether the GPU
+    is the bottleneck or is waiting for the rest of the stage."""
     note: str = ""
 
     @property
@@ -144,6 +149,16 @@ class Tracker:
         )
 
     # -- inputs ----------------------------------------------------------------------
+    @contextmanager
+    def phase(self, name: str) -> Iterator[None]:
+        """Attribute the time inside the block to `name` (a stage step other than the model)."""
+        began = self._clock()
+        try:
+            yield
+        finally:
+            took = self._clock() - began
+            self.state.phases[name] = round(self.state.phases.get(name, 0.0) + took, 3)
+
     def skip(self, vectors: int) -> None:
         """A window an earlier run sealed: done, and not part of this run's speed."""
         self.state.done += vectors
@@ -228,4 +243,13 @@ class Tracker:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(snap.to_json(), indent=2), encoding="utf-8")
-        os.replace(tmp, self.path)
+        # ! A status file must never stop a run. On Windows `replace` fails while another
+        # process (the remote pusher, `--status`, an editor) has the file open; try again
+        # briefly, then give up on this reading: the next batch writes a fresher one.
+        for attempt in range(5):
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError:
+                time.sleep(0.05 * (attempt + 1))
+        tmp.unlink(missing_ok=True)
