@@ -221,6 +221,10 @@ class EmbedSpec(Base):
     batch_square: int = Field(default=0, ge=0)
     """Cap on `items * longest_text**2` in bytes (0 = off). Attention memory on a local model
     grows with the square of the length, which a byte budget does not see."""
+    memory_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    """Cap on the share of GPU memory the process may reserve (0 = no cap). On Windows a card
+    that is over-subscribed does not fail: it quietly pages to system memory and runs several
+    times slower, so the cap turns that into an out-of-memory the stage can recover from."""
     concurrency: int = Field(default=1, ge=1)
     """Batches in flight at once, for a backend that can take them (`api`: a vLLM, TEI or
     hosted endpoint batches across requests, and one request at a time leaves it idle). Ignored

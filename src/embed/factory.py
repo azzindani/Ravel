@@ -50,7 +50,9 @@ def build_embedder(cfg: EmbedSpec) -> Embedder:
         case "local":
             from embed.local import TransformersEmbedder
 
-            return TransformersEmbedder(spec, device=cfg.device)
+            return TransformersEmbedder(
+                spec, device=cfg.device, memory_fraction=cfg.memory_fraction
+            )
         case "api":
             from embed.api import OpenAICompatEmbedder
 
@@ -74,6 +76,7 @@ def with_hardware(cfg: EmbedSpec, hardware: HardwareSpec) -> EmbedSpec:
         "batch_items": hardware.batch_items,
         "batch_bytes": hardware.batch_bytes,
         "batch_square": hardware.batch_square,
+        "memory_fraction": hardware.memory_fraction,
     }
     if hardware.device:
         update["device"] = hardware.device

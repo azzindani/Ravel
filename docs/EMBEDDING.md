@@ -90,7 +90,7 @@ Two things decide how fast a corpus embeds, and neither belongs in the corpus de
 the card, and none of it changes a vector, so none of it enters the embedder fingerprint or a
 window's cache key: vectors made on a laptop are reused on a 4090. A build picks a profile by
 name (`--hardware`), by matching the detected card, or by an estimate scaled from the one
-measured baseline (8.6 GB, items 32, bytes 40,000, items x longest^2 150M). `ravel hardware
+measured baseline (8.6 GB, items 32, bytes 40,000, items x longest^2 80M). `ravel hardware
 list` shows the choice; `ravel hardware tune <corpus>` measures one on real chunks: it climbs a
 ladder from the estimate, stops at a regression or a memory failure, and backs off one rung
 from a cliff (128 items with 60,000 bytes ran at 4.7 vectors/s where 32 ran at 34).

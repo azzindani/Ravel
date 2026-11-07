@@ -54,7 +54,13 @@ def last_token_index(
 class TransformersEmbedder:
     """An `Embedder` over a Hugging Face encoder."""
 
-    def __init__(self, spec: EmbedderSpec, *, device: str | None = None) -> None:
+    def __init__(
+        self,
+        spec: EmbedderSpec,
+        *,
+        device: str | None = None,
+        memory_fraction: float = 0.0,
+    ) -> None:
         if spec.instruction_style is InstructionStyle.CHAT_SYSTEM:
             raise NotImplementedError(
                 f"{spec.id}: chat-template (system turn) models are the omni path "
@@ -72,6 +78,15 @@ class TransformersEmbedder:
         self.spec = spec
         self._torch = torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if memory_fraction and self.device.startswith("cuda"):
+            # ! Over-subscribed Windows GPUs page to system memory instead of failing: slow,
+            # silent, and worse the longer the run (the allocator's cache grows past the
+            # card). A cap makes torch free cached blocks and retry, and an out-of-memory
+            # at the cap is what `_encode_safely` already knows how to recover from.
+            index = torch.device(self.device).index
+            torch.cuda.set_per_process_memory_fraction(
+                memory_fraction, torch.cuda.current_device() if index is None else index
+            )
         dtype = getattr(torch, _DTYPES.get(spec.dtype, "float32"))
         if self.device == "cpu" and dtype != torch.float32:
             # ! Half precision on CPU is slow and in places unsupported. The vectors are

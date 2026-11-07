@@ -22,7 +22,7 @@ def registry() -> HardwareRegistry:
 def test_the_laptop_it_was_measured_on_matches_its_profile() -> None:
     spec, why = registry().resolve(None, LAPTOP)
     assert spec.id == "rtx-3070-ti-laptop-8gb" and "matches" in why
-    assert (spec.batch_items, spec.batch_bytes, spec.batch_square) == (32, 40_000, 150_000_000)
+    assert (spec.batch_items, spec.batch_bytes, spec.batch_square) == (32, 40_000, 80_000_000)
 
 
 def test_an_unknown_card_gets_a_heuristic_that_says_so() -> None:
@@ -38,6 +38,7 @@ def test_more_memory_means_bigger_batches_up_to_a_cap() -> None:
     assert small.batch_square < big.batch_square < huge.batch_square
     assert small.batch_items <= big.batch_items <= huge.batch_items <= 128
     assert (small.batch_items, small.batch_bytes) == (32, 40_000)  # the baseline, exactly
+    assert small.memory_fraction == 0.9
 
 
 def test_a_cpu_gets_small_batches() -> None:
@@ -87,7 +88,7 @@ def test_only_a_local_model_is_sized_to_an_accelerator() -> None:
 
 
 # -- the tuner ---------------------------------------------------------------------------
-BASE = HardwareSpec(id="t", batch_items=32, batch_bytes=40_000, batch_square=150_000_000)
+BASE = HardwareSpec(id="t", batch_items=32, batch_bytes=40_000, batch_square=80_000_000)
 
 
 class Oom(Exception):
@@ -203,3 +204,10 @@ def test_a_backend_is_never_compared_with_itself() -> None:
     same = HashEmbedder(_prefix_spec())
     with pytest.raises(ValueError, match="itself|same"):
         compare_backends(same, same, ["x"])
+
+
+def test_the_memory_cap_travels_from_the_profile_to_the_embedder_config() -> None:
+    base = EmbedSpec(kind="local", model="m", revision="r", dim=8, pooling="mean")
+    capped = with_hardware(base, registry().get("rtx-3070-ti-laptop-8gb"))
+    assert capped.memory_fraction == 0.85 and base.memory_fraction == 0.0
+    assert spec_of(capped).fingerprint() == spec_of(base).fingerprint(), "a cap is not a vector"

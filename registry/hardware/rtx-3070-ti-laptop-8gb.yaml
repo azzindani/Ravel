@@ -7,8 +7,12 @@ match:
 batch_items: 32
 batch_bytes: 40000
 # Attention memory grows with the square of the length: items x longest^2 (bytes) is what
-# keeps three 4,000-token chunks from sharing a batch that needs ~6 GB.
-batch_square: 150000000
+# keeps a few 4,000-token chunks from sharing a batch that needs ~6 GB.
+batch_square: 80000000
+# ! Without a cap the allocator's cache grew to 10.45 GB on this 8.59 GB card (peak allocated
+# 7.0 GB) and the run paged to system memory: ~3x slower than the benchmark, and slower the
+# longer it ran. 80M and a 0.85 cap keep the peak well inside the card.
+memory_fraction: 0.85
 measured:
   device: NVIDIA GeForce RTX 3070 Ti Laptop GPU
   vram_gb: 8.59
