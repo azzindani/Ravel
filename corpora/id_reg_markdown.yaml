@@ -50,6 +50,11 @@ embed:
   # (tables) and 400,000 let twelve of them share a batch, ~100k tokens, which filled the
   # card, spilled to shared memory and made one batch take over a minute. 40,000 is ~11k
   # tokens: a long chunk goes alone, a median one (~600 chars) rides with 31 others.
+  # ! batch_square caps items x longest^2: attention memory is quadratic in length, so three
+  # 4,000-token chunks need ~6 GB while thirty 300-token ones need 0.3 GB. Without it the
+  # head of every window (its longest chunks) overflowed the 8 GB card into system memory
+  # and ran at ~8 vectors/s for minutes.
   batch_items: 32
   batch_bytes: 40000
+  batch_square: 150000000
   shard_rows: 20000

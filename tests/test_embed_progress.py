@@ -129,3 +129,13 @@ def test_the_status_line_says_everything_in_one_row() -> None:
     line = format_progress(t.snapshot())
     assert "10.0%" in line and "100/1,000" in line and "10/s" in line
     assert "eta 1m30s" in line and "window 0/10" in line and "gpu 3.2 GB" in line
+
+
+def test_time_is_attributed_to_the_length_of_what_was_embedded() -> None:
+    clock = Clock()
+    t = tracker(clock)
+    t.advance(10, chars=30_000, seconds=3.0)  # 3000 chars each: the head of a window
+    t.advance(30, chars=9_000, seconds=1.0)  # 300 chars each: the body
+    b = t.snapshot().buckets
+    assert round(b["2-4k"]["per_second"], 1) == 3.3
+    assert round(b["<1k"]["per_second"], 1) == 30.0

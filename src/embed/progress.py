@@ -55,6 +55,10 @@ class Progress:
     updated: float = 0.0
     longest_batch_chars: int = 0
     device: dict[str, Any] = field(default_factory=dict)
+    buckets: dict[str, dict[str, float]] = field(default_factory=dict)
+    """Where the time went, by average chunk length in the batch: items, characters, seconds
+    and the resulting vectors/s. The head of a window (its longest chunks) and its body are
+    different workloads, and a single rate hides which one is slow."""
     note: str = ""
 
     @property
@@ -147,9 +151,27 @@ class Tracker:
         self.state.windows += 1
         self.emit()
 
-    def advance(self, vectors: int, chars: int = 0) -> None:
-        """One batch finished."""
+    def advance(self, vectors: int, chars: int = 0, seconds: float = 0.0) -> None:
+        """One batch finished, in `seconds` when the caller timed it."""
         s = self.state
+        if seconds > 0 and vectors:
+            edge = chars / vectors
+            label = (
+                "<1k"
+                if edge < 1000
+                else "1-2k"
+                if edge < 2000
+                else "2-4k"
+                if edge < 4000
+                else ">4k"
+            )
+            bucket = s.buckets.setdefault(
+                label, {"items": 0.0, "chars": 0.0, "seconds": 0.0, "per_second": 0.0}
+            )
+            bucket["items"] += vectors
+            bucket["chars"] += chars
+            bucket["seconds"] += seconds
+            bucket["per_second"] = round(bucket["items"] / bucket["seconds"], 2)
         s.phase = "embedding"
         s.done += vectors
         s.this_run += vectors

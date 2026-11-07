@@ -375,6 +375,11 @@ def embed_cmd(
             f"{'running' if alive else 'not running'} · sealed {snap.sealed:,} · "
             f"pid {data.get('pid')}[/dim]"
         )
+        for label, b in sorted((data.get("buckets") or {}).items()):
+            out.print(
+                f"[dim]  chunks {label:>5}: {b['items']:,.0f} done, {b['per_second']:.1f}/s, "
+                f"{b['seconds'] / 60:.1f} min[/dim]"
+            )
         if data.get("note"):
             out.print(f"[dim]{data['note']}[/dim]")
         return

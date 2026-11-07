@@ -50,11 +50,17 @@ def batched[T](
     text_of: Callable[[T], str] | None = None,
     max_bytes: int = MAX_BATCH_BYTES,
     max_items: int = MAX_BATCH_ITEMS,
+    max_square: int = 0,
 ) -> Iterator[list[T]]:
-    """Yield batches bounded by both payload size and item count.
+    """Yield batches bounded by payload size, item count and, optionally, `n * longest**2`.
 
     `text_of` selects the string that will actually be sent; omit it when the items are
     already strings.
+
+    `max_square` (0 = off) is for a model that pays quadratically in sequence length: a local
+    transformer's attention memory grows with `batch * length**2`, so bytes alone let three
+    4,000-token texts share a batch that needs 6 GB while thirty 300-token texts need 300 MB.
+    The bound is on the batch's longest text, in bytes squared, times its item count.
     """
     if max_bytes <= 0:
         raise ValueError(f"max_bytes must be positive, got {max_bytes}")
@@ -64,16 +70,22 @@ def batched[T](
     measure: Callable[[T], str] = text_of if text_of is not None else _identity
     batch: list[T] = []
     size = 0
+    longest = 0
     for item in items:
         n = len(measure(item).encode("utf-8"))
         # ! `if batch and …` — a single oversized document still goes out on its own
         # rather than being dropped or truncated here. TEI rejects it loudly, which is
         # the right failure: a chunk too large to embed is an upstream bug in chunking,
         # and silently shortening it would put a vector of the wrong text in the corpus.
-        if batch and (size + n > max_bytes or len(batch) >= max_items):
+        if batch and (
+            size + n > max_bytes
+            or len(batch) >= max_items
+            or (max_square and (len(batch) + 1) * max(longest, n) ** 2 > max_square)
+        ):
             yield batch
-            batch, size = [], 0
+            batch, size, longest = [], 0, 0
         batch.append(item)
         size += n
+        longest = max(longest, n)
     if batch:
         yield batch

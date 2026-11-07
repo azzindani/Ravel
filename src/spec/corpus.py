@@ -213,6 +213,9 @@ class EmbedSpec(Base):
 
     batch_items: int = Field(default=32, ge=1)
     batch_bytes: int = Field(default=1_200_000, ge=1)
+    batch_square: int = Field(default=0, ge=0)
+    """Cap on `items * longest_text**2` in bytes (0 = off). Attention memory on a local model
+    grows with the square of the length, which a byte budget does not see."""
     shard_rows: int = Field(default=20_000, ge=1)
     """Vectors per shard: the resume unit. A dead box costs at most this many."""
 

@@ -274,7 +274,7 @@ class Embedding:
     def embed_texts(
         self,
         texts: list[str],
-        on_batch: Callable[[int, int], None] | None = None,
+        on_batch: Callable[[int, int, float], None] | None = None,
     ) -> np.ndarray[Any, Any]:
         """Embed in batches bounded by payload size, longest first, in the input order.
 
@@ -290,17 +290,20 @@ class Embedding:
             text_of=lambda i: texts[i],
             max_bytes=self.config.batch_bytes,
             max_items=self.config.batch_items,
+            max_square=self.config.batch_square,
         ):
+            began = time.perf_counter()
             vectors = np.asarray(
                 self.embedder.embed_documents([texts[i] for i in batch]), dtype=np.float32
             )
+            took = time.perf_counter() - began
             if vectors.shape[0] != len(batch):
                 raise ValueError(
                     f"sent {len(batch)} texts, received {vectors.shape[0]} vectors"
                 )
             out[batch] = vectors
             if on_batch is not None:
-                on_batch(len(batch), sum(len(texts[i]) for i in batch))
+                on_batch(len(batch), sum(len(texts[i]) for i in batch), took)
         return out
 
     # -- the run ------------------------------------------------------------------

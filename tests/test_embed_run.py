@@ -451,3 +451,23 @@ def test_a_bundle_ships_the_vectors_the_stage_wrote_byte_for_byte(
             shipped[chunk_id] = np.asarray(vector, dtype=np.float32)
     assert set(shipped) == set(written)
     assert all(np.array_equal(shipped[c], written[c]) for c in written)
+
+
+def test_a_quadratic_budget_keeps_long_texts_in_small_batches() -> None:
+    from runtime.batching import batched
+
+    short = ["a" * 300] * 40
+    long_ = ["b" * 4000] * 6
+    order = long_ + short  # longest first, as the stage sends them
+    batches = list(batched(order, max_bytes=10**9, max_items=32, max_square=150_000_000))
+    # a 4000-byte text allows 150e6 / 16e6 = 9 items in its batch, so the six long ones take
+    # three short ones with them; after that 300-byte texts are bounded by the item cap
+    assert [len(b) for b in batches] == [9, 32, 5]
+    assert all(len(b) * len(b[0]) ** 2 <= 150_000_000 for b in batches)
+
+
+def test_an_oversized_text_still_goes_out_alone_under_the_quadratic_budget() -> None:
+    from runtime.batching import batched
+
+    batches = list(batched(["x" * 20000, "y" * 5], max_square=150_000_000))
+    assert batches[0] == ["x" * 20000] and batches[1] == ["y" * 5]
