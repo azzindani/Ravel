@@ -97,6 +97,19 @@ class TransformersEmbedder:
                 "truncated (MRL) vector is a different spec."
             )
 
+    def device_status(self) -> dict[str, Any]:
+        """What the card is doing, for the progress file. Cheap, and never raises."""
+        status: dict[str, Any] = {"device": self.device}
+        if self.device.startswith("cuda"):
+            torch = self._torch
+            status["memory_gb"] = round(torch.cuda.memory_allocated() / 1e9, 2)
+            status["reserved_gb"] = round(torch.cuda.memory_reserved() / 1e9, 2)
+            status["peak_gb"] = round(torch.cuda.max_memory_allocated() / 1e9, 2)
+            status["total_gb"] = round(
+                torch.cuda.get_device_properties(self.device).total_memory / 1e9, 2
+            )
+        return status
+
     # -- pooling ---------------------------------------------------------------
     def _pool(self, hidden: Any, mask: Any) -> Any:
         torch = self._torch

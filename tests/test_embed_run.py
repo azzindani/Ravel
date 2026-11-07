@@ -333,3 +333,38 @@ def test_the_registry_profile_the_corpus_pins_is_the_one_the_template_comes_from
 ) -> None:
     run = stage(corpus, workspace)
     assert run.profile is default_registry().get("id_regulation")
+
+
+def test_progress_is_reported_from_the_first_batch_to_the_end(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    """A run you cannot watch is a run you cannot trust: the file says how far it is."""
+    from embed import read_progress
+
+    seen: list[Any] = []
+    run = stage(corpus, workspace, batch_items=2, shard_rows=4)
+    report = run.run(on_status=seen.append, status_every=0.0)
+
+    data = read_progress(run.progress_path)
+    assert data is not None
+    assert data["phase"] == "done"
+    assert data["total"] == data["done"] == data["sealed"] == report.vectors
+    assert data["percent"] == 100.0
+    assert data["windows"] == data["windows_total"] == report.windows
+    assert len(seen) > report.windows, "progress must move between sealed windows too"
+
+
+def test_a_resumed_run_counts_the_sealed_windows_as_done(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    from embed import read_progress
+
+    first = stage(corpus, workspace, shard_rows=4)
+    first.run()
+    again = stage(corpus, workspace, shard_rows=4)
+    again.run()
+    data = read_progress(again.progress_path)
+    assert data is not None
+    assert (
+        data["percent"] == 100.0 and data["this_run"] == 0 and data["sealed"] == data["total"]
+    )

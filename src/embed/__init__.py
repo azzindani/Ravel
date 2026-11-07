@@ -18,6 +18,7 @@ from embed.preflight import (
     preflight,
     round_trip,
 )
+from embed.progress import Progress, Tracker, format_progress, read_progress
 from embed.run import Embedding, EmbedReport, check_vectors
 from embed.spec import (
     Embedder,
@@ -45,13 +46,17 @@ __all__ = [
     "Pooling",
     "PreflightError",
     "PreflightReport",
+    "Progress",
     "RawHashEmbedder",
     "ReferenceHashEmbedder",
+    "Tracker",
     "check_independent_backends",
     "check_instruction_is_applied",
     "check_spec_pair",
     "cosine",
+    "format_progress",
     "preflight",
+    "read_progress",
     "render_document",
     "render_query",
     "round_trip",

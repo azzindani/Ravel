@@ -39,6 +39,7 @@ import numpy as np
 from chunk.derive import embed_text
 from chunk.models import Chunk
 from chunk.store import iter_chunks
+from embed.progress import Progress, Tracker
 from embed.spec import Embedder
 from runtime.batching import batched
 from runtime.ledger import Ledger, Status
@@ -208,12 +209,33 @@ class Embedding:
         return f"{STAGE}:{self.variant}"
 
     # -- one window -------------------------------------------------------------
-    def embed_texts(self, texts: list[str]) -> np.ndarray[Any, Any]:
+    @property
+    def progress_path(self) -> Path:
+        return self.workspace / "state" / self.corpus.id / f"embed-progress-{self.variant}.json"
+
+    def count_rows(self) -> tuple[int, int]:
+        """(chunks, windows) the whole stage will cover, from the parquet footers alone."""
+        import pyarrow.parquet as pq
+
+        rows = self.config.shard_rows
+        total = windows = 0
+        for shard in sorted(self.chunk_dir.glob("part-*.parquet")):
+            n = int(pq.ParquetFile(str(shard)).metadata.num_rows)
+            total += n
+            windows += -(-n // rows)
+        return total, windows
+
+    def embed_texts(
+        self,
+        texts: list[str],
+        on_batch: Callable[[int, int], None] | None = None,
+    ) -> np.ndarray[Any, Any]:
         """Embed in batches bounded by payload size, longest first, in the input order.
 
         Longest first so an out-of-memory fails in the first minute and not the fourth hour;
         results go back to their own positions, so the order the chunks were read in is the
-        order the vectors come out in.
+        order the vectors come out in. `on_batch(items, characters)` is called after each
+        batch, which is what makes progress visible between sealed windows.
         """
         order = sorted(range(len(texts)), key=lambda i: len(texts[i]), reverse=True)
         out = np.empty((len(texts), self.embedder.spec.dim), dtype=np.float32)
@@ -231,6 +253,8 @@ class Embedding:
                     f"sent {len(batch)} texts, received {vectors.shape[0]} vectors"
                 )
             out[batch] = vectors
+            if on_batch is not None:
+                on_batch(len(batch), sum(len(texts[i]) for i in batch))
         return out
 
     # -- the run ------------------------------------------------------------------
@@ -240,12 +264,45 @@ class Embedding:
         limit: int = 0,
         force: bool = False,
         on_progress: Callable[[EmbedReport], None] | None = None,
+        on_status: Callable[[Progress], None] | None = None,
+        status_every: float = 5.0,
     ) -> EmbedReport:
         report = EmbedReport(corpus=self.corpus.id, variant=self.variant)
         started = time.time()
+        self.vector_dir.mkdir(parents=True, exist_ok=True)
+
+        total, windows_total = self.count_rows()
+        tracker = Tracker(
+            corpus=self.corpus.id,
+            variant=self.variant,
+            total=total,
+            windows_total=windows_total,
+            path=self.progress_path,
+            every=status_every,
+            device=getattr(self.embedder, "device_status", None),
+            on_update=on_status,
+        )
+        tracker.emit(force=True)
+        try:
+            return self._run(
+                report, started, tracker, limit=limit, force=force, on_progress=on_progress
+            )
+        except BaseException as exc:
+            tracker.finish("failed", f"{type(exc).__name__}: {exc}"[:300])
+            raise
+
+    def _run(
+        self,
+        report: EmbedReport,
+        started: float,
+        tracker: Tracker,
+        *,
+        limit: int,
+        force: bool,
+        on_progress: Callable[[EmbedReport], None] | None,
+    ) -> EmbedReport:
         spec = self.embedder.spec
         rows = self.config.shard_rows
-        self.vector_dir.mkdir(parents=True, exist_ok=True)
 
         with Ledger(self.ledger_path) as ledger:
             if force:
@@ -271,9 +328,10 @@ class Embedding:
                     report.windows += 1
                     if key in done:
                         report.skipped_done += 1
+                        tracker.skip(len(chunks))
                         return True
                     texts = [embed_text(c, self.profile) for c in chunks]
-                    matrix = self.embed_texts(texts)
+                    matrix = self.embed_texts(texts, on_batch=tracker.advance)
                     check_vectors(
                         matrix, dim=spec.dim, rows=len(chunks), normalized=spec.normalize
                     )
@@ -291,6 +349,7 @@ class Embedding:
                     )
                     # ! After the shard is durable, never before.
                     ledger.record_many([(key, self._stage(), Status.DONE, None, str(path))])
+                    tracker.seal(len(chunks))
                     report.vectors += len(chunks)
                     report.shards += 1
                     report.bytes_written += path.stat().st_size
@@ -305,6 +364,7 @@ class Embedding:
                     if len(window) >= rows:
                         if not flush(window, start):
                             report.seconds = time.time() - started
+                            tracker.finish("done", f"stopped at --limit {limit:,}")
                             return report
                         start += len(window)
                         window = []
@@ -313,6 +373,7 @@ class Embedding:
 
         self._write_manifest(report)
         report.seconds = time.time() - started
+        tracker.finish("done")
         return report
 
     def _write_manifest(self, report: EmbedReport) -> None:

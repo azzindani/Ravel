@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -329,16 +330,54 @@ def embed_cmd(
     ] = "default",
     limit: Annotated[int, typer.Option("--limit", help="Stop after N vectors.")] = 0,
     force: Annotated[bool, typer.Option("--force", help="Ignore the ledger.")] = False,
+    status: Annotated[
+        bool,
+        typer.Option(
+            "--status",
+            help="Print the running (or last) run's progress and exit. Loads no model.",
+        ),
+    ] = False,
+    every: Annotated[
+        float, typer.Option("--every", help="Seconds between progress lines.")
+    ] = 10.0,
 ) -> None:
     """Phase B: chunks into vectors, by the embedder the corpus names.
 
     Reads the chunk shards `chunk` produced and writes fp16 vector shards beside them.
     Resumable to the shard: a run that dies costs at most `embed.shard_rows` vectors.
+    Prints a progress line every `--every` seconds and keeps `embed-progress-<variant>.json`
+    current; `--status` reads that file from another terminal.
     Needs the `embed` extra (`uv sync --extra embed`) for a real model.
     """
-    from embed import Embedding, EmbedReport, build_embedder
+    from embed import (
+        Embedding,
+        EmbedReport,
+        Progress,
+        build_embedder,
+        format_progress,
+        read_progress,
+    )
 
     spec = CorpusSpec.find(corpus_id)
+    if status:
+        path = Path(workspace) / "state" / spec.id / f"embed-progress-{variant}.json"
+        data = read_progress(path)
+        if data is None:
+            err.print(f"[yellow]no embedding run has reported at {path}[/yellow]")
+            raise typer.Exit(1)
+        known = {k: v for k, v in data.items() if k in Progress.__dataclass_fields__}
+        snap = Progress(**known)
+        age = time.time() - float(data.get("updated", 0))
+        alive = data.get("phase") == "embedding" and age < 60
+        out.print(format_progress(snap))
+        out.print(
+            f"[dim]{data.get('phase')} · updated {age:.0f}s ago · "
+            f"{'running' if alive else 'not running'} · sealed {snap.sealed:,} · "
+            f"pid {data.get('pid')}[/dim]"
+        )
+        if data.get("note"):
+            out.print(f"[dim]{data['note']}[/dim]")
+        return
     if spec.embed is None:
         err.print(f"[red]{spec.id} has no `embed:` section[/red]")
         raise typer.Exit(1)
@@ -346,9 +385,14 @@ def embed_cmd(
     run = Embedding(spec, workspace=workspace, embedder=embedder, variant=variant)
 
     def progress(r: EmbedReport) -> None:
-        err.print(f"[dim]{r.vectors:,} vectors in {r.shards:,} shards[/dim]")
+        err.print(f"[dim]sealed: {r.vectors:,} vectors in {r.shards:,} shards[/dim]")
 
-    report = run.run(limit=limit, force=force, on_progress=progress)
+    def line(p: Progress) -> None:
+        err.print(format_progress(p), highlight=False)
+
+    report = run.run(
+        limit=limit, force=force, on_progress=progress, on_status=line, status_every=every
+    )
 
     summary = RichTable(show_header=False, box=None)
     summary.add_row("corpus", f"{spec.id}  [dim]{report.variant}[/dim]")
