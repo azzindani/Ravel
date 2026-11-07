@@ -588,6 +588,40 @@ def test_a_local_model_ignores_concurrency() -> None:
     assert getattr(TransformersEmbedder, "thread_safe", False) is False
 
 
+def test_an_out_of_memory_retry_runs_after_the_failed_batch_is_released() -> None:
+    """The retry must not run inside the `except` block.
+
+    Inside it the exception's traceback pins the failed batch's tensors, so every nested
+    retry starts with the memory that just ran out: under a memory cap a run died at 6.75 GB
+    allocated. The invariant is that no exception is being handled while the halves run.
+    """
+    import sys
+    import types
+
+    from embed.local import TransformersEmbedder
+
+    class OutOfMemory(Exception):
+        pass
+
+    seen: list[tuple[int, bool]] = []
+
+    def encode(texts: list[str]) -> np.ndarray[Any, Any]:
+        handling = sys.exc_info()[1] is not None
+        seen.append((len(texts), handling))
+        if len(texts) > 2:
+            raise OutOfMemory
+        return np.ones((len(texts), 2), dtype=np.float32)
+
+    cuda = types.SimpleNamespace(OutOfMemoryError=OutOfMemory, empty_cache=lambda: None)
+    embedder = object.__new__(TransformersEmbedder)
+    embedder._torch = types.SimpleNamespace(cuda=cuda)  # type: ignore[assignment]
+    embedder._encode = encode  # type: ignore[method-assign]
+    out = embedder._encode_safely(["x"] * 8)
+    assert out.shape == (8, 2)
+    assert [n for n, _ in seen] == [8, 4, 2, 2, 4, 2, 2]
+    assert not any(handling for _, handling in seen), "a retry ran inside the except block"
+
+
 # ===========================================================================
 # The workspace on a remote, and a corpus shared between workers.
 def _remote(name: str):  # type: ignore[no-untyped-def]

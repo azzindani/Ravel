@@ -189,17 +189,21 @@ class TransformersEmbedder:
         except torch.cuda.OutOfMemoryError:
             if len(rendered) == 1:
                 raise
-            torch.cuda.empty_cache()
-            half = len(rendered) // 2
-            log.warning(
-                "out of memory at %d texts, retrying as %d + %d",
-                len(rendered),
-                half,
-                len(rendered) - half,
-            )
-            return np.concatenate(
-                [self._encode_safely(rendered[:half]), self._encode_safely(rendered[half:])]
-            )
+        # ! The retry is OUTSIDE the `except` block on purpose. Inside it, the exception's
+        # traceback keeps the failed batch's tensors alive, so every nested retry starts
+        # with the memory it just ran out of: under a memory cap that ended a run at
+        # 6.75 GB allocated, with the batch that failed still holding most of it.
+        torch.cuda.empty_cache()
+        half = len(rendered) // 2
+        log.warning(
+            "out of memory at %d texts, retrying as %d + %d",
+            len(rendered),
+            half,
+            len(rendered) - half,
+        )
+        return np.concatenate(
+            [self._encode_safely(rendered[:half]), self._encode_safely(rendered[half:])]
+        )
 
     # -- the Embedder protocol ---------------------------------------------------
     def embed_documents(self, batch: list[str]) -> np.ndarray[Any, Any]:
