@@ -368,3 +368,86 @@ def test_a_resumed_run_counts_the_sealed_windows_as_done(
     assert (
         data["percent"] == 100.0 and data["this_run"] == 0 and data["sealed"] == data["total"]
     )
+
+
+# ===========================================================================
+# The bundle assembled from what the stages wrote.
+def _sidecar_rows(doc_ids: list[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "doc_id": d,
+            "verdict": "clean",
+            "indexable": True,
+            "chunks": 1,
+            "damaged_chunks": 0,
+            "words": 100,
+            "unknown_share": 0.0,
+            "damaged_share": 0.0,
+            "replacement_per_1000": 0.0,
+            "reasons": [],
+        }
+        for d in doc_ids
+    ]
+
+
+def test_a_finished_run_becomes_a_sealed_bundle_that_passes_preflight(
+    corpus: CorpusSpec, workspace: Path, tmp_path: Path
+) -> None:
+    from bundle.build import build_bundle
+    from bundle.writer import read_bundle, write_doc_quality
+    from load import preflight
+
+    run = stage(corpus, workspace)
+    run.run()
+    chunks = list(iter_chunk_shards(workspace, "fixture"))
+    docs = sorted({c.doc_id for c in chunks})
+    # a duplicated document, and one the corpus does not hold: both must be dropped
+    quality = tmp_path / "q.parquet"
+    write_doc_quality(quality, _sidecar_rows(docs + [docs[0], "sha256:not-in-corpus"]))
+
+    text = "Pasal 1 wajib pajak"
+    canary = np.asarray(run.embedder.embed_queries([text])[0], dtype=np.float32)
+    report = build_bundle(
+        corpus,
+        workspace=workspace,
+        root=tmp_path / "bundle",
+        quality=quality,
+        reference=(canary, text),
+    )
+    assert report.chunks == report.vectors == len(chunks)
+    assert report.sidecars["doc_quality"] == len(docs)
+    assert report.dropped["doc_quality"] == 2
+
+    document = read_bundle(report.root)
+    assert document["chunk_count"] == len(chunks)
+    assert document["dense"]["dim"] == DIM
+    result = preflight(report.root, target_dim=DIM, free_bytes=10**12)
+    assert not result.failed, [c.detail for c in result.failed]
+
+
+def test_a_half_embedded_corpus_is_not_bundled(
+    corpus: CorpusSpec, workspace: Path, tmp_path: Path
+) -> None:
+    from bundle.build import BundleBuildError, build_bundle
+
+    stage(corpus, workspace).run(limit=5)  # one window of several
+    with pytest.raises(BundleBuildError, match="have no vector"):
+        build_bundle(corpus, workspace=workspace, root=tmp_path / "bundle")
+    assert not (tmp_path / "bundle" / "manifest.json").exists(), "nothing may be sealed"
+
+
+def test_a_bundle_ships_the_vectors_the_stage_wrote_byte_for_byte(
+    corpus: CorpusSpec, workspace: Path, tmp_path: Path
+) -> None:
+    from bundle.build import build_bundle
+
+    run = stage(corpus, workspace)
+    run.run()
+    report = build_bundle(corpus, workspace=workspace, root=tmp_path / "b")
+    written = {c: v for c, v in vectors_of(run).items()}
+    shipped: dict[str, np.ndarray[Any, Any]] = {}
+    for shard in sorted((report.root / "vectors").glob("part-*.parquet")):
+        for chunk_id, vector in iter_vectors(shard):
+            shipped[chunk_id] = np.asarray(vector, dtype=np.float32)
+    assert set(shipped) == set(written)
+    assert all(np.array_equal(shipped[c], written[c]) for c in written)

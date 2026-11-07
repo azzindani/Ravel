@@ -13,7 +13,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -753,3 +753,173 @@ def canon_show(
 
 if __name__ == "__main__":
     app()
+
+
+@app.command(name="load")
+def load_cmd(
+    bundle: BundleArg,
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="DATABASE_URL",
+            help="Target Postgres. Falls back to $DATABASE_URL.",
+        ),
+    ] = "",
+    replace: Annotated[
+        bool,
+        typer.Option("--replace", help="Replace this corpus if it is already loaded."),
+    ] = False,
+    indexes: Annotated[
+        bool, typer.Option("--indexes/--no-indexes", help="Build the indexes after the load.")
+    ] = True,
+    allow_skipped: Annotated[
+        bool,
+        typer.Option("--allow-skipped", help="Load although a preflight check could not run."),
+    ] = False,
+) -> None:
+    """Preflight a sealed bundle, then load it into Postgres, all or nothing.
+
+    One transaction from schema to the count check; the indexes follow it and can be re-run.
+    A corpus already in the database is refused unless `--replace`, which removes only that
+    corpus. Needs the `load` extra (`uv sync --extra load`).
+    """
+    import shutil
+
+    from load import LoadError, execute, preflight
+
+    if not dsn:
+        err.print("[red]no database: pass --dsn or set DATABASE_URL[/red]")
+        raise typer.Exit(2)
+
+    report = preflight(bundle, free_bytes=shutil.disk_usage(bundle).free)
+    for check in report.checks:
+        style = {"ok": "green", "fail": "red", "skipped": "yellow"}[check.status.value]
+        out.print(f"[{style}]{check.status.value:<8}[/{style}] {check.name}: {check.detail}")
+    if report.failed:
+        err.print("[red]preflight failed — this bundle must not be loaded[/red]")
+        raise typer.Exit(1)
+    if report.skipped and not allow_skipped:
+        err.print(
+            f"[yellow]{len(report.skipped)} checks could not run "
+            f"({', '.join(c.name for c in report.skipped)}); accept the gap with "
+            f"--allow-skipped[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    started: dict[str, float] = {}
+
+    def step(name: str, phase: str) -> None:
+        if phase == "start":
+            started[name] = time.time()
+            err.print(f"[dim]{name} ...[/dim]")
+        else:
+            err.print(f"[dim]{name} done in {time.time() - started[name]:.1f}s[/dim]")
+
+    def rows(name: str, n: int) -> None:
+        if n % 200_000 < 4096:
+            err.print(f"[dim]  {name}: {n:,} rows[/dim]", highlight=False)
+
+    try:
+        result = execute(
+            bundle, dsn, replace=replace, include_indexes=indexes, on_step=step, on_rows=rows
+        )
+    except LoadError as exc:
+        err.print(f"[red]{exc}[/red]")
+        err.print(
+            "[red]nothing was committed[/red]"
+            if exc.step != "indexes"
+            else "[yellow]data is committed; only the index build failed — re-run it[/yellow]"
+        )
+        raise typer.Exit(1) from exc
+
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("corpus", result.corpus_id)
+    summary.add_row("replaced", "yes" if result.replaced else "no")
+    for name, n in result.rows.items():
+        summary.add_row(name, f"{n:,}")
+    slow = result.slowest()
+    if slow:
+        summary.add_row("slowest step", f"{slow[0]}  {slow[1]:.1f}s")
+    summary.add_row("elapsed", f"{result.seconds:.1f}s")
+    out.print(summary)
+
+
+@bundle_app.command("build")
+def bundle_build(
+    corpus_id: CorpusArg,
+    bundle_dir: Annotated[Path, typer.Option("--out", help="Bundle directory to create.")],
+    workspace: WORKSPACE = Path("."),
+    variant: Annotated[str, typer.Option("--variant")] = "default",
+    relations: Annotated[
+        Path | None, typer.Option("--relations", exists=True, dir_okay=False)
+    ] = None,
+    status: Annotated[
+        Path | None, typer.Option("--status", exists=True, dir_okay=False)
+    ] = None,
+    quality: Annotated[
+        Path | None, typer.Option("--quality", exists=True, dir_okay=False)
+    ] = None,
+    reference: Annotated[
+        bool,
+        typer.Option(
+            "--reference/--no-reference",
+            help="Embed the canary text with the corpus embedder (loads the model).",
+        ),
+    ] = True,
+    reference_device: Annotated[
+        str, typer.Option("--reference-device", help="Override the embedder device, e.g. cpu.")
+    ] = "",
+) -> None:
+    """Assemble chunks, vectors and sidecars into one sealed bundle.
+
+    Refuses unless every chunk has exactly one vector. Writes nothing the earlier stages did
+    not already produce, apart from the manifest and the canary.
+    """
+    from bundle.build import BundleBuildError, build_bundle
+
+    spec = CorpusSpec.find(corpus_id)
+    ref: tuple[Any, str] | None = None
+    if reference:
+        from embed import build_embedder
+
+        assert spec.embed is not None
+        cfg = spec.embed.model_copy(
+            update={"device": reference_device} if reference_device else {}
+        )
+        text = "Setiap orang wajib menaati ketentuan peraturan perundang-undangan."
+        ref = (build_embedder(cfg).embed_queries([text])[0], text)
+    try:
+        report = build_bundle(
+            spec,
+            workspace=workspace,
+            root=bundle_dir,
+            variant=variant,
+            relations=relations,
+            status=status,
+            quality=quality,
+            reference=ref,
+        )
+    except BundleBuildError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("bundle", str(report.root))
+    summary.add_row("chunks", f"{report.chunks:,}")
+    summary.add_row("vectors", f"{report.vectors:,}")
+    summary.add_row("documents", f"{report.documents:,}")
+    summary.add_row("failed documents", f"{report.failed:,}")
+    for name, n in report.sidecars.items():
+        dropped = report.dropped.get(name, 0)
+        summary.add_row(
+            name, f"{n:,}  [dim]({dropped:,} for documents not in the corpus dropped)[/dim]"
+        )
+    summary.add_row(
+        "canary",
+        "written"
+        if report.reference
+        else "[yellow]not written: preflight will refuse to load this bundle[/yellow]",
+    )
+    summary.add_row("manifest", report.manifest_sha256[:16])
+    out.print(summary)

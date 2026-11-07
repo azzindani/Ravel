@@ -33,6 +33,23 @@ from extract.text import TextExtractor  # noqa: E402
 from spec import default_registry  # noqa: E402
 from spec.corpus import ChunkSpec  # noqa: E402
 
+
+def _chunk_config(profile: Any) -> Any:
+    """The corpus's own chunk settings when `RAVEL_CORPUS` names one, else the defaults.
+
+    ! A sidecar names chunks by id, and the id hashes the chunker config. A tool that chunks
+    with different settings than `ravel chunk` writes evidence ids no chunk in the corpus has.
+    """
+    import os
+
+    from spec.corpus import CorpusSpec
+
+    corpus = os.environ.get("RAVEL_CORPUS")
+    if corpus:
+        return CorpusSpec.find(corpus).chunk.to_config(profile)
+    return ChunkSpec().to_config(profile)
+
+
 _STATE: dict[str, Any] = {}
 
 
@@ -43,7 +60,7 @@ def _one(args: tuple[str, str, str | None]) -> tuple[str, DocQuality | str, str]
         _STATE.update(
             ref=ref,
             profile=profile,
-            config=ChunkSpec().to_config(profile),
+            config=_chunk_config(profile),
             entry=get(profile.spec.pipeline.chunk.chunker or "unit"),
             gate=QualityGate(profile, registry),
         )

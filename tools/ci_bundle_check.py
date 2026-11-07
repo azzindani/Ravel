@@ -48,6 +48,7 @@ from bundle import (  # noqa: E402
     BundleManifest,
     BundleWriter,
     SparseSpec,
+    iter_vectors,
     read_bundle,
     write_doc_quality,
     write_doc_status,
@@ -58,6 +59,7 @@ from chunk.models import Chunk  # noqa: E402
 from chunk.store import write_chunks  # noqa: E402
 from embed import spec_for  # noqa: E402
 from load import Step, load_plan, preflight  # noqa: E402
+from load.execute import LoadError, execute  # noqa: E402
 from spec import Registry
 
 DIM = 16
@@ -447,6 +449,83 @@ def main() -> int:
             "the bundle passes load preflight",
             not report.failed,
             f"{len(report.skipped)} checks skipped (no live embedder in CI)",
+        )
+
+        # 9. the executor, end to end: parquet shards streamed through COPY into a clean
+        #    database, merged, verified, indexed. Everything above ran the plan's pieces by
+        #    hand; this is the one path that moves real chunk rows and real vectors.
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
+            conn.execute(
+                "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
+                "doc_relations, doc_status, doc_quality"
+            )
+            conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
+
+        loaded = execute(root, dsn)
+        check(
+            "the executor loads a bundle end to end",
+            loaded.committed and loaded.rows.get("copy chunks") == CHUNKS,
+            f"{len(loaded.steps)} steps, {loaded.rows}",
+        )
+        with psycopg.connect(dsn) as conn:
+            counts = one(
+                conn.execute(
+                    "SELECT count(*), count(dense), "
+                    "count(*) FILTER (WHERE NOT indexable) FROM chunks WHERE corpus_id = %s",
+                    (CORPUS,),
+                ).fetchone(),
+                "chunks counted",
+            )
+            check(
+                "every chunk arrived with its vector",
+                counts[0] == CHUNKS and counts[1] == CHUNKS,
+                f"{counts[0]} chunks, {counts[1]} with a dense vector",
+            )
+            stored = one(
+                conn.execute(
+                    "SELECT dense::real[] FROM chunks WHERE id = 'c0'",
+                ).fetchone(),
+                "a vector read back",
+            )
+            check(
+                "a stored vector reads back as the one that was written",
+                np.allclose(
+                    np.asarray(stored[0], dtype=np.float32),
+                    np.asarray(next(iter_vectors(root / "vectors/part-00000.parquet"))[1]),
+                    atol=2e-3,
+                ),
+            )
+            staged = one(
+                conn.execute(
+                    "SELECT count(*) FROM pg_tables WHERE tablename LIKE '%\\_stage'"
+                ).fetchone(),
+                "staging tables counted",
+            )
+            check("staging tables are dropped", staged[0] == 0)
+
+        refused = ""
+        try:
+            execute(root, dsn)
+        except LoadError as exc:
+            refused = str(exc)
+        check(
+            "loading the same corpus twice is refused, not overwritten",
+            "already loaded" in refused,
+            refused[:80],
+        )
+        again = execute(root, dsn, replace=True)
+        with psycopg.connect(dsn) as conn:
+            after = one(
+                conn.execute(
+                    "SELECT count(*) FROM chunks WHERE corpus_id = %s", (CORPUS,)
+                ).fetchone(),
+                "chunks recounted",
+            )
+        check(
+            "replace swaps the corpus without duplicating it",
+            again.replaced and after[0] == CHUNKS,
+            f"{after[0]} chunks",
         )
 
     print("\nall bundle SQL executed against a real server")

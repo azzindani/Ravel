@@ -47,7 +47,14 @@ from runtime.shards import generation_of, newest_generation
 from spec import Profile, Registry, default_registry
 from spec.corpus import CorpusSpec, EmbedSpec
 
-__all__ = ["EmbedReport", "Embedding", "check_vectors", "window_key"]
+__all__ = [
+    "EmbedReport",
+    "Embedding",
+    "check_vectors",
+    "locate_vectors",
+    "template_hash_of",
+    "window_key",
+]
 
 STAGE = "embed"
 
@@ -109,6 +116,47 @@ def check_vectors(
                 f"{int(off.sum())} of {rows} vectors are not unit length "
                 f"(norm {float(norms[off][0]):.4f}), but the manifest says normalised"
             )
+
+
+def template_hash_of(profile: Profile | None) -> str:
+    """Hash of the `embed_text` template alone (what `Embedding.template_hash` is)."""
+    derived = profile.spec.pipeline.derive.embed_text if profile else None
+    template = derived.model_dump(mode="json") if derived else None
+    return hashlib.sha256(json.dumps(template, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def locate_vectors(
+    corpus: CorpusSpec,
+    *,
+    workspace: Path | str,
+    variant: str = "default",
+    chunk_generation: str | None = None,
+    registry: Registry | None = None,
+) -> tuple[Path, Path]:
+    """`(chunk directory, vector directory)` for a corpus, without loading a model.
+
+    The bundle builder needs to find what `Embedding` wrote, and the directory name is a hash
+    of the embedder, the template and the chunk generation; computing it here from the config
+    keeps one definition of that name (`Embedding.vector_dir` is the other caller).
+    """
+    from embed.factory import spec_of
+
+    if corpus.embed is None:
+        raise ValueError(f"{corpus.id}: no `embed:` section")
+    base = Path(workspace) / "chunks" / corpus.id / variant
+    found = base / chunk_generation if chunk_generation else newest_generation(base)
+    if found is None or not found.is_dir():
+        raise FileNotFoundError(f"no chunks at {base} · run `ravel chunk` first")
+    ref = corpus.extract.profile
+    reg = registry or default_registry()
+    try:
+        profile = reg.get(ref) if ref else None
+    except KeyError:
+        profile = None
+    generation = generation_of(
+        found.name, spec_of(corpus.embed).fingerprint(), template_hash_of(profile)
+    )
+    return found, Path(workspace) / "vectors" / corpus.id / variant / generation
 
 
 @dataclass
@@ -185,9 +233,7 @@ class Embedding:
         ! `search_normalize` and the rest of `derive` are not here: they feed the keyword
         index, and changing them must not re-embed anything.
         """
-        derived = self.profile.spec.pipeline.derive.embed_text if self.profile else None
-        template = derived.model_dump(mode="json") if derived else None
-        return hashlib.sha256(json.dumps(template, sort_keys=True).encode()).hexdigest()[:16]
+        return template_hash_of(self.profile)
 
     @property
     def output_generation(self) -> str:

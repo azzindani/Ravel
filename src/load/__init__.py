@@ -9,6 +9,7 @@ alternative is discovering a problem at 90% of a `COPY` that has been running fo
 imported here.
 """
 
+from load.execute import ExecReport, LoadError, execute, halfvec_text
 from load.plan import Step, copy_from, load_plan, quote_ident, quote_literal
 from load.preflight import (
     Check,
@@ -26,6 +27,8 @@ from load.preflight import (
 
 __all__ = [
     "Check",
+    "ExecReport",
+    "LoadError",
     "LoadReport",
     "Status",
     "Step",
@@ -37,6 +40,8 @@ __all__ = [
     "check_disk",
     "check_provenance",
     "copy_from",
+    "execute",
+    "halfvec_text",
     "load_plan",
     "preflight",
     "quote_ident",
