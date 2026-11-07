@@ -16,8 +16,9 @@ from embed.spec import (
     Pooling,
 )
 from spec.corpus import EmbedSpec
+from spec.hardware import HardwareSpec
 
-__all__ = ["build_embedder", "spec_of"]
+__all__ = ["build_embedder", "spec_of", "with_hardware"]
 
 
 def spec_of(cfg: EmbedSpec) -> EmbedderSpec:
@@ -58,3 +59,22 @@ def build_embedder(cfg: EmbedSpec) -> Embedder:
                 spec, base_url=cfg.base_url, api_key_env=cfg.api_key_env
             )
     raise ValueError(f"unknown embedder kind {cfg.kind!r}")
+
+
+def with_hardware(cfg: EmbedSpec, hardware: HardwareSpec) -> EmbedSpec:
+    """The configuration with a machine's batching and device applied.
+
+    Only a local model is sized to an accelerator; an API endpoint batches by its own limits
+    and the hash embedder has nothing to size. None of the fields set here reaches `spec_of`,
+    which is what keeps a vector made on one machine valid on another.
+    """
+    if cfg.kind != "local":
+        return cfg
+    update: dict[str, object] = {
+        "batch_items": hardware.batch_items,
+        "batch_bytes": hardware.batch_bytes,
+        "batch_square": hardware.batch_square,
+    }
+    if hardware.device:
+        update["device"] = hardware.device
+    return cfg.model_copy(update=update)

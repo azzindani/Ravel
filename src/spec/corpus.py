@@ -205,6 +205,11 @@ class EmbedSpec(Base):
     """Compute precision. Storage precision is `vector_dtype`."""
     vector_dtype: Literal["float16", "float32"] = "float16"
     device: str | None = None
+    hardware: str = ""
+    """A hardware profile id, `auto` or empty (= `auto`): batching and device for the machine
+    the build runs on, from `registry/hardware/`. Nothing here is part of a vector's identity,
+    so changing it never re-embeds anything. The `batch_*` and `device` fields below are the
+    fallback for a backend with no accelerator to size for (`api`, `hash`)."""
 
     base_url: str | None = None
     api_key_env: str = "EMBED_API_KEY"

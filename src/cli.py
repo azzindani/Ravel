@@ -340,6 +340,13 @@ def embed_cmd(
     every: Annotated[
         float, typer.Option("--every", help="Seconds between progress lines.")
     ] = 10.0,
+    hardware: Annotated[
+        str,
+        typer.Option(
+            "--hardware",
+            help="Hardware profile id, `auto` (detect), or `none` (use the corpus's batch_*).",
+        ),
+    ] = "",
 ) -> None:
     """Phase B: chunks into vectors, by the embedder the corpus names.
 
@@ -386,8 +393,21 @@ def embed_cmd(
     if spec.embed is None:
         err.print(f"[red]{spec.id} has no `embed:` section[/red]")
         raise typer.Exit(1)
-    embedder = build_embedder(spec.embed)
-    run = Embedding(spec, workspace=workspace, embedder=embedder, variant=variant)
+    cfg = spec.embed
+    choice = hardware or cfg.hardware
+    if choice != "none":
+        from embed.factory import with_hardware
+        from spec import HardwareRegistry
+
+        profile, why = HardwareRegistry.load().resolve(choice or None)
+        cfg = with_hardware(cfg, profile)
+        if cfg.kind == "local":
+            err.print(
+                f"[dim]hardware: {why} · items {profile.batch_items}, "
+                f"bytes {profile.batch_bytes:,}, square {profile.batch_square:,}[/dim]"
+            )
+    embedder = build_embedder(cfg)
+    run = Embedding(spec, workspace=workspace, embedder=embedder, config=cfg, variant=variant)
 
     def progress(r: EmbedReport) -> None:
         err.print(f"[dim]sealed: {r.vectors:,} vectors in {r.shards:,} shards[/dim]")
@@ -928,3 +948,124 @@ def bundle_build(
     )
     summary.add_row("manifest", report.manifest_sha256[:16])
     out.print(summary)
+
+
+hardware_app = typer.Typer(help="Batching and device settings for the machine a build runs on.")
+app.add_typer(hardware_app, name="hardware")
+
+
+@hardware_app.command("list")
+def hardware_list() -> None:
+    """The detected device, every profile, and which one a build here would use."""
+    from spec import HardwareRegistry, probe_device
+
+    probe = probe_device()
+    registry = HardwareRegistry.load()
+    chosen, why = registry.resolve(None, probe)
+    out.print(f"device  {probe.name}  ({probe.device}, {probe.vram_gb:g} GB)")
+    out.print(f"a build here uses: {why}")
+    table = RichTable(show_header=True, header_style="bold")
+    for column in ("profile", "items", "bytes", "items x len^2", "measured"):
+        table.add_column(column)
+    for spec in registry.specs.values():
+        rate = spec.measured.get("tokens_per_second") or spec.measured.get("vectors_per_second")
+        table.add_row(
+            f"{'> ' if spec.id == chosen.id else '  '}{spec.id}",
+            str(spec.batch_items),
+            f"{spec.batch_bytes:,}",
+            f"{spec.batch_square:,}",
+            f"{rate:,}" if rate else "[dim]estimate[/dim]",
+        )
+    out.print(table)
+
+
+@hardware_app.command("tune")
+def hardware_tune(
+    corpus_id: CorpusArg,
+    workspace: WORKSPACE = Path("."),
+    sample: Annotated[int, typer.Option("--sample", help="Chunks to time each rung on.")] = 800,
+    write: Annotated[
+        bool, typer.Option("--write", help="Save the result to registry/hardware/.")
+    ] = False,
+) -> None:
+    """Measure the batching this machine can take on real chunks, then say what to use.
+
+    Climbs from the estimate, stops at a regression or a memory failure, and backs off one
+    rung from a cliff. Needs the model loaded, so it needs the GPU free: do not run it beside
+    a build.
+    """
+    import re
+
+    import yaml
+
+    from chunk import iter_chunk_shards
+    from chunk.derive import embed_text
+    from embed import build_embedder
+    from embed.factory import with_hardware
+    from embed.tune import timed_measure, tune
+    from spec import default_registry, estimate, probe_device
+
+    spec = CorpusSpec.find(corpus_id)
+    if spec.embed is None:
+        err.print(f"[red]{spec.id} has no `embed:` section[/red]")
+        raise typer.Exit(1)
+    probe = probe_device()
+    base = estimate(probe)
+    profile = default_registry().get(spec.extract.profile) if spec.extract.profile else None
+    texts: list[str] = []
+    stride = 1
+    for index, chunk in enumerate(iter_chunk_shards(workspace, spec.id)):
+        if index % stride == 0:
+            texts.append(embed_text(chunk, profile))
+        if len(texts) >= sample:
+            break
+        if index == 5000 and len(texts) < sample // 4:
+            stride = 7  # spread the sample past the first documents
+    if len(texts) < 50:
+        err.print("[red]fewer than 50 chunks to time on: run `ravel chunk` first[/red]")
+        raise typer.Exit(1)
+
+    embedder = build_embedder(with_hardware(spec.embed, base))
+    embedder.embed_documents(texts[:16])  # warm up: kernels, allocator
+    result = tune(timed_measure(embedder.embed_documents, texts), base)
+
+    table = RichTable(show_header=True, header_style="bold")
+    for column in ("scale", "items", "bytes", "items x len^2", "vectors/s"):
+        table.add_column(column)
+    for t in result.trials:
+        table.add_row(
+            f"{t.scale:g}x",
+            str(t.items),
+            f"{t.bytes:,}",
+            f"{t.square:,}",
+            f"{t.per_second:.1f}" if t.per_second is not None else f"[red]{t.error}[/red]",
+        )
+    out.print(table)
+    best = result.best
+    out.print(
+        f"use: items {best.batch_items}, bytes {best.batch_bytes:,}, "
+        f"square {best.batch_square:,}  {result.note}"
+    )
+    if write:
+        slug = re.sub(r"[^a-z0-9]+", "-", probe.name.lower()).strip("-") or "device"
+        document = {
+            "id": slug,
+            "match": {
+                "gpu_contains": [probe.name],
+                "vram_gb_max": round(probe.vram_gb + 0.5, 1),
+            },
+            "batch_items": best.batch_items,
+            "batch_bytes": best.batch_bytes,
+            "batch_square": best.batch_square,
+            "measured": {
+                "device": probe.name,
+                "vram_gb": probe.vram_gb,
+                "model": spec.embed.model,
+                "vectors_per_second": round(best.measured.get("vectors_per_second", 0.0), 1),
+                "sample_chunks": len(texts),
+            },
+            "notes": f"measured by `ravel hardware tune`; {result.note}".strip("; "),
+        }
+        path = Path(__file__).resolve().parents[1] / "registry" / "hardware" / f"{slug}.yaml"
+        path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+        out.print(f"[green]wrote {path}[/green]")

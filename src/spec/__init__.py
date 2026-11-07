@@ -1,6 +1,7 @@
 """Declarative document profiles: the knowledge that must not live in code."""
 
 from spec.corpus import CorpusSpec, EmbedSpec, ExtractSpec, ProvenanceSpec, SourcesSpec
+from spec.hardware import HardwareRegistry, HardwareSpec, Probe, estimate, probe_device
 from spec.loader import ENV_VAR, Registry, RegistryError, default_registry, registry_root
 from spec.models import (
     CHUNK_FIELDS,
@@ -41,6 +42,9 @@ __all__ = [
     "EmbedSpec",
     "ExtractSpec",
     "Facts",
+    "HardwareRegistry",
+    "HardwareSpec",
+    "Probe",
     "ProvenanceSpec",
     "SourcesSpec",
     "IdentitySpec",
@@ -53,5 +57,7 @@ __all__ = [
     "Unit",
     "UnitSpec",
     "default_registry",
+    "estimate",
+    "probe_device",
     "registry_root",
 ]

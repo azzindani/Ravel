@@ -44,17 +44,10 @@ embed:
   max_length: 8192
   dtype: float16
   vector_dtype: float16
-  # Sized for an 8 GB card. The stage halves a batch on out-of-memory, so this is where it
-  # starts, not a limit.
-  # ! batch_bytes is the cap that matters: the corpus has chunks of 30,000+ characters
-  # (tables) and 400,000 let twelve of them share a batch, ~100k tokens, which filled the
-  # card, spilled to shared memory and made one batch take over a minute. 40,000 is ~11k
-  # tokens: a long chunk goes alone, a median one (~600 chars) rides with 31 others.
-  # ! batch_square caps items x longest^2: attention memory is quadratic in length, so three
-  # 4,000-token chunks need ~6 GB while thirty 300-token ones need 0.3 GB. Without it the
-  # head of every window (its longest chunks) overflowed the 8 GB card into system memory
-  # and ran at ~8 vectors/s for minutes.
-  batch_items: 32
-  batch_bytes: 40000
-  batch_square: 150000000
+  # ! Batching and device are not part of the corpus: they depend on the card the build runs
+  # on, and none of them changes a vector. `auto` detects the machine and uses its profile
+  # from registry/hardware/ (the 8 GB laptop this corpus was first built on has one), or an
+  # estimate scaled from it. `ravel hardware list` shows the choice; `ravel hardware tune`
+  # measures one.
+  hardware: auto
   shard_rows: 20000
