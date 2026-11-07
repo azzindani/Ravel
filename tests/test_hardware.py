@@ -159,3 +159,47 @@ def test_the_cli_lists_the_profiles_and_the_choice() -> None:
     result = CliRunner().invoke(app, ["hardware", "list"])
     assert result.exit_code == 0, result.output
     assert "rtx-3070-ti-laptop-8gb" in result.output and "a build here uses" in result.output
+
+
+# -- serving-backend verification -------------------------------------------------------
+def _prefix_spec():  # type: ignore[no-untyped-def]
+    from embed import InstructionStyle, spec_for
+
+    return spec_for(
+        dim=16,
+        id="v",
+        instruction_style=InstructionStyle.PREFIX,
+        query_instruction="Given a legal question, retrieve passages",
+    )
+
+
+def test_a_backend_that_matches_the_reference_passes() -> None:
+    from embed import HashEmbedder, ReferenceHashEmbedder
+    from embed.verify import compare_backends
+
+    spec = _prefix_spec()
+    result = compare_backends(
+        HashEmbedder(spec), ReferenceHashEmbedder(spec), ["Pasal 1", "Pasal 2"], ["siapa?"]
+    )
+    assert result.passed and result.min_cosine > 0.9999 and result.queries == 1
+
+
+def test_a_backend_that_drops_the_instruction_is_caught_on_queries() -> None:
+    """The silent failure this exists for: well-formed, unit-norm, the right width, wrong."""
+    from embed import RawHashEmbedder, ReferenceHashEmbedder
+    from embed.verify import compare_backends
+
+    spec = _prefix_spec()
+    result = compare_backends(
+        RawHashEmbedder(spec), ReferenceHashEmbedder(spec), ["Pasal 1"], ["siapa berwenang?"]
+    )
+    assert not result.passed and "DISAGREE" in result.describe()
+
+
+def test_a_backend_is_never_compared_with_itself() -> None:
+    from embed import HashEmbedder
+    from embed.verify import compare_backends
+
+    same = HashEmbedder(_prefix_spec())
+    with pytest.raises(ValueError, match="itself|same"):
+        compare_backends(same, same, ["x"])

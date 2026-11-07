@@ -82,6 +82,42 @@ the instruction on the query and embeds a document bare (`doc_instruction` is `"
 Query: <body>` for
 it, a space no query is asked from. An empty instruction now renders the text unchanged.
 
+### 1.1 Throughput: hardware profiles and serving engines
+
+Two things decide how fast a corpus embeds, and neither belongs in the corpus definition.
+
+**Hardware profiles** (`registry/hardware/`, `spec/hardware.py`). Batching and device depend on
+the card, and none of it changes a vector, so none of it enters the embedder fingerprint or a
+window's cache key: vectors made on a laptop are reused on a 4090. A build picks a profile by
+name (`--hardware`), by matching the detected card, or by an estimate scaled from the one
+measured baseline (8.6 GB, items 32, bytes 40,000, items x longest^2 150M). `ravel hardware
+list` shows the choice; `ravel hardware tune <corpus>` measures one on real chunks: it climbs a
+ladder from the estimate, stops at a regression or a memory failure, and backs off one rung
+from a cliff (128 items with 60,000 bytes ran at 4.7 vectors/s where 32 ran at 34).
+`batch_square` exists because attention memory grows with the square of the length: three
+4,000-token chunks need ~6 GB where thirty 300-token ones need 0.3 GB.
+
+**Serving engines.** The first real run on an 8 GB laptop was compute-bound at ~11k tokens/s
+through plain `transformers`. A 4090 or a datacenter card is better used through a serving
+engine (vLLM, TEI, SGLang, a hosted endpoint) that batches across requests. They all speak the
+OpenAI `/v1/embeddings` shape, so `kind: api` with `base_url` is the backend, and
+`concurrency: N` (or `--concurrency`) keeps N batches in flight, landed in submission order:
+one request at a time leaves the engine idle between round trips.
+
+A serving engine is a *different implementation* of the model, and every way it can differ from
+the reference returns a well-formed vector of the right width: the pooling it applies, whether
+it appends the end-of-text token a last-token model expects, the padding side, the precision,
+where it truncates. So `ravel verify-backend <corpus> --base-url ...` embeds real chunk text and
+questions through the endpoint and through the `transformers` reference and exits non-zero
+below a cosine floor (0.999). **Run it before building a corpus on an engine.** It refuses to
+compare a backend with itself, which would score 1.0 and certify nothing.
+
+**Not yet verified.** The HTTP path, ordering, concurrency and the comparison are tested
+against a fake server in CI. No real vLLM or TEI has been run: vLLM does not run on Windows,
+and the machine this was built on has one 8 GB card. The first run on a rented Linux GPU must
+start with `ravel verify-backend`, then `ravel hardware tune`, and its measured profile should
+be committed.
+
 ---
 
 ## 2. Dimension is a variable, so the schema is generated

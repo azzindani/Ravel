@@ -29,7 +29,9 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections import deque
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -285,13 +287,8 @@ class Embedding:
         """
         order = sorted(range(len(texts)), key=lambda i: len(texts[i]), reverse=True)
         out = np.empty((len(texts), self.embedder.spec.dim), dtype=np.float32)
-        for batch in batched(
-            order,
-            text_of=lambda i: texts[i],
-            max_bytes=self.config.batch_bytes,
-            max_items=self.config.batch_items,
-            max_square=self.config.batch_square,
-        ):
+
+        def run_batch(batch: list[int]) -> tuple[np.ndarray[Any, Any], float]:
             began = time.perf_counter()
             vectors = np.asarray(
                 self.embedder.embed_documents([texts[i] for i in batch]), dtype=np.float32
@@ -301,9 +298,42 @@ class Embedding:
                 raise ValueError(
                     f"sent {len(batch)} texts, received {vectors.shape[0]} vectors"
                 )
+            return vectors, took
+
+        def land(batch: list[int], vectors: np.ndarray[Any, Any], took: float) -> None:
             out[batch] = vectors
             if on_batch is not None:
                 on_batch(len(batch), sum(len(texts[i]) for i in batch), took)
+
+        batches = batched(
+            order,
+            text_of=lambda i: texts[i],
+            max_bytes=self.config.batch_bytes,
+            max_items=self.config.batch_items,
+            max_square=self.config.batch_square,
+        )
+        width = self.config.concurrency if getattr(self.embedder, "thread_safe", False) else 1
+        if width <= 1:
+            for batch in batches:
+                land(batch, *run_batch(batch))
+            return out
+
+        # ! Several requests in flight, landed in submission order. A serving engine batches
+        # across requests; one at a time leaves it idle between round trips. At most
+        # `width` are outstanding, so a slow server is a slow run, not a pile of memory, and
+        # an exception surfaces at the batch that raised it instead of at the end.
+        with ThreadPoolExecutor(max_workers=width) as pool:
+            pending: deque[tuple[list[int], Future[tuple[np.ndarray[Any, Any], float]]]] = (
+                deque()
+            )
+            for batch in batches:
+                pending.append((batch, pool.submit(run_batch, batch)))
+                if len(pending) >= width:
+                    done_batch, future = pending.popleft()
+                    land(done_batch, *future.result())
+            while pending:
+                done_batch, future = pending.popleft()
+                land(done_batch, *future.result())
         return out
 
     # -- the run ------------------------------------------------------------------

@@ -30,6 +30,9 @@ log = logging.getLogger(__name__)
 
 
 class OpenAICompatEmbedder:
+    thread_safe = True
+    """The client holds no per-call state, so the stage may keep several requests in flight."""
+
     def __init__(
         self,
         spec: EmbedderSpec,

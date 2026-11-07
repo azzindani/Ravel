@@ -63,6 +63,7 @@ def spec_for(
 
 @dataclass(slots=True)
 class HashEmbedder:
+    thread_safe = True
     """Maps rendered input to a unit vector by hashing.
 
     ! It embeds the **rendered** input, never the raw text. That is the whole point: an

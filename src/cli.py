@@ -347,6 +347,12 @@ def embed_cmd(
             help="Hardware profile id, `auto` (detect), or `none` (use the corpus's batch_*).",
         ),
     ] = "",
+    concurrency: Annotated[
+        int,
+        typer.Option(
+            "--concurrency", help="Batches in flight (serving endpoints only; 0 = corpus)."
+        ),
+    ] = 0,
 ) -> None:
     """Phase B: chunks into vectors, by the embedder the corpus names.
 
@@ -394,6 +400,8 @@ def embed_cmd(
         err.print(f"[red]{spec.id} has no `embed:` section[/red]")
         raise typer.Exit(1)
     cfg = spec.embed
+    if concurrency:
+        cfg = cfg.model_copy(update={"concurrency": concurrency})
     choice = hardware or cfg.hardware
     if choice != "none":
         from embed.factory import with_hardware
@@ -1069,3 +1077,66 @@ def hardware_tune(
         path = Path(__file__).resolve().parents[1] / "registry" / "hardware" / f"{slug}.yaml"
         path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
         out.print(f"[green]wrote {path}[/green]")
+
+
+@app.command(name="verify-backend")
+def verify_backend_cmd(
+    corpus_id: CorpusArg,
+    workspace: WORKSPACE = Path("."),
+    base_url: Annotated[
+        str,
+        typer.Option(
+            "--base-url", help="Serving endpoint to check, e.g. a vLLM or TEI server."
+        ),
+    ] = "",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "EMBED_API_KEY",
+    sample: Annotated[int, typer.Option("--sample", help="Chunks to compare on.")] = 64,
+    min_cosine: Annotated[float, typer.Option("--min-cosine")] = 0.999,
+) -> None:
+    """Check that a serving engine produces the vectors the corpus's model declares.
+
+    Embeds real chunk text and some questions through the endpoint and through the
+    reference `transformers` implementation, and exits non-zero if they disagree. Run it
+    before building a corpus on vLLM, TEI or a hosted endpoint: the ways those differ from
+    the reference (pooling, end-of-text token, padding, truncation) all return well-formed
+    vectors of the right width.
+    """
+    from embed import build_embedder
+    from embed.verify import compare_backends, sample_chunk_texts
+
+    spec = CorpusSpec.find(corpus_id)
+    if spec.embed is None:
+        err.print(f"[red]{spec.id} has no `embed:` section[/red]")
+        raise typer.Exit(1)
+    serving_cfg = spec.embed
+    if base_url:
+        serving_cfg = serving_cfg.model_copy(
+            update={"kind": "api", "base_url": base_url, "api_key_env": api_key_env}
+        )
+    if serving_cfg.kind == "local":
+        err.print(
+            "[red]this corpus embeds locally; pass --base-url to check a serving endpoint[/red]"
+        )
+        raise typer.Exit(1)
+    reference_cfg = spec.embed.model_copy(update={"kind": "local", "base_url": None})
+    texts = sample_chunk_texts(spec, workspace, sample)
+    queries = [
+        "Siapa yang berwenang menetapkan tarif retribusi?",
+        "Apa sanksi bagi yang tidak membayar pajak daerah?",
+        "Berapa lama jangka waktu pengajuan keberatan?",
+    ]
+    result = compare_backends(
+        build_embedder(serving_cfg),
+        build_embedder(reference_cfg),
+        texts,
+        queries,
+        floor=min_cosine,
+    )
+    out.print(result.describe())
+    if not result.passed:
+        err.print(f"[red]worst: {result.worst_text!r}[/red]")
+        err.print(
+            "[red]this endpoint is not the model the manifest declares · check its pooling, "
+            "end-of-text handling, padding side and truncation[/red]"
+        )
+        raise typer.Exit(1)

@@ -221,6 +221,10 @@ class EmbedSpec(Base):
     batch_square: int = Field(default=0, ge=0)
     """Cap on `items * longest_text**2` in bytes (0 = off). Attention memory on a local model
     grows with the square of the length, which a byte budget does not see."""
+    concurrency: int = Field(default=1, ge=1)
+    """Batches in flight at once, for a backend that can take them (`api`: a vLLM, TEI or
+    hosted endpoint batches across requests, and one request at a time leaves it idle). Ignored
+    by a local model, which owns its GPU. Not part of a vector's identity."""
     shard_rows: int = Field(default=20_000, ge=1)
     """Vectors per shard: the resume unit. A dead box costs at most this many."""
 

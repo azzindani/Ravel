@@ -471,3 +471,118 @@ def test_an_oversized_text_still_goes_out_alone_under_the_quadratic_budget() -> 
 
     batches = list(batched(["x" * 20000, "y" * 5], max_square=150_000_000))
     assert batches[0] == ["x" * 20000] and batches[1] == ["y" * 5]
+
+
+# ===========================================================================
+# A serving engine over HTTP: the API backend, concurrency, and ordering.
+class _FakeServer:
+    """An OpenAI-compatible `/v1/embeddings` that answers out of order, slowly, and counts
+    how many requests it saw at once: what vLLM or TEI looks like to the stage."""
+
+    def __init__(self, embedder: Any, delay: float = 0.04) -> None:
+        import json
+        import threading
+        import time
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        self.in_flight = 0
+        self.max_in_flight = 0
+        lock = threading.Lock()
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args: object) -> None:  # silence
+                pass
+
+            def do_POST(self) -> None:  # noqa: N802
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                with lock:
+                    outer.in_flight += 1
+                    outer.max_in_flight = max(outer.max_in_flight, outer.in_flight)
+                time.sleep(delay)
+                vectors = np.asarray(embedder.embed_documents(body["input"]))
+                rows = [
+                    {"object": "embedding", "index": i, "embedding": vectors[i].tolist()}
+                    for i in range(len(body["input"]))
+                ]
+                rows.reverse()  # a server may answer in any order; `index` is the truth
+                payload = json.dumps(
+                    {"object": "list", "data": rows, "model": body["model"], "usage": {}}
+                ).encode()
+                with lock:
+                    outer.in_flight -= 1
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.httpd.server_address[1]}/v1"
+
+    def __enter__(self) -> _FakeServer:
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+def _served(corpus: CorpusSpec, workspace: Path, monkeypatch: pytest.MonkeyPatch, **cfg: Any):  # type: ignore[no-untyped-def]
+    pytest.importorskip("openai")
+    monkeypatch.setenv("EMBED_API_KEY", "test")
+    reference = build_embedder(EmbedSpec.model_validate(embed_config()))
+    return reference, _FakeServer(reference)
+
+
+def test_vectors_from_a_server_equal_the_reference_whatever_order_it_answers_in(
+    corpus: CorpusSpec, workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reference, server = _served(corpus, workspace, monkeypatch)
+    with server:
+        api = EmbedSpec.model_validate(
+            embed_config(kind="api", base_url=server.url, batch_items=3, concurrency=1)
+        )
+        run = Embedding(corpus, workspace=workspace, embedder=build_embedder(api), config=api)
+        report = run.run()
+    chunks = list(iter_chunk_shards(workspace, "fixture"))
+    got = vectors_of(run)
+    assert report.vectors == len(chunks) == len(got)
+    for chunk in chunks:
+        want = np.asarray(reference.embed_documents([embed_text(chunk, run.profile)]))[0]
+        assert np.allclose(got[chunk.id], want, atol=1e-3), "a vector landed on the wrong chunk"
+
+
+def test_concurrency_keeps_several_requests_in_flight_and_changes_no_vector(
+    corpus: CorpusSpec, workspace: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    reference, server = _served(corpus, workspace, monkeypatch)
+    results = {}
+    with server:
+        for width in (1, 4):
+            ws = tmp_path / f"ws{width}"
+            Extraction(corpus, workspace=ws).run()
+            Chunking(corpus, workspace=ws).run()
+            api = EmbedSpec.model_validate(
+                embed_config(kind="api", base_url=server.url, batch_items=2, concurrency=width)
+            )
+            server.max_in_flight = 0
+            run = Embedding(corpus, workspace=ws, embedder=build_embedder(api), config=api)
+            run.run()
+            results[width] = (server.max_in_flight, vectors_of(run))
+    assert results[1][0] == 1, "concurrency 1 must send one request at a time"
+    assert 1 < results[4][0] <= 4, f"saw {results[4][0]} in flight, expected 2..4"
+    one, four = results[1][1], results[4][1]
+    assert set(one) == set(four)
+    assert all(np.array_equal(one[c], four[c]) for c in one), "concurrency changed a vector"
+
+
+def test_a_local_model_ignores_concurrency() -> None:
+    from embed.local import TransformersEmbedder
+
+    assert getattr(TransformersEmbedder, "thread_safe", False) is False
