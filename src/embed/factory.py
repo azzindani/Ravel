@@ -39,6 +39,12 @@ def spec_of(cfg: EmbedSpec) -> EmbedderSpec:
         dtype=cfg.dtype,
         provider=cfg.provider,
         provider_pin=cfg.provider_pin,
+        # ! The local embedder tokenises itself, so HOW it closes a sequence is part of the
+        # space it produces. Vectors made before the closing-token fix (an extra `<|im_end|>`
+        # after the tokenizer's own `<|endoftext|>`) are a different space, and the
+        # fingerprint is what keeps a resumed run from adding to them: a new value here is a
+        # new vector generation, never a mix.
+        extra={"tokenization": "tokenizer-closed"} if cfg.kind == "local" else {},
     )
 
 

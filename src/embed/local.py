@@ -145,18 +145,29 @@ class TransformersEmbedder:
     def _tokenize(self, texts: list[str]) -> Any:
         tok = self.tokenizer
         if self.spec.pooling is Pooling.LAST_TOKEN and tok.eos_token_id is not None:
-            # ! Qwen3-Embedding pools the last token and expects it to be the end-of-text
-            # token, which its tokenizer does not append. Truncating to `max_length - 1`
-            # and appending it ourselves keeps the pooled position a real EOS even on a
-            # text cut at the limit; padding afterwards respects `padding_side`.
+            # ! Last-token pooling reads the final position, so the final token must be the
+            # one the model was trained to pool at. Qwen3-Embedding's tokenizer ALREADY ends
+            # every sequence with `<|endoftext|>` (its post-processor adds it, and keeps it
+            # when truncating). This used to append `eos_token_id` unconditionally on the
+            # belief that it did not: the tokenizer's eos is `<|im_end|>`, so every vector
+            # was pooled at an `<|im_end|>` placed after the `<|endoftext|>`: a different
+            # space (cosine 0.64 against the same text embedded the standard way, and so
+            # against any query embedded by a plain tokenizer call). Add a closing token
+            # only when the tokenizer left the sequence open.
             ids = tok(
                 texts,
                 padding=False,
                 truncation=True,
-                max_length=self.spec.max_length - 1,
+                max_length=self.spec.max_length,
                 return_attention_mask=False,
             )
-            ids["input_ids"] = [seq + [tok.eos_token_id] for seq in ids["input_ids"]]
+            closing = set(tok.all_special_ids)
+            ids["input_ids"] = [
+                seq
+                if seq and seq[-1] in closing
+                else [*seq[: self.spec.max_length - 1], tok.eos_token_id]
+                for seq in ids["input_ids"]
+            ]
             return tok.pad(ids, padding=True, return_tensors="pt")
         return tok(
             texts,

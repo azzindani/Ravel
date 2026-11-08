@@ -854,3 +854,41 @@ def test_a_file_the_run_is_rewriting_is_left_for_the_next_push(
     assert len(first.errors) == 1 and first.files > 0, "one busy file must not stop the push"
     second = mirror.push()
     assert not second.errors and second.files == 1, "the busy file goes up next time"
+
+
+def test_a_sequence_the_tokenizer_already_closed_is_not_closed_twice() -> None:
+    """Qwen3's tokenizer ends every sequence with `<|endoftext|>`; its `eos_token` is the
+    different `<|im_end|>`. Appending `eos_token_id` anyway pooled every vector at a token
+    placed after the real one: a different space (cosine 0.64 on the same sentence)."""
+    import types
+
+    from embed.local import TransformersEmbedder
+    from embed.spec import Pooling
+
+    END_OF_TEXT, IM_END = 9, 8
+
+    class Tok:
+        eos_token_id = IM_END
+        all_special_ids = (END_OF_TEXT, IM_END)
+
+        def __init__(self, closes: bool) -> None:
+            self.closes = closes
+
+        def __call__(self, texts: list[str], **_: object) -> dict[str, list[list[int]]]:
+            tail = [END_OF_TEXT] if self.closes else []
+            return {"input_ids": [[1, 2, 3, *tail] for _ in texts]}
+
+        def pad(
+            self, ids: dict[str, list[list[int]]], **_: object
+        ) -> dict[str, list[list[int]]]:
+            return ids
+
+    embedder = object.__new__(TransformersEmbedder)
+    embedder.spec = types.SimpleNamespace(pooling=Pooling.LAST_TOKEN, max_length=16)  # type: ignore[assignment]
+
+    embedder.tokenizer = Tok(closes=True)
+    assert embedder._tokenize(["a"])["input_ids"] == [[1, 2, 3, END_OF_TEXT]]
+
+    # A tokenizer that leaves the sequence open still gets a closing token.
+    embedder.tokenizer = Tok(closes=False)
+    assert embedder._tokenize(["a"])["input_ids"] == [[1, 2, 3, IM_END]]
