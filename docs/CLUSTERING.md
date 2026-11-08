@@ -1,5 +1,21 @@
 # CLUSTERING.md — Ravel
 
+> **Decision (2026-11-08): clustering belongs to Vera, not to the Ravel build.**
+> Clusters are a deployment concern. How many there are (`k` grows with the corpus), how
+> large (`rows_per_cluster`), how the table is stored on disk (cluster order made a cold
+> probe 5,477 ms into 91 ms), and how they are restructured when data is added or a new
+> corpus is deployed all depend on the serving hardware and change after a bundle is sealed.
+> Vera already owns this: `dev_tools/cluster_maint/kmeans.py` assigns `cluster_id` from the
+> vectors in Postgres, and its copy-on-write generation swap handles ingest.
+>
+> So a Ravel bundle ships with `cluster_id` empty, no `clusters.parquet`, and an empty
+> `clustering` block in the manifest. Ravel's job is the dataset and the key factors for
+> algorithmic search. The code in `src/cluster/` is kept as an optional offline tool (to
+> rehearse routing for an eval, or to compare against Vera's result); it is not in the build
+> path and nothing downstream may depend on it. The sections below describe that optional
+> tool, not a required stage.
+
+
 Phase C: building the routing structure Vera navigates — domain anchors, k-means
 centroids, and chunk assignment.
 

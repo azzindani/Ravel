@@ -32,7 +32,7 @@ Ravel is a **compiler**, not a script.
 
 ```
 Vera's job:    embed → route → search → fuse → return cited results
-Ravel's job:   extract → chunk → enrich → embed → cluster → bundle
+Ravel's job:   extract → chunk → enrich → embed → bundle      (clustering is Vera's, §5.17)
 ```
 
 A compiler has deterministic stages, a typed intermediate representation, caching by
@@ -59,8 +59,8 @@ PHASE B │  CHUNK    structure-aware, per corpus   │  cheap, re-run per varia
         └───────────────────┬────────────────────┘
                             │
         ┌───────────────────┴────────────────────┐
-PHASE C │  CLUSTER  domain anchors + k-means      │  whole-corpus, not per-document
- GLOBAL │  BUNDLE   parquet shards + manifest     │
+PHASE C │  BUNDLE   parquet shards + manifest     │  whole-corpus; no clustering (Vera's)
+ GLOBAL │  (clusters: built by Vera at deploy)    │
         └───────────────────┬────────────────────┘
                             │
                       LOAD (COPY → Postgres)  →  Vera serves
@@ -182,6 +182,13 @@ stack and version policy in `docs/STACK.md`.
     `expected` check produce the sealed chunks; embedding and keyword indexing come after
     and can be dropped and rebuilt. Every layer writes to one place only — `body` takes
     deletions, derived text takes repairs, sidecars take anything. (`docs/PIPELINE.md`)
+17. **Clustering belongs to Vera.** Clusters are a deployment concern: how many, how big,
+    how the table is ordered on disk, and how they are restructured when data is added or a
+    new corpus is deployed all depend on the serving hardware and change after the bundle is
+    sealed. Ravel builds the dataset (chunks, vectors, sidecars) and the key factors for
+    algorithmic search (signals, ranking factors, references, relations, status, quality).
+    A bundle ships with `cluster_id` empty and no `clusters.parquet`; Vera assigns it.
+    (`docs/CLUSTERING.md`)
 
 ---
 
@@ -196,7 +203,7 @@ Full detail in the per-stage docs.
 | `ravel extract <corpus>` | Phase A: documents → canonical, cached, resumable |
 | `ravel chunk <corpus> [--chunker c] [--variant v]` | Phase B: canonical → chunks with provenance |
 | `ravel build <corpus> --variant <v>` | Phase B: chunk → enrich → embed |
-| `ravel cluster <corpus> --variant <v>` | Phase C: domain anchors + k-means + assign |
+| `ravel cluster <corpus> --variant <v>` | optional offline tool (eval, rehearsal); not in the build path |
 | `ravel bundle <corpus> --variant <v>` | write parquet shards + manifest |
 | `ravel load <bundle> --dsn ...` | preflight, `COPY` into Postgres, verify |
 | `ravel eval <bundle> [<bundle> ...]` | score variants against the labeled set |
@@ -250,7 +257,7 @@ parsing as a stateless service.
 - [x] Hardware profiles, serving-engine path (`kind: api` + concurrency, `verify-backend`), remote mirror + `--worker i/N`, second vector space in the manifest, schema and load plan — `registry/hardware/`, `src/runtime/sync.py`; **all tested without a real vLLM, bucket, second machine or VL model**
 - [x] Loader executor (`ravel load`) and bundle assembly (`ravel bundle build`) — `src/load/execute.py`, `src/bundle/build.py`; run against real pgvector in CI
 - [x] Bundle writer: manifest, generated schema, parquet shards, inventory — `src/bundle/`
-- [x] Clustering: anchors, spherical k-means, streamed assignment, generations — `src/cluster/`
+- [x] Clustering code (anchors, spherical k-means, assignment) — `src/cluster/`; **optional, Vera owns clustering at deploy and ingest** (§5.17)
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
 - [x] Relations: revokes / replaces / amends / based_on from the verb beside each citation, resolved to documents, status derived — `src/enrich/relations.py`, `docs/RELATIONS.md`; no NER, by decision
 - [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/QUALITY.md`; the index half does not read it yet
