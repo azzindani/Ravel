@@ -37,6 +37,16 @@ def test_a_plan_whose_files_and_statements_disagree_is_refused() -> None:
         _statements(step)
 
 
+def test_a_bundle_of_another_width_is_refused_before_anything_is_copied() -> None:
+    from load.execute import width_mismatch
+
+    assert width_mismatch(None, 1024) is None
+    assert width_mismatch(1024, 1024) is None
+    message = width_mismatch(16, 1024)
+    assert message is not None
+    assert "16" in message and "1024" in message
+
+
 def test_the_column_list_is_read_back_without_its_quotes() -> None:
     assert _columns(copy_from("t", ("chunk_id", "embedding"), "/x")) == (
         "chunk_id",

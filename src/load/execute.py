@@ -140,6 +140,28 @@ def _copy(
     return total
 
 
+def width_mismatch(existing: int | None, wanted: int) -> str | None:
+    """Why a bundle cannot go into the `chunks` table that is already there, or None."""
+    if existing is None or existing == wanted:
+        return None
+    return (
+        f"the target database already has a chunks.dense column of {existing} dimensions and "
+        f"this bundle is {wanted}-dimensional. Load into an empty database: tables from an "
+        "earlier load are kept as they are, and a different width cannot be merged into them."
+    )
+
+
+def _existing_width(conn: Any) -> int | None:
+    """Width of `chunks.dense` as the database has it (`halfvec(N)` stores N as typmod)."""
+    row = conn.execute(
+        "SELECT atttypmod FROM pg_attribute "
+        "WHERE attrelid = to_regclass('chunks') AND attname = 'dense' AND NOT attisdropped"
+    ).fetchone()
+    if row is None or row[0] is None or int(row[0]) <= 0:
+        return None
+    return int(row[0])
+
+
 def _clear(conn: Any, corpus_id: str) -> None:
     """Remove one corpus from the tables that hold it, and nothing of any other."""
     for table in _CORPUS_TABLES:
@@ -186,6 +208,15 @@ def execute(
 
                 if step.name == "schema":
                     conn.execute(step.sql)
+                    # ! Before a single row is staged. `CREATE TABLE IF NOT EXISTS` leaves a
+                    # table from an earlier load exactly as it was, and a bundle of another
+                    # width then fails at the final merge: 22 minutes of copying in, with
+                    # nothing committed. The width is known the moment the schema ran.
+                    mismatch = width_mismatch(
+                        _existing_width(conn), int(document["dense"]["dim"])
+                    )
+                    if mismatch:
+                        raise RuntimeError(mismatch)
                     present = conn.execute(
                         "SELECT 1 FROM corpus_meta WHERE id = %s", (corpus_id,)
                     ).fetchone()
