@@ -877,6 +877,48 @@ if __name__ == "__main__":
     app()
 
 
+@app.command(name="sparse")
+def sparse_cmd(
+    corpus_id: CorpusArg,
+    workspace: WORKSPACE = Path("."),
+    variant: Annotated[str, typer.Option("--variant")] = "default",
+    max_features: Annotated[
+        int, typer.Option("--max-features", help="Vocabulary size (the sparse width).")
+    ] = 20_000,
+) -> None:
+    """Fit the corpus BM25 vocabulary and write a sparse vector per chunk.
+
+    CPU only. Reads the chunk shards and writes `corpus.bm25.json` (the vocabulary Vera
+    loads) plus one sparse shard per chunk shard. Resumable: a saved vocabulary is reused and
+    finished shards are skipped. `ravel bundle build` picks the result up.
+    """
+    from enrich.sparse_run import build_sparse, locate_sparse
+    from runtime.shards import newest_generation
+
+    spec = CorpusSpec.find(corpus_id)
+    base = Path(workspace) / "chunks" / spec.id / variant
+    chunk_dir = newest_generation(base)
+    if chunk_dir is None or not chunk_dir.is_dir():
+        err.print(f"[red]no chunks at {base} · run `ravel chunk` first[/red]")
+        raise typer.Exit(1)
+    out_dir = locate_sparse(workspace, spec.id, variant, chunk_dir.name)
+
+    def show(phase: str, done: int, total: int) -> None:
+        out.print(f"[dim]{phase} {done}/{total}[/dim]")
+
+    report = build_sparse(chunk_dir, out_dir, max_features=max_features, on_progress=show)
+    table = RichTable(show_header=False, box=None)
+    table.add_row("sparse", str(report.directory))
+    table.add_row(
+        "vocabulary", f"{report.dim:,} terms · fitted over {report.documents:,} chunks"
+    )
+    table.add_row("fitted now", "yes" if report.fitted_now else "no (reused)")
+    table.add_row("shards", f"{report.shards} written · {report.skipped} already done")
+    table.add_row("rows", f"{report.rows:,}")
+    table.add_row("vocab sha256", report.vocab_sha256[:16])
+    out.print(table)
+
+
 @app.command(name="load")
 def load_cmd(
     bundle: BundleArg,
@@ -1001,6 +1043,13 @@ def bundle_build(
     reference_device: Annotated[
         str, typer.Option("--reference-device", help="Override the embedder device, e.g. cpu.")
     ] = "",
+    sparse: Annotated[
+        bool,
+        typer.Option(
+            "--sparse/--no-sparse",
+            help="Include the BM25 vocabulary and sparse vectors `ravel sparse` wrote.",
+        ),
+    ] = True,
 ) -> None:
     """Assemble chunks, vectors and sidecars into one sealed bundle.
 
@@ -1008,8 +1057,21 @@ def bundle_build(
     not already produce, apart from the manifest and the canary.
     """
     from bundle.build import BundleBuildError, build_bundle
+    from embed.run import locate_vectors
+    from enrich.sparse_run import VOCAB_NAME, locate_sparse
 
     spec = CorpusSpec.find(corpus_id)
+    sparse_dir: Path | None = None
+    if sparse:
+        chunk_dir, _ = locate_vectors(spec, workspace=workspace, variant=variant)
+        found = locate_sparse(workspace, spec.id, variant, chunk_dir.name)
+        if (found / VOCAB_NAME).exists():
+            sparse_dir = found
+        else:
+            err.print(
+                f"[yellow]no BM25 vocabulary at {found}: this bundle will have no sparse arm "
+                f"and Vera will refuse to start on it · run `ravel sparse {spec.id}`[/yellow]"
+            )
     ref: tuple[Any, str] | None = None
     if reference:
         from embed import build_embedder
@@ -1029,6 +1091,7 @@ def bundle_build(
             relations=relations,
             status=status,
             quality=quality,
+            sparse_dir=sparse_dir,
             reference=ref,
         )
     except BundleBuildError as exc:
@@ -1039,6 +1102,7 @@ def bundle_build(
     summary.add_row("bundle", str(report.root))
     summary.add_row("chunks", f"{report.chunks:,}")
     summary.add_row("vectors", f"{report.vectors:,}")
+    summary.add_row("sparse vectors", f"{report.sparse:,}")
     summary.add_row("documents", f"{report.documents:,}")
     summary.add_row("failed documents", f"{report.failed:,}")
     for name, n in report.sidecars.items():

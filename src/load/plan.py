@@ -195,7 +195,9 @@ def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
     )
 
 
-def _merge(corpus_id: str, *, with_vectors: bool, with_omni: bool = False) -> str:
+def _merge(
+    corpus_id: str, *, with_vectors: bool, with_omni: bool = False, with_sparse: bool = False
+) -> str:
     """The one pass that moves staged rows into `chunks`.
 
     Every staged column is carried across. A column that reaches the staging table and
@@ -211,6 +213,9 @@ def _merge(corpus_id: str, *, with_vectors: bool, with_omni: bool = False) -> st
     if with_omni:
         targets.append("embedding_omni")
         sources.append("o.embedding")
+    if with_sparse:
+        targets.append("sparse")
+        sources.append("sp.sparse")
 
     into = ", ".join(quote_ident(c) for c in ["corpus_id", *targets])
     select = ", ".join([quote_literal(corpus_id), *sources])
@@ -223,6 +228,10 @@ def _merge(corpus_id: str, *, with_vectors: bool, with_omni: bool = False) -> st
         # ! LEFT, not inner: only chunks that have an image have an omni vector, and a text
         # chunk with none is a chunk, not a missing row.
         join += "\nLEFT JOIN vectors_omni_stage o ON o.chunk_id = c.id"
+    if with_sparse:
+        # ! LEFT, like omni: a chunk with no sparse row is still a chunk. The bundle build
+        # already refused a sparse set that does not cover the chunks exactly.
+        join += "\nLEFT JOIN sparse_stage sp ON sp.chunk_id = c.id"
     return f"INSERT INTO chunks ({into})\nSELECT {select}\n{join};"
 
 
@@ -254,6 +263,14 @@ def load_plan(
             "the manifest declares an omni space and the bundle has no vectors_omni shards, "
             "or the reverse: a second space with no vectors (or vectors with no declared "
             "space) cannot be loaded"
+        )
+    sparse_files = files("sparse/")
+    sparse = document.get("sparse")
+    if bool(sparse) != bool(sparse_files):
+        raise ValueError(
+            "the manifest declares a sparse arm and the bundle has no sparse shards, or the "
+            "reverse: a vocabulary with no vectors would leave the fallback arm answering "
+            "from a column of NULLs"
         )
     signal_files = files("signals/")
 
@@ -294,6 +311,12 @@ def load_plan(
                     if omni
                     else ""
                 )
+                + (
+                    "\nCREATE UNLOGGED TABLE sparse_stage (chunk_id TEXT, sparse "
+                    f"sparsevec({int(sparse['dim'])}));"
+                    if sparse
+                    else ""
+                )
             ),
             note=(
                 "! Declared from the bundle's columns, never `LIKE chunks`. `LIKE` copies "
@@ -330,6 +353,18 @@ def load_plan(
                 ),
             )
         )
+    if sparse_files:
+        steps.append(
+            Step(
+                name="copy sparse",
+                sql="\n".join(
+                    copy_from("sparse_stage", ("chunk_id", "sparse"), str(root / name))
+                    for name in sparse_files
+                ),
+                inputs=sparse_files,
+                note="The lexical arm's vectors, as sparsevec text (BM25 weights, 1-based).",
+            )
+        )
     if vector_files:
         steps.append(
             Step(
@@ -344,7 +379,12 @@ def load_plan(
         steps.append(
             Step(
                 name="merge",
-                sql=_merge(corpus_id, with_vectors=True, with_omni=bool(omni)),
+                sql=_merge(
+                    corpus_id,
+                    with_vectors=True,
+                    with_omni=bool(omni),
+                    with_sparse=bool(sparse),
+                ),
                 note=(
                     "One write per row. An UPDATE would write a second version of every "
                     "row and leave the first as a dead tuple — see the module docstring."
@@ -539,6 +579,7 @@ def load_plan(
             sql=(
                 "DROP TABLE chunks_stage; DROP TABLE vectors_stage;"
                 + (" DROP TABLE vectors_omni_stage;" if omni else "")
+                + (" DROP TABLE sparse_stage;" if sparse else "")
                 + (
                     " DROP TABLE relations_stage; DROP TABLE status_stage;"
                     if has_relations or has_status

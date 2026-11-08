@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -130,6 +131,18 @@ def build_bundle(root: Path, *, omni: bool = False) -> Path:
         "vectors/part-00000.parquet",
         write_vectors(writer.shard_path("vectors", 0), [c.id for c in chunks], matrix, dim=DIM),
     )
+    # ! The manifest above declares a sparse arm, so the bundle must carry its vectors: a
+    # vocabulary with no vectors is refused by the plan. These are `sparsevec` text, 1-based.
+    pq.write_table(
+        pa.table(
+            {
+                "chunk_id": [c.id for c in chunks],
+                "sparse": [f"{{{i + 1}:0.5,{i + 10}:1.25}}/2048" for i in range(CHUNKS)],
+            }
+        ),
+        str(writer.shard_path("sparse", 0)),
+    )
+    writer.record("sparse/part-00000.parquet", CHUNKS)
     if omni:
         # ! Two of the three chunks have an image: the second space is partial by nature.
         omni_matrix = np.random.default_rng(1).normal(size=(2, OMNI_DIM)).astype(np.float32)
@@ -278,7 +291,9 @@ def main() -> int:
                 str(version[0]) if version else "",
             )
 
-            conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
+            conn.execute(
+                "DROP TABLE IF EXISTS chunks_stage, vectors_stage, sparse_stage, chunks CASCADE"
+            )
             conn.execute(
                 "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
                 "doc_relations, doc_status, doc_quality"
@@ -474,7 +489,9 @@ def main() -> int:
         #    database, merged, verified, indexed. Everything above ran the plan's pieces by
         #    hand; this is the one path that moves real chunk rows and real vectors.
         with psycopg.connect(dsn, autocommit=True) as conn:
-            conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
+            conn.execute(
+                "DROP TABLE IF EXISTS chunks_stage, vectors_stage, sparse_stage, chunks CASCADE"
+            )
             conn.execute(
                 "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
                 "doc_relations, doc_status, doc_quality"
@@ -522,6 +539,20 @@ def main() -> int:
                 "staging tables counted",
             )
             check("staging tables are dropped", staged[0] == 0)
+            lexical = one(
+                conn.execute(
+                    "SELECT count(*), count(sparse), "
+                    "(SELECT id FROM chunks "
+                    "ORDER BY sparse <#> '{11:1}/2048'::sparsevec LIMIT 1) "
+                    "FROM chunks"
+                ).fetchone(),
+                "the sparse column counted",
+            )
+            check(
+                "the lexical arm's vectors reach the sparse column and rank by inner product",
+                tuple(lexical) == (CHUNKS, CHUNKS, "c1"),
+                str(tuple(lexical)),
+            )
 
         refused = ""
         try:
@@ -551,7 +582,9 @@ def main() -> int:
         #     width, a partial fill, and a cosine query that touches no text vector.
         omni_root = build_bundle(Path(tmp), omni=True)
         with psycopg.connect(dsn, autocommit=True) as conn:
-            conn.execute("DROP TABLE IF EXISTS chunks_stage, vectors_stage, chunks CASCADE")
+            conn.execute(
+                "DROP TABLE IF EXISTS chunks_stage, vectors_stage, sparse_stage, chunks CASCADE"
+            )
             conn.execute("DROP TABLE IF EXISTS vectors_omni_stage")
             conn.execute(
                 "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "

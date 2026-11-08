@@ -44,6 +44,8 @@ from bundle.writer import (
 from chunk.store import iter_chunks
 from embed.factory import spec_of
 from embed.run import locate_vectors
+from enrich.sparse import Bm25Vectorizer
+from enrich.sparse_run import VOCAB_NAME
 from runtime.ledger import Ledger
 from spec import Registry, default_registry
 from spec.corpus import CorpusSpec
@@ -60,6 +62,7 @@ class BuildReport:
     root: Path
     chunks: int = 0
     vectors: int = 0
+    sparse: int = 0
     documents: int = 0
     failed: int = 0
     sidecars: dict[str, int] = field(default_factory=dict)
@@ -93,6 +96,7 @@ def build_bundle(
     relations: Path | None = None,
     status: Path | None = None,
     quality: Path | None = None,
+    sparse_dir: Path | None = None,
     reference: tuple[np.ndarray[Any, Any], str] | None = None,
     run_id: str = "",
     text_search_config: str = "indonesian",
@@ -127,6 +131,28 @@ def build_bundle(
             f"({len(chunk_ids):,} chunks, {len(vector_ids):,} vectors) · is `ravel embed` "
             "finished?"
         )
+
+    # -- the lexical arm, when `ravel sparse` has run: a vocabulary and a vector per chunk ----
+    vectorizer: Bm25Vectorizer | None = None
+    sparse_shards: list[Path] = []
+    sparse_rows = 0
+    if sparse_dir is not None:
+        sparse_dir = Path(sparse_dir)
+        if not (sparse_dir / VOCAB_NAME).exists():
+            raise BundleBuildError(
+                f"no {VOCAB_NAME} in {sparse_dir} · run `ravel sparse {corpus.id}` first"
+            )
+        vectorizer = Bm25Vectorizer.load(sparse_dir / VOCAB_NAME)
+        sparse_shards = _shards(sparse_dir)
+        sparse_ids = list(_column(sparse_shards, "chunk_id"))
+        sparse_rows = len(sparse_ids)
+        if len(sparse_ids) != len(set(sparse_ids)) or set(sparse_ids) != set(chunk_ids):
+            raise BundleBuildError(
+                f"the sparse shards ({len(sparse_ids):,} rows) do not cover the chunks "
+                f"({len(chunk_ids):,}) exactly · `ravel sparse` was run on another chunk "
+                "generation, or has not finished"
+            )
+
     documents = set(_column(chunk_shards, "doc_id"))
     source_sha = hashlib.sha256("\n".join(sorted(documents)).encode()).hexdigest()
 
@@ -139,7 +165,7 @@ def build_bundle(
         chunk_count=len(chunk_ids),
         source_manifest_sha256=source_sha,
         dense=spec_of(corpus.embed),
-        sparse=None,
+        sparse=vectorizer.to_spec() if vectorizer else None,
         chunker=first.chunker,
         chunker_version=first.chunker_version,
         profile_ref=profile_ref,
@@ -152,17 +178,26 @@ def build_bundle(
         root=writer.root,
         chunks=len(chunk_ids),
         vectors=len(vector_ids),
+        sparse=sparse_rows,
         documents=len(documents),
     )
 
     # -- shards: copied, not re-encoded, so the bytes that were checked are the bytes shipped
-    for kind, shards in (("chunks", chunk_shards), ("vectors", vector_shards)):
+    for kind, shards in (
+        ("chunks", chunk_shards),
+        ("vectors", vector_shards),
+        ("sparse", sparse_shards),
+    ):
         for index, shard in enumerate(shards):
             target = writer.shard_path(kind, index)
             shutil.copyfile(shard, target)
             writer.record(
                 f"{kind}/{target.name}", int(pq.ParquetFile(str(target)).metadata.num_rows)
             )
+
+    if vectorizer is not None and sparse_dir is not None:
+        shutil.copyfile(sparse_dir / VOCAB_NAME, writer.root / VOCAB_NAME)
+        writer.record(VOCAB_NAME, vectorizer.dim)
 
     # -- sidecars, restricted to documents the corpus holds -----------------------------
     def keep(
