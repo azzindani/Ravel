@@ -34,6 +34,9 @@ embed:
   dim: 1024
   pooling: last_token
   padding_side: left
+  # The 1.7M vectors already on disk were embedded with the sequence closed twice
+  # (see EmbedSpec.append_eos). Keeping it on keeps them valid and the query side must match.
+  append_eos: true
   normalize: true
   # Qwen3 puts the instruction on the QUERY and embeds a document bare. The string is
   # Vera's own (crates/embed/src/lib.rs); the two sides must agree or they are different

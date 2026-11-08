@@ -44,7 +44,9 @@ def spec_of(cfg: EmbedSpec) -> EmbedderSpec:
         # after the tokenizer's own `<|endoftext|>`) are a different space, and the
         # fingerprint is what keeps a resumed run from adding to them: a new value here is a
         # new vector generation, never a mix.
-        extra={"tokenization": "tokenizer-closed"} if cfg.kind == "local" else {},
+        extra=({} if cfg.append_eos else {"tokenization": "tokenizer-closed"})
+        if cfg.kind == "local"
+        else {},
     )
 
 
@@ -57,7 +59,10 @@ def build_embedder(cfg: EmbedSpec) -> Embedder:
             from embed.local import TransformersEmbedder
 
             return TransformersEmbedder(
-                spec, device=cfg.device, memory_fraction=cfg.memory_fraction
+                spec,
+                device=cfg.device,
+                memory_fraction=cfg.memory_fraction,
+                append_eos=cfg.append_eos,
             )
         case "api":
             from embed.api import OpenAICompatEmbedder

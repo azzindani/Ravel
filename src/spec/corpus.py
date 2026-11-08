@@ -222,6 +222,12 @@ class EmbedSpec(Base):
     """Cap on `items * longest_text**2` in bytes (0 = off). Attention memory on a local model
     grows with the square of the length, which a byte budget does not see."""
     memory_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    append_eos: bool = False
+    """The first Qwen3 corpus recipe: append the tokenizer's `eos_token_id` (`<|im_end|>`)
+    after the `<|endoftext|>` the tokenizer already ends a sequence with, so vectors are
+    pooled one position past the standard one. Off is the standard recipe. A corpus embedded
+    with it on must be QUERIED with it on (a query embedder that closes the sequence once
+    gives cosine 0.64 against the same text), and the canary is what proves the two agree."""
     """Cap on the share of GPU memory the process may reserve (0 = no cap). On Windows a card
     that is over-subscribed does not fail: it quietly pages to system memory and runs several
     times slower, so the cap turns that into an out-of-memory the stage can recover from."""

@@ -885,6 +885,7 @@ def test_a_sequence_the_tokenizer_already_closed_is_not_closed_twice() -> None:
 
     embedder = object.__new__(TransformersEmbedder)
     embedder.spec = types.SimpleNamespace(pooling=Pooling.LAST_TOKEN, max_length=16)  # type: ignore[assignment]
+    embedder.append_eos = False
 
     embedder.tokenizer = Tok(closes=True)
     assert embedder._tokenize(["a"])["input_ids"] == [[1, 2, 3, END_OF_TEXT]]
@@ -892,3 +893,47 @@ def test_a_sequence_the_tokenizer_already_closed_is_not_closed_twice() -> None:
     # A tokenizer that leaves the sequence open still gets a closing token.
     embedder.tokenizer = Tok(closes=False)
     assert embedder._tokenize(["a"])["input_ids"] == [[1, 2, 3, IM_END]]
+
+
+def test_the_first_recipe_survives_as_a_declared_option() -> None:
+    """A corpus of 1.7M vectors was embedded with `<|im_end|>` after `<|endoftext|>`. That
+    stays reproducible, but only when the corpus config says so, and it keeps the old
+    fingerprint so the vectors on disk stay valid; the standard recipe is a new one."""
+    import types
+
+    from embed.factory import spec_of
+    from embed.local import TransformersEmbedder
+    from embed.spec import Pooling
+    from spec.corpus import EmbedSpec
+
+    END_OF_TEXT, IM_END = 9, 8
+
+    class Tok:
+        eos_token_id = IM_END
+        all_special_ids = (END_OF_TEXT, IM_END)
+
+        def __call__(self, texts: list[str], **_: object) -> dict[str, list[list[int]]]:
+            return {"input_ids": [[1, 2, END_OF_TEXT] for _ in texts]}
+
+        def pad(
+            self, ids: dict[str, list[list[int]]], **_: object
+        ) -> dict[str, list[list[int]]]:
+            return ids
+
+    embedder = object.__new__(TransformersEmbedder)
+    embedder.spec = types.SimpleNamespace(pooling=Pooling.LAST_TOKEN, max_length=16)  # type: ignore[assignment]
+    embedder.tokenizer = Tok()
+    embedder.append_eos = True
+    assert embedder._tokenize(["a"])["input_ids"] == [[1, 2, END_OF_TEXT, IM_END]]
+
+    base = {
+        "id": "q",
+        "kind": "local",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+        "dim": 1024,
+    }
+    legacy = spec_of(EmbedSpec(**base, append_eos=True))
+    standard = spec_of(EmbedSpec(**base))
+    assert legacy.fingerprint() != standard.fingerprint()
+    assert standard.extra == {"tokenization": "tokenizer-closed"} and legacy.extra == {}

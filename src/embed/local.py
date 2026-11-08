@@ -60,6 +60,7 @@ class TransformersEmbedder:
         *,
         device: str | None = None,
         memory_fraction: float = 0.0,
+        append_eos: bool = False,
     ) -> None:
         if spec.instruction_style is InstructionStyle.CHAT_SYSTEM:
             raise NotImplementedError(
@@ -76,6 +77,7 @@ class TransformersEmbedder:
             ) from exc
 
         self.spec = spec
+        self.append_eos = append_eos
         self._torch = torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if memory_fraction and self.device.startswith("cuda"):
@@ -154,6 +156,19 @@ class TransformersEmbedder:
             # space (cosine 0.64 against the same text embedded the standard way, and so
             # against any query embedded by a plain tokenizer call). Add a closing token
             # only when the tokenizer left the sequence open.
+            if self.append_eos:
+                # The first recipe, kept because a corpus was embedded with it (28 GPU
+                # hours): truncate one short and append `eos_token_id` after whatever the
+                # tokenizer already added. Declared in the corpus config as `append_eos`.
+                legacy = tok(
+                    texts,
+                    padding=False,
+                    truncation=True,
+                    max_length=self.spec.max_length - 1,
+                    return_attention_mask=False,
+                )
+                legacy["input_ids"] = [[*seq, tok.eos_token_id] for seq in legacy["input_ids"]]
+                return tok.pad(legacy, padding=True, return_tensors="pt")
             ids = tok(
                 texts,
                 padding=False,
