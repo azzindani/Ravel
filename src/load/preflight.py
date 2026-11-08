@@ -254,17 +254,29 @@ def check_completeness(document: dict[str, Any], *, tolerance: float = 0.0) -> C
             f"{vectors:,} vectors for {written:,} chunks — the load-time join would drop "
             f"the difference without reporting it",
         )
-    total = written + failed
+    # ! The tolerance is a share of DOCUMENTS (`failure_tolerance`), so the denominator is a
+    # document count: the documents in the bundle plus the ones that failed. It used to be
+    # chunks plus failures, which divided a document count by a chunk count: 25 failures
+    # among 45,204 documents (0.055%) read as 25 of 1,716,653 (0.0015%), and the figure
+    # looked like a document share. `doc_status.parquet` has one row per document in the
+    # bundle; a bundle without it falls back to chunks and says so.
+    documents = int(counts.get("doc_status.parquet", 0))
+    unit = "documents"
+    total = documents + failed
+    if not documents:
+        unit = "chunks and failures (no document count in this bundle)"
+        total = written + failed
     share = failed / total if total else 0.0
     if share > tolerance:
         return _fail(
             "completeness",
-            f"{failed:,} of {total:,} documents failed ({share:.2%}), above the corpus "
+            f"{failed:,} of {total:,} {unit} failed ({share:.2%}), above the corpus "
             f"tolerance of {tolerance:.2%}",
         )
     return _ok(
         "completeness",
-        f"{written:,} chunks, {vectors:,} vectors, {failed:,} failed ({share:.2%})",
+        f"{written:,} chunks, {vectors:,} vectors, {failed:,} failed of {total:,} "
+        f"{unit} ({share:.3%})",
     )
 
 

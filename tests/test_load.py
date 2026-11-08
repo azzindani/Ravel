@@ -214,6 +214,34 @@ def test_a_tolerated_failure_rate_passes(built) -> None:
     assert named(green(root, matrix[0], failure_tolerance=0.5), "completeness").ok
 
 
+def test_the_failure_share_is_of_documents_not_of_chunks(built) -> None:
+    """25 failures among 45,204 documents is 0.055%, however many chunks they hold.
+
+    The share used to divide by chunks plus failures, so a corpus of many small chunks
+    looked far healthier than it was, and a tolerance set in documents meant nothing.
+    """
+    root, matrix = built
+    document = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    counts = document["inventory"]["counts"]
+    counts["failed.jsonl"] = 500
+    counts["doc_status.parquet"] = 1_000
+
+    # 500 of 1,500 documents is a third; as a share of this bundle's few chunks it would
+    # be far smaller, which is the error.
+    (root / "manifest.json").write_text(json.dumps(document), encoding="utf-8")
+    refused = named(green(root, matrix[0], failure_tolerance=0.02), "completeness")
+    assert refused.status is Status.FAIL
+    assert "of 1,500 documents" in refused.detail
+
+    counts["failed.jsonl"] = 25
+    counts["doc_status.parquet"] = 45_179
+    (root / "manifest.json").write_text(json.dumps(document), encoding="utf-8")
+    assert named(green(root, matrix[0], failure_tolerance=0.02), "completeness").ok
+    assert named(green(root, matrix[0], failure_tolerance=0.0), "completeness").status is (
+        Status.FAIL
+    )
+
+
 # -- 5. checksums ---------------------------------------------------------------------------
 
 

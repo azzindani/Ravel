@@ -899,6 +899,13 @@ def load_cmd(
         bool,
         typer.Option("--allow-skipped", help="Load although a preflight check could not run."),
     ] = False,
+    tolerance: Annotated[
+        float,
+        typer.Option(
+            "--tolerance",
+            help="Share of failed documents allowed (the corpus's failure_tolerance).",
+        ),
+    ] = 0.0,
 ) -> None:
     """Preflight a sealed bundle, then load it into Postgres, all or nothing.
 
@@ -914,7 +921,9 @@ def load_cmd(
         err.print("[red]no database: pass --dsn or set DATABASE_URL[/red]")
         raise typer.Exit(2)
 
-    report = preflight(bundle, free_bytes=shutil.disk_usage(bundle).free)
+    report = preflight(
+        bundle, free_bytes=shutil.disk_usage(bundle).free, failure_tolerance=tolerance
+    )
     for check in report.checks:
         style = {"ok": "green", "fail": "red", "skipped": "yellow"}[check.status.value]
         out.print(f"[{style}]{check.status.value:<8}[/{style}] {check.name}: {check.detail}")
