@@ -97,6 +97,8 @@ bundles/<corpus>/<variant>/<version>/
 ├── clusters.parquet
 ├── chunks/part-*.parquet        id, doc_id, body, provenance, heading_path, identifier
 ├── vectors/part-*.parquet       chunk_id, embedding (fp16)   [joined at load]
+├── sparse/part-*.parquet        chunk_id, sparse (sparsevec text, BM25)   [joined at load]
+├── corpus.bm25.json             the BM25 vocabulary + IDF; Vera loads it (`BM25_VOCAB`)
 ├── signals/part-*.parquet       chunk_id, data (JSONB-ready)
 ├── entities.parquet
 ├── edges.parquet
@@ -108,6 +110,15 @@ bundles/<corpus>/<variant>/<version>/
 
 Vectors are a separate file set from chunks on purpose: a re-embed replaces `vectors/`
 and nothing else, and a text-only consumer never pays to read 4096-dim rows.
+
+The lexical arm is the same shape. `ravel sparse` fits ONE vocabulary over every chunk
+body (a vocabulary per shard is a different space per shard, `ABSORPTION.md` §7) and writes
+`corpus.bm25.json` plus a sparse shard per chunk shard; the manifest's `sparse` block is
+derived from the fitted object (`fit_docs`, `vocab_sha256`), not asserted. Vera needs the
+vocabulary even where it never scans the `sparse` column: it refuses to start without it and
+weighs its relevance gate by the IDF in it. So a manifest that declares a sparse arm must
+carry its vectors, and one that carries vectors must declare it; the load plan refuses either
+half alone.
 
 Shard size targets ~256MB–1GB — small enough to checkpoint and retry, large enough that
 `COPY` is not dominated by per-file overhead.

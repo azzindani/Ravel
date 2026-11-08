@@ -203,6 +203,7 @@ Full detail in the per-stage docs.
 | `ravel extract <corpus>` | Phase A: documents → canonical, cached, resumable |
 | `ravel chunk <corpus> [--chunker c] [--variant v]` | Phase B: canonical → chunks with provenance |
 | `ravel build <corpus> --variant <v>` | Phase B: chunk → enrich → embed |
+| `ravel sparse <corpus>` | the lexical arm: one BM25 vocabulary over the whole corpus + a sparse vector per chunk (CPU) |
 | `ravel cluster <corpus> --variant <v>` | optional offline tool (eval, rehearsal); not in the build path |
 | `ravel bundle <corpus> --variant <v>` | write parquet shards + manifest |
 | `ravel load <bundle> --dsn ...` | preflight, `COPY` into Postgres, verify |
@@ -261,7 +262,8 @@ parsing as a stateless service.
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
 - [x] Relations: revokes / replaces / amends / based_on from the verb beside each citation, resolved to documents, status derived — `src/enrich/relations.py`, `docs/RELATIONS.md`; no NER, by decision
 - [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/QUALITY.md`; the index half does not read it yet
-- [~] Enrichment: BM25, ranking factors, references, whole-corpus citation graph — `src/enrich/`
+- [x] Lexical arm: `ravel sparse` fits `corpus.bm25.json` (Vera's `BM25_VOCAB`, required at its startup) and writes sparse vectors; bundled, staged and merged into `chunks.sparse`; run on `id_reg_markdown` — `src/enrich/sparse_run.py`
+- [~] Enrichment: ranking factors, references, whole-corpus citation graph — `src/enrich/`
 - [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
 - [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;
       Vera's 50-case seed set imported to `eval/id_legal/queries@v1.jsonl` by
