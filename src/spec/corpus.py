@@ -221,6 +221,13 @@ class EmbedSpec(Base):
     batch_square: int = Field(default=0, ge=0)
     """Cap on `items * longest_text**2` in bytes (0 = off). Attention memory on a local model
     grows with the square of the length, which a byte budget does not see."""
+    batch_tokens: int = Field(default=0, ge=0)
+    """Padded-token budget per batch for a local model (0 = by bytes); see `HardwareSpec`."""
+    fused_norm: bool = True
+    """Run RMSNorm as one fused kernel with an fp32 accumulator (`torch.nn.functional.rms_norm`)
+    instead of the reference six-op version. Same maths, ~16% faster on the 8 GB card; vectors
+    agree with the reference to cosine 0.99998 and are as close to an fp32 run. Not part of a
+    vector's identity."""
     memory_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     append_eos: bool = False
     """The first Qwen3 corpus recipe: append the tokenizer's `eos_token_id` (`<|im_end|>`)

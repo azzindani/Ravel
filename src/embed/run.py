@@ -43,7 +43,7 @@ from chunk.derive import embed_text
 from chunk.store import iter_chunk_range
 from embed.progress import Progress, Tracker
 from embed.spec import Embedder
-from runtime.batching import batched
+from runtime.batching import batched, batched_by_tokens
 from runtime.ledger import Ledger, Status
 from runtime.shards import generation_of, newest_generation
 from spec import Profile, Registry, default_registry
@@ -313,7 +313,20 @@ class Embedding:
         order the vectors come out in. `on_batch(items, characters)` is called after each
         batch, which is what makes progress visible between sealed windows.
         """
-        order = sorted(range(len(texts)), key=lambda i: len(texts[i]), reverse=True)
+        lengths_of = getattr(self.embedder, "token_lengths", None)
+        tokens = self.config.batch_tokens
+        if tokens > 0 and lengths_of is not None:
+            # True token lengths, longest first, filled to a padded-token budget: the padding
+            # in a batch is the gap between neighbours. By bytes, a third of the GPU's work
+            # was padding on this corpus (`ravel embed` benchmark, 2026-11-08).
+            lengths = lengths_of(texts)
+            order = sorted(range(len(texts)), key=lambda i: lengths[i], reverse=True)
+            batches = batched_by_tokens(
+                order, lengths, budget=tokens, max_items=self.config.batch_items
+            )
+        else:
+            order = sorted(range(len(texts)), key=lambda i: len(texts[i]), reverse=True)
+            batches = None
         out = np.empty((len(texts), self.embedder.spec.dim), dtype=np.float32)
 
         def run_batch(batch: list[int]) -> tuple[np.ndarray[Any, Any], float]:
@@ -333,13 +346,14 @@ class Embedding:
             if on_batch is not None:
                 on_batch(len(batch), sum(len(texts[i]) for i in batch), took)
 
-        batches = batched(
-            order,
-            text_of=lambda i: texts[i],
-            max_bytes=self.config.batch_bytes,
-            max_items=self.config.batch_items,
-            max_square=self.config.batch_square,
-        )
+        if batches is None:
+            batches = batched(
+                order,
+                text_of=lambda i: texts[i],
+                max_bytes=self.config.batch_bytes,
+                max_items=self.config.batch_items,
+                max_square=self.config.batch_square,
+            )
         width = self.config.concurrency if getattr(self.embedder, "thread_safe", False) else 1
         if width <= 1:
             for batch in batches:

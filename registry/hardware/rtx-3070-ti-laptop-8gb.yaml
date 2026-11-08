@@ -4,7 +4,8 @@ id: rtx-3070-ti-laptop-8gb
 match:
   gpu_contains: ["3070 Ti"]
   vram_gb_max: 9
-batch_items: 32
+batch_items: 256
+batch_tokens: 16384
 batch_bytes: 40000
 # Attention memory grows with the square of the length: items x longest^2 (bytes) is what
 # keeps a few 4,000-token chunks from sharing a batch that needs ~6 GB.
@@ -24,3 +25,8 @@ measured:
     slower (31 vs 34 chunks/s on the sample) and 128 items with 60,000 bytes fell off a
     memory cliff (4.7/s). About 15 minutes per 20,000 vectors on this corpus.
 notes: Tuned by hand; the first profile, kept as the reference the estimate scales from.
+
+# Measured 2026-11-08, same chunks, alternating runs on a warmed (throttled) GPU:
+#   byte batching (items 32) + reference RMSNorm   21.0 chunks/s
+#   token batching (16384) + fused RMSNorm         33.0 chunks/s  (1.57x; 1.74x clock-normalised)
+# Vectors stay within cosine 0.999995 of an fp32 run of the model-card code.

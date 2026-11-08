@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
 
-__all__ = ["MAX_BATCH_BYTES", "MAX_BATCH_ITEMS", "batched"]
+__all__ = ["MAX_BATCH_BYTES", "MAX_BATCH_ITEMS", "batched", "batched_by_tokens"]
 
 #: TEI's default `payload_limit` is 2,000,000 bytes. Stay well under it: JSON escaping
 #: inflates non-ASCII, and Indonesian legal text is full of it.
@@ -87,5 +87,33 @@ def batched[T](
         batch.append(item)
         size += n
         longest = max(longest, n)
+    if batch:
+        yield batch
+
+
+def batched_by_tokens(
+    order: Sequence[int],
+    lengths: Sequence[int],
+    *,
+    budget: int,
+    max_items: int,
+) -> Iterator[list[int]]:
+    """Yield index batches whose padded size, `items * longest`, stays within `budget` tokens.
+
+    `order` lists indices longest-first (by `lengths`), so a batch's longest member is its
+    first and the padding in it is only the gap between neighbours. A byte or item cap
+    pads a batch to its longest text: on this corpus a third of the GPU's work was padding.
+    A text longer than the budget still goes out alone, as in `batched`.
+    """
+    if budget <= 0:
+        raise ValueError(f"budget must be positive, got {budget}")
+    if max_items <= 0:
+        raise ValueError(f"max_items must be positive, got {max_items}")
+    batch: list[int] = []
+    for index in order:
+        if batch and (len(batch) >= max_items or (len(batch) + 1) * lengths[batch[0]] > budget):
+            yield batch
+            batch = []
+        batch.append(index)
     if batch:
         yield batch

@@ -49,6 +49,7 @@ BASELINE_MODEL_GB = 1.2
 BASELINE_ITEMS = 32
 BASELINE_BYTES = 40_000
 BASELINE_SQUARE = 80_000_000
+BASELINE_TOKENS = 16_384
 HEADROOM = 0.85
 MAX_ITEMS = 128
 
@@ -90,6 +91,9 @@ class HardwareSpec(Base):
     batch_items: int = Field(default=32, ge=1)
     batch_bytes: int = Field(default=40_000, ge=1)
     batch_square: int = Field(default=0, ge=0)
+    batch_tokens: int = Field(default=0, ge=0)
+    """Padded-token budget of one batch, `items * longest` in tokens (0 = batch by bytes).
+    Sorting by token length and filling to this budget removes the padding a byte cap pays."""
     memory_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     """Share of GPU memory the process may reserve; 0 = uncapped. See `EmbedSpec`."""
     match: Match = Field(default_factory=Match)
@@ -143,6 +147,7 @@ def estimate(probe: Probe, *, model_gb: float = BASELINE_MODEL_GB) -> HardwareSp
         batch_items=min(MAX_ITEMS, max(8, round(BASELINE_ITEMS * scale))),
         batch_bytes=round(BASELINE_BYTES * scale),
         batch_square=round(BASELINE_SQUARE * scale),
+        batch_tokens=round(BASELINE_TOKENS * scale),
         memory_fraction=0.9,
         notes=(
             f"estimate for {probe.name} ({probe.vram_gb:g} GB), scaled {scale:.2f}x from an "

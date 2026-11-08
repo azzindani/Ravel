@@ -22,7 +22,7 @@ def registry() -> HardwareRegistry:
 def test_the_laptop_it_was_measured_on_matches_its_profile() -> None:
     spec, why = registry().resolve(None, LAPTOP)
     assert spec.id == "rtx-3070-ti-laptop-8gb" and "matches" in why
-    assert (spec.batch_items, spec.batch_bytes, spec.batch_square) == (32, 40_000, 80_000_000)
+    assert (spec.batch_items, spec.batch_bytes, spec.batch_square) == (256, 40_000, 80_000_000)
 
 
 def test_an_unknown_card_gets_a_heuristic_that_says_so() -> None:

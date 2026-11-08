@@ -481,7 +481,8 @@ def embed_cmd(
         if cfg.kind == "local":
             err.print(
                 f"[dim]hardware: {why} · items {profile.batch_items}, "
-                f"bytes {profile.batch_bytes:,}, square {profile.batch_square:,}[/dim]"
+                f"bytes {profile.batch_bytes:,}, square {profile.batch_square:,}, "
+                f"tokens {profile.batch_tokens:,}[/dim]"
             )
     share: tuple[int, int] | None = None
     if worker:

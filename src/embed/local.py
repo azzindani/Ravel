@@ -33,6 +33,35 @@ log = logging.getLogger(__name__)
 
 _DTYPES = {"float16": "float16", "bfloat16": "bfloat16", "float32": "float32"}
 
+# Norm layers that are plain `weight * x / rms(x)`; a variant with an offset (Gemma's
+# 1 + weight) is a different function and is left alone.
+_PLAIN_RMS_NORMS = frozenset({"Qwen3RMSNorm", "Qwen2RMSNorm", "LlamaRMSNorm", "MistralRMSNorm"})
+
+
+def _fuse_rms_norms(model: Any) -> int:
+    """Replace the reference RMSNorm (six element-wise kernels, an fp32 copy of the activations)
+    with `torch.nn.functional.rms_norm`: one kernel, fp32 accumulator, same function.
+
+    Measured on the 8 GB card: +16% throughput; vectors agree with the reference to cosine
+    0.99998 and sit as close to an fp32 run as the reference does (min 0.999995).
+    """
+    import types
+
+    import torch.nn.functional as F
+
+    if not hasattr(F, "rms_norm"):  # pragma: no cover - torch < 2.4
+        return 0
+
+    def forward(self: Any, x: Any) -> Any:
+        return F.rms_norm(x, (x.shape[-1],), self.weight.to(x.dtype), self.variance_epsilon)
+
+    fused = 0
+    for module in model.modules():
+        if type(module).__name__ in _PLAIN_RMS_NORMS and hasattr(module, "variance_epsilon"):
+            module.forward = types.MethodType(forward, module)
+            fused += 1
+    return fused
+
 
 def last_token_index(
     attention_mask: np.ndarray[Any, Any], padding_side: PaddingSide
@@ -61,6 +90,7 @@ class TransformersEmbedder:
         device: str | None = None,
         memory_fraction: float = 0.0,
         append_eos: bool = False,
+        fused_norm: bool = True,
     ) -> None:
         if spec.instruction_style is InstructionStyle.CHAT_SYSTEM:
             raise NotImplementedError(
@@ -78,6 +108,7 @@ class TransformersEmbedder:
 
         self.spec = spec
         self.append_eos = append_eos
+        self.fused_norms = 0
         self._torch = torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if memory_fraction and self.device.startswith("cuda"):
@@ -106,6 +137,8 @@ class TransformersEmbedder:
             .to(self.device)
             .eval()
         )
+        if fused_norm:
+            self.fused_norms = _fuse_rms_norms(self.model)
         width = int(self.model.config.hidden_size)
         if width != spec.dim:
             raise ValueError(
@@ -144,46 +177,52 @@ class TransformersEmbedder:
                 return hidden[:, 0]
         raise ValueError(f"unknown pooling {self.spec.pooling!r}")
 
-    def _tokenize(self, texts: list[str]) -> Any:
+    def _ids(self, texts: list[str]) -> list[list[int]] | None:
+        """The token ids last-token pooling will see, or `None` for any other pooling."""
         tok = self.tokenizer
-        if self.spec.pooling is Pooling.LAST_TOKEN and tok.eos_token_id is not None:
-            # ! Last-token pooling reads the final position, so the final token must be the
-            # one the model was trained to pool at. Qwen3-Embedding's tokenizer ALREADY ends
-            # every sequence with `<|endoftext|>` (its post-processor adds it, and keeps it
-            # when truncating). This used to append `eos_token_id` unconditionally on the
-            # belief that it did not: the tokenizer's eos is `<|im_end|>`, so every vector
-            # was pooled at an `<|im_end|>` placed after the `<|endoftext|>`: a different
-            # space (cosine 0.64 against the same text embedded the standard way, and so
-            # against any query embedded by a plain tokenizer call). Add a closing token
-            # only when the tokenizer left the sequence open.
-            if self.append_eos:
-                # The first recipe, kept because a corpus was embedded with it (28 GPU
-                # hours): truncate one short and append `eos_token_id` after whatever the
-                # tokenizer already added. Declared in the corpus config as `append_eos`.
-                legacy = tok(
-                    texts,
-                    padding=False,
-                    truncation=True,
-                    max_length=self.spec.max_length - 1,
-                    return_attention_mask=False,
-                )
-                legacy["input_ids"] = [[*seq, tok.eos_token_id] for seq in legacy["input_ids"]]
-                return tok.pad(legacy, padding=True, return_tensors="pt")
-            ids = tok(
+        if self.spec.pooling is not Pooling.LAST_TOKEN or tok.eos_token_id is None:
+            return None
+        # ! Last-token pooling reads the final position, so the final token must be the
+        # one the model was trained to pool at. Qwen3-Embedding's tokenizer ALREADY ends
+        # every sequence with `<|endoftext|>` (its post-processor adds it, and keeps it
+        # when truncating). This used to append `eos_token_id` unconditionally on the
+        # belief that it did not: the tokenizer's eos is `<|im_end|>`, so every vector
+        # was pooled at an `<|im_end|>` placed after the `<|endoftext|>`: a different
+        # space (cosine 0.64 against the same text embedded the standard way, and so
+        # against any query embedded by a plain tokenizer call). Add a closing token
+        # only when the tokenizer left the sequence open.
+        if self.append_eos:
+            # The first recipe, kept because a corpus was embedded with it (28 GPU hours):
+            # truncate one short and append `eos_token_id` after whatever the tokenizer
+            # already added. Declared in the corpus config as `append_eos`.
+            legacy = tok(
                 texts,
                 padding=False,
                 truncation=True,
-                max_length=self.spec.max_length,
+                max_length=self.spec.max_length - 1,
                 return_attention_mask=False,
             )
-            closing = set(tok.all_special_ids)
-            ids["input_ids"] = [
-                seq
-                if seq and seq[-1] in closing
-                else [*seq[: self.spec.max_length - 1], tok.eos_token_id]
-                for seq in ids["input_ids"]
-            ]
-            return tok.pad(ids, padding=True, return_tensors="pt")
+            return [[*seq, tok.eos_token_id] for seq in legacy["input_ids"]]
+        ids = tok(
+            texts,
+            padding=False,
+            truncation=True,
+            max_length=self.spec.max_length,
+            return_attention_mask=False,
+        )
+        closing = set(tok.all_special_ids)
+        return [
+            seq
+            if seq and seq[-1] in closing
+            else [*seq[: self.spec.max_length - 1], tok.eos_token_id]
+            for seq in ids["input_ids"]
+        ]
+
+    def _tokenize(self, texts: list[str]) -> Any:
+        tok = self.tokenizer
+        ids = self._ids(texts)
+        if ids is not None:
+            return tok.pad({"input_ids": ids}, padding=True, return_tensors="pt")
         return tok(
             texts,
             padding=True,
@@ -191,6 +230,21 @@ class TransformersEmbedder:
             max_length=self.spec.max_length,
             return_tensors="pt",
         )
+
+    def token_lengths(self, texts: list[str]) -> list[int]:
+        """How many tokens each document will be, exactly as `embed_documents` will see it.
+
+        Lets the run sort by true length and fill a batch to a token budget, so the padding in
+        a batch is the gap between neighbours rather than the distance to the longest text.
+        """
+        rendered = [str(render_document(self.spec, text)) for text in texts]
+        ids = self._ids(rendered)
+        if ids is not None:
+            return [len(seq) for seq in ids]
+        encoded = self.tokenizer(
+            rendered, padding=False, truncation=True, max_length=self.spec.max_length
+        )
+        return [len(seq) for seq in encoded["input_ids"]]
 
     def _encode(self, rendered: list[str]) -> np.ndarray[Any, Any]:
         torch = self._torch

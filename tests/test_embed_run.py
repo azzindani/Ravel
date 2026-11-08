@@ -937,3 +937,45 @@ def test_the_first_recipe_survives_as_a_declared_option() -> None:
     standard = spec_of(EmbedSpec(**base))
     assert legacy.fingerprint() != standard.fingerprint()
     assert standard.extra == {"tokenization": "tokenizer-closed"} and legacy.extra == {}
+
+
+def test_token_batches_pad_only_the_gap_between_neighbours() -> None:
+    from runtime.batching import batched_by_tokens
+
+    lengths = [900, 5, 300, 301, 299, 12, 11, 700, 300, 2]
+    order = sorted(range(len(lengths)), key=lambda i: lengths[i], reverse=True)
+    batches = list(batched_by_tokens(order, lengths, budget=1000, max_items=4))
+
+    assert sorted(i for b in batches for i in b) == list(range(len(lengths)))  # nothing lost
+    for batch in batches:
+        assert len(batch) <= 4
+        longest = max(lengths[i] for i in batch)
+        assert len(batch) == 1 or len(batch) * longest <= 1000  # a lone giant may exceed it
+    # a text longer than the budget goes out alone instead of being dropped
+    assert [900] in [[lengths[i] for i in b] for b in batches]
+
+
+def test_fused_rms_norm_is_the_same_function_as_the_reference() -> None:
+    torch = pytest.importorskip("torch")
+    from embed.local import _fuse_rms_norms
+
+    class Qwen3RMSNorm(torch.nn.Module):  # the reference implementation, copied
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.rand(64) + 0.5)
+            self.variance_epsilon = 1e-6
+
+        def forward(self, h: Any) -> Any:
+            dtype = h.dtype
+            h = h.to(torch.float32)
+            h = h * torch.rsqrt(h.pow(2).mean(-1, keepdim=True) + self.variance_epsilon)
+            return self.weight * h.to(dtype)
+
+    holder = torch.nn.Sequential(Qwen3RMSNorm())
+    x = torch.randn(3, 7, 64)
+    reference = holder(x)
+    assert _fuse_rms_norms(holder) == 1
+    fused = holder(x)
+    cosine = torch.nn.functional.cosine_similarity(fused, reference, dim=-1)
+    assert cosine.min() > 0.99999
+    assert torch.allclose(fused, reference, atol=1e-5)
