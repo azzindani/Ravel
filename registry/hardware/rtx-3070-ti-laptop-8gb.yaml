@@ -6,6 +6,8 @@ match:
   vram_gb_max: 9
 batch_items: 256
 batch_tokens: 16384
+# Takes effect on Linux / in the ravel-job image (Triton + gcc); elsewhere it is skipped with a warning.
+compile: true
 batch_bytes: 40000
 # Attention memory grows with the square of the length: items x longest^2 (bytes) is what
 # keeps a few 4,000-token chunks from sharing a batch that needs ~6 GB.

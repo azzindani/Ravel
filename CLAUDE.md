@@ -271,7 +271,7 @@ parsing as a stateless service.
       cases against a 100 minimum, 66% factual against a 40% target, and the
       source set's own "STILL NEEDS DOMAIN REVIEW" is unaddressed
 - [ ] MCP server: parser authoring tools (inspect, preview, diff, save)
-- [ ] HTTP service + two Docker images (`ravel-job`, `ravel-service`)
+- [~] Docker images: `ravel-job` (Linux GPU batch image, `docker/Dockerfile.job`, torch.compile verified in it); `ravel-service` and the HTTP service still to write
 - [ ] Remote URI backends: R2 working state, HF datasets for published bundles
 - [x] CI: ruff, hermetic suite on 3 platforms, generated SQL against real pgvector, routing over the 158 sample PDFs, CLI from an installed wheel
 - [x] `ruff format` and `mypy --strict` over `src/` and `tools/`, both enforced in CI

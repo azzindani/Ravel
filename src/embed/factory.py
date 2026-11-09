@@ -64,6 +64,7 @@ def build_embedder(cfg: EmbedSpec) -> Embedder:
                 memory_fraction=cfg.memory_fraction,
                 append_eos=cfg.append_eos,
                 fused_norm=cfg.fused_norm,
+                compile_model=cfg.compile,
             )
         case "api":
             from embed.api import OpenAICompatEmbedder
@@ -89,6 +90,7 @@ def with_hardware(cfg: EmbedSpec, hardware: HardwareSpec) -> EmbedSpec:
         "batch_bytes": hardware.batch_bytes,
         "batch_square": hardware.batch_square,
         "batch_tokens": hardware.batch_tokens,
+        "compile": hardware.compile,
         "memory_fraction": hardware.memory_fraction,
     }
     if hardware.device:

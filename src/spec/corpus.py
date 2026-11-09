@@ -223,6 +223,10 @@ class EmbedSpec(Base):
     grows with the square of the length, which a byte budget does not see."""
     batch_tokens: int = Field(default=0, ge=0)
     """Padded-token budget per batch for a local model (0 = by bytes); see `HardwareSpec`."""
+    compile: bool = False
+    """`torch.compile` the model (dynamic shapes): +14% over eager on the 8 GB card, vectors as
+    close to an fp32 run as before (cosine 0.999997). Needs Triton and a C compiler, so it takes
+    effect on Linux / in `ravel-job` and is skipped, with a warning, where they are missing."""
     fused_norm: bool = True
     """Run RMSNorm as one fused kernel with an fp32 accumulator (`torch.nn.functional.rms_norm`)
     instead of the reference six-op version. Same maths, ~16% faster on the 8 GB card; vectors

@@ -979,3 +979,24 @@ def test_fused_rms_norm_is_the_same_function_as_the_reference() -> None:
     cosine = torch.nn.functional.cosine_similarity(fused, reference, dim=-1)
     assert cosine.min() > 0.99999
     assert torch.allclose(fused, reference, atol=1e-5)
+
+
+def test_compile_is_only_attempted_where_triton_and_a_compiler_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.util
+    import shutil
+
+    from embed.local import can_compile
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    ok, why = can_compile()
+    assert not ok and "Triton" in why
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    ok, why = can_compile()
+    assert not ok and "compiler" in why
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/gcc")
+    assert can_compile() == (True, "")

@@ -94,6 +94,9 @@ class HardwareSpec(Base):
     batch_tokens: int = Field(default=0, ge=0)
     """Padded-token budget of one batch, `items * longest` in tokens (0 = batch by bytes).
     Sorting by token length and filling to this budget removes the padding a byte cap pays."""
+    compile: bool = False
+    """Ask for `torch.compile` (Triton). Used only where Triton and a C compiler exist (a Linux
+    box or the `ravel-job` image); anywhere else the embedder logs it and runs eagerly."""
     memory_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     """Share of GPU memory the process may reserve; 0 = uncapped. See `EmbedSpec`."""
     match: Match = Field(default_factory=Match)

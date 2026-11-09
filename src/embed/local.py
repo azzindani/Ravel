@@ -38,6 +38,18 @@ _DTYPES = {"float16": "float16", "bfloat16": "bfloat16", "float32": "float32"}
 _PLAIN_RMS_NORMS = frozenset({"Qwen3RMSNorm", "Qwen2RMSNorm", "LlamaRMSNorm", "MistralRMSNorm"})
 
 
+def can_compile() -> tuple[bool, str]:
+    """Whether `torch.compile` can build GPU kernels here: Triton and a C compiler."""
+    import importlib.util
+    import shutil
+
+    if importlib.util.find_spec("triton") is None:
+        return False, "Triton is not installed"
+    if not any(shutil.which(c) for c in ("gcc", "cc", "clang")):
+        return False, "no C compiler was found"
+    return True, ""
+
+
 def _fuse_rms_norms(model: Any) -> int:
     """Replace the reference RMSNorm (six element-wise kernels, an fp32 copy of the activations)
     with `torch.nn.functional.rms_norm`: one kernel, fp32 accumulator, same function.
@@ -91,6 +103,7 @@ class TransformersEmbedder:
         memory_fraction: float = 0.0,
         append_eos: bool = False,
         fused_norm: bool = True,
+        compile_model: bool = False,
     ) -> None:
         if spec.instruction_style is InstructionStyle.CHAT_SYSTEM:
             raise NotImplementedError(
@@ -137,7 +150,21 @@ class TransformersEmbedder:
             .to(self.device)
             .eval()
         )
-        if fused_norm:
+        self.compiled = False
+        if compile_model:
+            ok, why = can_compile()
+            if ok:
+                import torch._dynamo
+
+                # ! Without this the default cache (8 shapes) is exhausted by the variable
+                # batch/length shapes of a corpus, and torch quietly falls back to eager.
+                torch._dynamo.config.cache_size_limit = 256
+                self.model = torch.compile(self.model, dynamic=True)
+                self.compiled = True
+            else:
+                log.warning("%s: torch.compile requested but %s; running eagerly", spec.id, why)
+        # The compiler fuses the norms itself; the hand-fused kernel is for the eager path.
+        if fused_norm and not self.compiled:
             self.fused_norms = _fuse_rms_norms(self.model)
         width = int(self.model.config.hidden_size)
         if width != spec.dim:

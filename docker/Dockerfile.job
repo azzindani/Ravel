@@ -1,0 +1,39 @@
+# ravel-job: the batch image. `ravel extract | chunk | embed | sparse | bundle | load` on a Linux GPU box.
+#
+# Why Linux: the accelerators that matter (Triton for torch.compile, flash attention, vLLM) are Linux
+# first; on Windows they are missing or community builds (docs/STACK.md §1). The project itself installs
+# from uv.lock, so the versions here are the ones CI and the laptop run. Accelerators that pin torch
+# (vLLM) go in their own layer, after the project (docker/requirements-gpu.txt), never into it.
+#
+#   docker build -f docker/Dockerfile.job -t ravel-job:gpu .
+#   docker run --rm --gpus all -v <workspace>:/work -v <hf cache>:/hf ravel-job:gpu embed <corpus> --workspace /work
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    HF_HOME=/hf \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+
+# Dependencies first, so a source edit does not reinstall torch.
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --extra embed --extra load --extra remote --extra cluster
+
+COPY src ./src
+COPY registry ./registry
+COPY corpora ./corpora
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --extra embed --extra load --extra remote --extra cluster
+
+# Triton (torch.compile) builds a small launcher per kernel at run time and needs a C compiler.
+# Last layer on purpose: the dependency layers above are slow to download and stay cached.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+ENTRYPOINT ["ravel"]
