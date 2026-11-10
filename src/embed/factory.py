@@ -43,10 +43,12 @@ def spec_of(cfg: EmbedSpec) -> EmbedderSpec:
         # space it produces. Vectors made before the closing-token fix (an extra `<|im_end|>`
         # after the tokenizer's own `<|endoftext|>`) are a different space, and the
         # fingerprint is what keeps a resumed run from adding to them: a new value here is a
-        # new vector generation, never a mix.
-        extra=({} if cfg.append_eos else {"tokenization": "tokenizer-closed"})
-        if cfg.kind == "local"
-        else {},
+        # new vector generation, never a mix. The marker is the SAME for every backend: the
+        # standard recipe is one space whether `transformers` or a serving engine made it
+        # (`ravel verify-backend` is what proves an engine is in it). Left empty for an
+        # engine, the standard space would share a fingerprint with the legacy `append_eos`
+        # vectors and a resumed run could blend the two.
+        extra={} if cfg.append_eos else {"tokenization": "tokenizer-closed"},
     )
 
 

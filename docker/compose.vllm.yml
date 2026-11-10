@@ -1,0 +1,37 @@
+# A vLLM embedding server for Ravel's `kind: api` backend. For a rented GPU (4090/5090/datacenter)
+# where batching across requests pays; on the 8 GB laptop it measured the same as the compiled
+# in-process path (73-77 vs 72 chunks/s at equal clocks), so there `compile: true` is simpler.
+#
+#   docker compose -f docker/compose.vllm.yml up -d
+#   EMBED_API_KEY=local ravel verify-backend <corpus> --base-url http://localhost:8000/v1   # must pass
+#   EMBED_API_KEY=local ravel embed <corpus> --concurrency 8                                 # corpus embed: kind: api
+#
+# ! Never build a corpus on an engine before `verify-backend` agrees (cosine >= 0.999 against the
+# reference implementation). The image is pinned by digest: a new vLLM is a new implementation.
+services:
+  vllm:
+    image: vllm/vllm-openai@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    command: >
+      Qwen/Qwen3-Embedding-0.6B
+      --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+      --runner pooling --dtype float16 --max-model-len 8192
+      --gpu-memory-utilization 0.80 --max-num-seqs 256 --max-num-batched-tokens 16384
+      --served-model-name Qwen/Qwen3-Embedding-0.6B qwen3-embedding-0.6b
+      --port 8000
+    ports: ["127.0.0.1:8000:8000"]
+    ipc: host
+    environment:
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped

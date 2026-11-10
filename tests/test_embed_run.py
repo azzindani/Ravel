@@ -1000,3 +1000,23 @@ def test_compile_is_only_attempted_where_triton_and_a_compiler_exist(
 
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/gcc")
     assert can_compile() == (True, "")
+
+
+def test_the_standard_recipe_has_one_fingerprint_marker_for_every_backend() -> None:
+    """An engine-built corpus must not share a fingerprint with the legacy vectors."""
+    from embed.factory import spec_of
+    from spec.corpus import EmbedSpec
+
+    base = {
+        "id": "q",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+        "dim": 1024,
+    }
+    local = spec_of(EmbedSpec(**base, kind="local"))
+    engine = spec_of(EmbedSpec(**base, kind="api", base_url="http://x/v1"))
+    legacy = spec_of(EmbedSpec(**base, kind="local", append_eos=True))
+
+    assert local.extra == engine.extra == {"tokenization": "tokenizer-closed"}
+    assert legacy.extra == {}
+    assert engine.fingerprint() != legacy.fingerprint()

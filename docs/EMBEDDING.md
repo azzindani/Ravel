@@ -112,6 +112,12 @@ questions through the endpoint and through the `transformers` reference and exit
 below a cosine floor (0.999). **Run it before building a corpus on an engine.** It refuses to
 compare a backend with itself, which would score 1.0 and certify nothing.
 
+**Measured (2026-11-10, RTX 3070 Ti Laptop 8 GB, same 3,000 chunks, clock-normalised to 1785 MHz):**
+`transformers` eager 61 chunks/s, `compile: true` in the `ravel-job` image 72, vLLM through `kind: api` 73-77.
+`ravel verify-backend` agreed with the reference at cosine 1.00000. vLLM is therefore no faster than the
+compiled in-process path on a small card (the GPU is the limit); it is for a rented card, see
+`docker/compose.vllm.yml`.
+
 **Not yet verified.** The HTTP path, ordering, concurrency and the comparison are tested
 against a fake server in CI. No real vLLM or TEI has been run: vLLM does not run on Windows,
 and the machine this was built on has one 8 GB card. The first run on a rented Linux GPU must
