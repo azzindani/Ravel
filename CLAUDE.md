@@ -89,6 +89,7 @@ Ravel/
 │   ├── QUALITY.md                 ← per-document verdict: clean / degraded / unusable / absent
 │   ├── ENRICHMENT.md              ← NER, entities, KG edges, signals, keyword stats
 │   ├── EMBEDDING.md               ← pluggable embedders; dimension; omni; consistency
+│   ├── EMBED_VERIFICATION.md      ← how embedding was tested: reference checks, speed, vLLM
 │   ├── BUNDLE.md                  ← output contract: parquet + manifest + schema gen
 │   ├── VARIANTS.md                ← the experiment harness
 │   ├── EXECUTION.md               ← work queue, checkpoints, resume, portability
