@@ -125,8 +125,12 @@ chunks + 3 queries, reference computed on the CPU in fp32:
 vLLM resolved last-token pooling and normalisation from the model's own sentence-transformers
 config. The reference runs on the CPU because the server holds most of the GPU.
 
-**Not confirmed:** which attention backend vLLM selected. The startup log was not read for it, so
-"FlashAttention" for this run is expected on an Ampere card, not observed.
+**Attention backend (read from the startup log, 2026-11-10):** vLLM 0.33.0 reported "Using
+FLASH_ATTN attention backend out of potential backends: FLASH_ATTN, FLASHINFER, TRITON_ATTN,
+FLEX_ATTENTION" and "Using FlashAttention version 2". So FlashAttention was in use for the vLLM
+numbers in §4, and it still tied the compiled in-process path at equal clock. The in-process path
+uses PyTorch's built-in attention (the memory-efficient kernel under a padding mask, see the §4
+profile); which kernel the compiled graph picks was not profiled.
 
 ## 6. Context length
 
