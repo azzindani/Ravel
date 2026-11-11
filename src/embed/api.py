@@ -41,6 +41,7 @@ class OpenAICompatEmbedder:
         api_key_env: str,
         retries: int = 5,
         client: Any = None,
+        tokenizer: Any = None,
     ) -> None:
         if spec.instruction_style is InstructionStyle.CHAT_SYSTEM:
             raise NotImplementedError(
@@ -48,6 +49,7 @@ class OpenAICompatEmbedder:
             )
         self.spec = spec
         self.retries = retries
+        self._tokenizer = tokenizer  # loaded on the first text that could exceed the cap
         if client is not None:  # the seam tests use; production builds its own
             self.client = client
             return
@@ -65,7 +67,47 @@ class OpenAICompatEmbedder:
             return {}
         return {"provider": {"order": [self.spec.provider_pin], "allow_fallbacks": False}}
 
+    def _fit(self, text: str) -> str:
+        """The text, cut to what the recipe embeds: at most `max_length` tokens including the
+        closing token.
+
+        The reference implementation truncates silently at `max_length`; a serving engine
+        REJECTS the request (vLLM: HTTP 400, "maximum context length"), which fails every chunk
+        in the batch and, unhandled, the run hours in. So the declared cap is applied here,
+        exactly where the reference applies it. A token is at least one byte, so a text of
+        fewer bytes than the cap cannot exceed it and is never tokenised at all.
+        """
+        cap = self.spec.max_length
+        if len(text.encode("utf-8")) < cap:
+            return text
+        if self._tokenizer is None:
+            try:
+                from transformers import AutoTokenizer
+            except ImportError as exc:  # pragma: no cover - exercised only without the extra
+                raise RuntimeError(
+                    f"{self.spec.id}: a text may exceed {cap} tokens and the endpoint would "
+                    "reject it; cutting it needs the model's tokenizer "
+                    "(`uv sync --extra embed`)"
+                ) from exc
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                self.spec.model, revision=self.spec.model_version
+            )
+        tok = self._tokenizer
+        ids = tok(text, add_special_tokens=False)["input_ids"]
+        if len(ids) + 1 <= cap:  # + the closing token the engine appends
+            return text
+        keep = cap - 1
+        cut = tok.decode(ids[:keep])
+        # ! Decoding then re-encoding is not guaranteed to give the same tokens at the cut, so
+        # check the result and trim until it fits, instead of trusting the round trip.
+        while keep > 1 and len(tok(cut, add_special_tokens=False)["input_ids"]) + 1 > cap:
+            keep -= 1
+            cut = tok.decode(ids[:keep])
+        log.warning("%s: a text of %d tokens was cut to %d", self.spec.id, len(ids), keep)
+        return str(cut)
+
     def _call(self, rendered: list[str]) -> np.ndarray[Any, Any]:
+        rendered = [self._fit(text) for text in rendered]
         delay = 1.0
         for attempt in range(1, self.retries + 1):
             try:

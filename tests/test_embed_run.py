@@ -1038,3 +1038,51 @@ def test_serving_an_existing_corpus_changes_only_the_backend() -> None:
     assert (served.kind, served.base_url) == ("api", "http://localhost:8000/v1")
     # same space, same vector generation: an engine's vectors are only ever the corpus's own
     assert spec_of(served).fingerprint() == spec_of(cfg).fingerprint()
+
+
+def test_an_api_embedder_cuts_what_an_engine_would_reject() -> None:
+    """An engine rejects a prompt over the cap (HTTP 400) where the reference truncates, which
+    fails the whole batch. The embedder applies the declared cap itself, only where needed."""
+    from types import SimpleNamespace
+
+    from embed.api import OpenAICompatEmbedder
+    from embed.factory import spec_of
+    from spec.corpus import EmbedSpec
+
+    class Tok:
+        """One token per character, so the cap is easy to reason about."""
+
+        def __call__(self, text: str, add_special_tokens: bool = True) -> dict[str, list[int]]:
+            return {"input_ids": [ord(c) for c in text]}
+
+        def decode(self, ids: list[int]) -> str:
+            return "".join(chr(i) for i in ids)
+
+    sent: list[list[str]] = []
+
+    class Client:
+        def __init__(self) -> None:
+            self.embeddings = SimpleNamespace(create=self.create)
+
+        def create(self, *, input: list[str], **_: object) -> SimpleNamespace:
+            sent.append(list(input))
+            rows = [SimpleNamespace(index=i, embedding=[1.0, 0.0]) for i in range(len(input))]
+            return SimpleNamespace(data=rows)
+
+    cfg = EmbedSpec(
+        id="q",
+        kind="api",
+        base_url="http://x/v1",
+        model="m",
+        revision="r",
+        dim=2,
+        max_length=16,
+    )
+    embedder = OpenAICompatEmbedder(
+        spec_of(cfg), base_url="http://x/v1", api_key_env="K", client=Client(), tokenizer=Tok()
+    )
+    embedder.embed_documents(["short", "x" * 15, "y" * 16, "z" * 500])
+
+    short, fits, boundary, huge = sent[0]
+    assert short == "short" and fits == "x" * 15  # untouched
+    assert len(boundary) == 15 and len(huge) == 15  # cap 16 minus the closing token
