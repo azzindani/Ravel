@@ -414,6 +414,22 @@ def embed_cmd(
             help="`i/N`: embed only windows k with k % N == i, so N machines share a corpus.",
         ),
     ] = "",
+    base_url: Annotated[
+        str,
+        typer.Option(
+            "--base-url",
+            help="Embed through this OpenAI-compatible endpoint (vLLM, TEI) instead of the "
+            "corpus's backend. Run `ravel verify-backend` against it first.",
+        ),
+    ] = "",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "EMBED_API_KEY",
+    batch_items: Annotated[
+        int, typer.Option("--batch-items", help="Chunks per request to a serving endpoint.")
+    ] = 0,
+    batch_bytes: Annotated[
+        int,
+        typer.Option("--batch-bytes", help="Payload bytes per request to a serving endpoint."),
+    ] = 0,
     remote: REMOTE = "",
 ) -> None:
     """Phase B: chunks into vectors, by the embedder the corpus names.
@@ -469,8 +485,16 @@ def embed_cmd(
         err.print(f"[red]{spec.id} has no `embed:` section[/red]")
         raise typer.Exit(1)
     cfg = spec.embed
+    if base_url:
+        from embed.factory import as_serving
+
+        cfg = as_serving(cfg, base_url, api_key_env)
     if concurrency:
         cfg = cfg.model_copy(update={"concurrency": concurrency})
+    if batch_items:
+        cfg = cfg.model_copy(update={"batch_items": batch_items})
+    if batch_bytes:
+        cfg = cfg.model_copy(update={"batch_bytes": batch_bytes})
     choice = hardware or cfg.hardware
     if choice != "none":
         from embed.factory import with_hardware
@@ -1273,9 +1297,9 @@ def verify_backend_cmd(
         raise typer.Exit(1)
     serving_cfg = spec.embed
     if base_url:
-        serving_cfg = serving_cfg.model_copy(
-            update={"kind": "api", "base_url": base_url, "api_key_env": api_key_env}
-        )
+        from embed.factory import as_serving
+
+        serving_cfg = as_serving(serving_cfg, base_url, api_key_env)
     if serving_cfg.kind == "local":
         err.print(
             "[red]this corpus embeds locally; pass --base-url to check a serving endpoint[/red]"

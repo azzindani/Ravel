@@ -1020,3 +1020,21 @@ def test_the_standard_recipe_has_one_fingerprint_marker_for_every_backend() -> N
     assert local.extra == engine.extra == {"tokenization": "tokenizer-closed"}
     assert legacy.extra == {}
     assert engine.fingerprint() != legacy.fingerprint()
+
+
+def test_serving_an_existing_corpus_changes_only_the_backend() -> None:
+    from embed.factory import as_serving, spec_of
+    from spec.corpus import EmbedSpec
+
+    cfg = EmbedSpec(
+        id="q",
+        kind="local",
+        model="Qwen/Qwen3-Embedding-0.6B",
+        revision="97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+        dim=1024,
+    )
+    served = as_serving(cfg, "http://localhost:8000/v1")
+
+    assert (served.kind, served.base_url) == ("api", "http://localhost:8000/v1")
+    # same space, same vector generation: an engine's vectors are only ever the corpus's own
+    assert spec_of(served).fingerprint() == spec_of(cfg).fingerprint()

@@ -18,7 +18,7 @@ from embed.spec import (
 from spec.corpus import EmbedSpec
 from spec.hardware import HardwareSpec
 
-__all__ = ["build_embedder", "spec_of", "with_hardware"]
+__all__ = ["as_serving", "build_embedder", "spec_of", "with_hardware"]
 
 
 def spec_of(cfg: EmbedSpec) -> EmbedderSpec:
@@ -98,3 +98,15 @@ def with_hardware(cfg: EmbedSpec, hardware: HardwareSpec) -> EmbedSpec:
     if hardware.device:
         update["device"] = hardware.device
     return cfg.model_copy(update=update)
+
+
+def as_serving(cfg: EmbedSpec, base_url: str, api_key_env: str = "EMBED_API_KEY") -> EmbedSpec:
+    """The same corpus embedded by an OpenAI-compatible engine (vLLM, TEI, a hosted API).
+
+    Only the backend changes. The model, revision, pooling, instruction and the recipe marker
+    in `spec_of` are the corpus's own, so the vectors land in the same space and the same
+    vector generation as a local run, which is true only once `ravel verify-backend` has agreed.
+    """
+    return cfg.model_copy(
+        update={"kind": "api", "base_url": base_url, "api_key_env": api_key_env}
+    )
