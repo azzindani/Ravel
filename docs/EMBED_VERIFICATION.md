@@ -143,7 +143,63 @@ largest was 7,341). Left as is: under 0.002% of the corpus, and changing the chu
 re-chunk everything. An exact count over all chunks is possible (CPU only, about 10 minutes) and has
 not been run.
 
-## 7. Reproducing
+## 7. First 60,000 chunks of the standard recipe, through vLLM, loaded into Vera (2026-11-11)
+
+The first real standard-recipe vectors, made by `ravel embed --base-url` against the digest-pinned vLLM
+server, then verified before any more were made.
+
+**Before the run (vLLM against the model card's fp32 code, on the GPU, through Ravel's own API path):**
+152 chunks from 8 shards, shortest to longest: min cosine **0.999995**, mean 0.999999. Six queries with the
+instruction template: min **0.999997**. Control: the legacy recipe scores a mean 0.7734 against the same
+vectors, so the check can tell the two recipes apart.
+
+**A defect the check found.** vLLM answers HTTP 400 ("maximum context length is 8192 tokens") for a prompt
+over its limit; the reference truncates silently. One chunk of about 10,000 tokens in a batch of 64 would
+have failed the batch and, being a non-retryable error, the run. The API embedder now cuts a text to the
+recipe's `max_length` itself, before the request (`OpenAICompatEmbedder._fit`; a text under the cap in
+bytes is never tokenised). The 10,000-token chunk, cut to 8,191 tokens plus the closing token, matches the
+reference at cosine >= 0.999995.
+
+**The run.** `ravel embed id_reg_markdown --base-url http://localhost:8000/v1 --concurrency 8 --batch-items
+64 --batch-bytes 200000 --limit 50000`. The resume unit is a 20,000-vector window, so a 50,000 limit
+completed 3 windows: **60,000 vectors**, the first 60,000 rows of chunk shard 0, written to the new vector
+generation `6df0567952c4` (fingerprint `2231c38c768a08c7`); the legacy generation `95c78dc6bd98` is untouched.
+Speed over those windows was 73 vectors/s; the early shards are not representative of the whole corpus, so
+this is not the estimate for the full run.
+
+**Stored vectors against the reference.** All 60,000: unit norm (min 0.9999, max 1.0001), no NaN. 180 chunks
+sampled over the three windows from shortest to longest, stored vector against the model card's fp32 code:
+min **0.999997**, mean 0.999999.
+
+**Loaded into Vera.** A subset bundle of exactly those 60,000 chunks (1,528 documents; the sidecars of the
+full bundle restricted to them) passed the preflight (dimension, completeness, checksums, disk, provenance;
+consistency and canary need a live embedder), was loaded into Vera's own database image (pgvector + RUM +
+pg_search, built from `Vera/docker/Dockerfile.db`), Vera's migrations 0002 to 0004 were applied, and Vera's
+own k-means made 29 clusters over the 58,279 `indexable` chunks (the quality gate excludes the other 1,721).
+
+**The canary, and a finding in Vera.**
+- The bundle's reference canary (`reference.txt` through Vera's unmodified standard embed server, with the
+  query instruction, against `reference.npy`): cosine **0.999997**; the same sentence without the
+  instruction scores 0.80, and the legacy recipe against a standard query scored 0.64. This is the check
+  that proves the query side matches the corpus.
+- Vera's own startup canary re-embeds a chunk body through the query path and compares it with the stored
+  vector. Ravel embeds documents bare behind a header, so the two inputs differ by design: the stored
+  vector scored 0.84 against 0.98 required, and 0.96 on another chunk of the legacy corpus. It cannot
+  discriminate here (a wrong recipe scores 0.73 to 0.84 on chunk bodies), so Vera was started with
+  `CANARY_MIN_COSINE=0.5` for this check and the reference canary above is what verifies the space. Vera
+  should compare against the bundle's reference sentence (it is in the bundle but not yet stamped into
+  `corpus_meta`); that change is Vera's and has not been made.
+- Vera's embedder client speaks the TEI `/embed` shape, which vLLM does not serve, so Vera's query side
+  stays on its own embed server; vLLM is for building the corpus.
+
+**Retrieval, a smoke check (not an evaluation).** Real queries in semantic, keyword and hybrid modes
+returned on-topic results with provenance and status (for example administrative sanctions to the sanctions
+chapter of PP 43/2008; child rights to child-protection regional regulations). Absolute dense similarities
+are lower than under the legacy recipe (0.6 to 0.75 against 0.84 to 0.87), because query and document no
+longer share an extra closing token; any threshold in Vera that assumes the old scale needs recalibrating.
+The 60,000 chunks are a fraction of the corpus, so recall was not measured.
+
+## 8. Reproducing
 
 - Image: `docker build -f docker/Dockerfile.job -t ravel-job:gpu .` (installs from `uv.lock`; a C
   compiler is added in the last layer for Triton).
@@ -154,9 +210,9 @@ not been run.
 - The measurement harnesses (A/B timing with a clock sampler, the independent fp32 reference) were
   scratch scripts and are not committed; §4 describes the method so they can be rewritten.
 
-## 8. What is not proven
-- No full corpus has been embedded with the standard recipe yet; every speed figure is a
-  3,000-chunk benchmark.
+## 9. What is not proven
+- Only the first 60,000 chunks have been embedded with the standard recipe; the remaining
+  1,656,628 have not, and every speed figure for the whole corpus is a 3,000-chunk benchmark.
 - Throughput depends on cooling and clock; the numbers above are for one machine and one cooling
   state.
 - Retrieval quality of the standard space against the legacy space has not been measured; that needs
