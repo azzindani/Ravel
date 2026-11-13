@@ -26,6 +26,7 @@ module is imported.
 from __future__ import annotations
 
 import re
+import struct
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -121,6 +122,58 @@ def _rows(path: Path, columns: tuple[str, ...]) -> Iterator[list[tuple[Any, ...]
         yield list(zip(*(data[name] for name in columns), strict=True))
 
 
+#: PostgreSQL's binary COPY framing: signature, flags, header extension; a row is a field
+#: count then length-prefixed fields; the stream ends with a field count of -1.
+_BINARY_HEADER = b"PGCOPY\n\xff\r\n\x00" + struct.pack(">ii", 0, 0)
+_BINARY_TRAILER = struct.pack(">h", -1)
+
+
+def vector_copy_rows(ids: list[str], flat: np.ndarray[Any, Any], dim: int) -> bytes:
+    """Binary `COPY` rows for a `(text, halfvec)` table: `ids[i]` with `flat[i*dim:(i+1)*dim]`.
+
+    A `halfvec` on the wire is `int16 dim, int16 0` then `dim` half-precision floats in
+    network order, which is exactly what the bundle already stores. Nothing is formatted to
+    text and parsed back, and that is the whole point: at 1.7M x 1,024 floats the text route
+    spent 1,350 s of a 1,770 s load turning numbers into strings and `pgvector` turning them
+    back, for the same bytes.
+    """
+    rows = np.ascontiguousarray(flat.reshape(-1, dim).astype(">f2", copy=False))
+    if rows.shape[0] != len(ids):
+        raise ValueError(f"{len(ids)} ids but {rows.shape[0]} vectors")
+    head = struct.pack(">h", 2)
+    vector_head = struct.pack(">ihh", 4 + 2 * dim, dim, 0)
+    out = bytearray()
+    for i, chunk_id in enumerate(ids):
+        key = chunk_id.encode("utf-8")
+        out += head + struct.pack(">i", len(key)) + key + vector_head + rows[i].tobytes()
+    return bytes(out)
+
+
+def _copy_vectors(
+    cur: Any,
+    statement: str,
+    path: Path,
+    on_rows: Callable[[str, int], None] | None,
+    step_name: str,
+    total: int,
+) -> int:
+    file = pq.ParquetFile(str(path))
+    dim = file.schema_arrow.field("embedding").type.list_size
+    binary = statement.replace("FROM STDIN", "FROM STDIN WITH (FORMAT BINARY)")
+    with cur.copy(binary) as copy:
+        copy.write(_BINARY_HEADER)
+        for batch in file.iter_batches(
+            batch_size=BATCH_ROWS, columns=["chunk_id", "embedding"]
+        ):
+            flat = batch.column("embedding").values.to_numpy(zero_copy_only=False)
+            copy.write(vector_copy_rows(batch.column("chunk_id").to_pylist(), flat, dim))
+            total += batch.num_rows
+            if on_rows is not None:
+                on_rows(step_name, total)
+        copy.write(_BINARY_TRAILER)
+    return total
+
+
 def _copy(
     conn: Any,
     root: Path,
@@ -130,6 +183,10 @@ def _copy(
     total = 0
     for name, statement in _statements(step):
         columns = _columns(statement)
+        if columns == ("chunk_id", "embedding"):
+            with conn.cursor() as cur:
+                total = _copy_vectors(cur, statement, root / name, on_rows, step.name, total)
+            continue
         with conn.cursor() as cur, cur.copy(statement) as copy:
             for rows in _rows(root / name, columns):
                 for row in rows:

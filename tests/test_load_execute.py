@@ -52,3 +52,28 @@ def test_the_column_list_is_read_back_without_its_quotes() -> None:
         "chunk_id",
         "embedding",
     )
+
+
+def test_a_vector_row_is_laid_out_the_way_postgres_binary_copy_reads_it() -> None:
+    """Field count, length-prefixed key, then a `halfvec`: int16 dim, int16 0, half floats."""
+    import struct
+
+    from load.execute import vector_copy_rows
+
+    vector = np.array([0.5, -1.0, 0.0], dtype=np.float16)
+    got = vector_copy_rows(["ab"], vector, 3)
+    expected = (
+        struct.pack(">h", 2)
+        + struct.pack(">i", 2)
+        + b"ab"
+        + struct.pack(">ihh", 4 + 2 * 3, 3, 0)
+        + vector.astype(">f2").tobytes()
+    )
+    assert got == expected
+
+
+def test_vector_rows_refuse_ids_and_vectors_that_do_not_pair_up() -> None:
+    from load.execute import vector_copy_rows
+
+    with pytest.raises(ValueError, match="ids but"):
+        vector_copy_rows(["a", "b"], np.zeros(3, dtype=np.float16), 3)
