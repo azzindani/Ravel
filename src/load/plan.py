@@ -294,6 +294,7 @@ def load_plan(
                 "been built by it."
             ),
         ),
+        *_canary_steps(document, root),
         Step(
             name="stage",
             sql=(
@@ -608,6 +609,42 @@ def load_plan(
             )
         )
     return tuple(steps)
+
+
+def _canary_steps(document: dict[str, Any], root: Path) -> tuple[Step, ...]:
+    """The bundle's reference sentence and vector, recorded in the database it loads into.
+
+    ! The corpus carries its own canary so that whatever serves it can check its embedder
+    against the recipe that built it, with nothing but this row: embed `text` the way a
+    query is embedded and the result must land on `dense`. It is stamped here, by the
+    loader, because the loader is where the bundle becomes a database; a deploy that had to
+    remember to do it afterwards is a deploy that sometimes does not. A bundle with no
+    reference has no canary row, and the serving engine falls back to its older check.
+    """
+    import numpy as np
+
+    text_path, vector_path = root / "reference.txt", root / "reference.npy"
+    if not (text_path.exists() and vector_path.exists()):
+        return ()
+    vector = np.load(vector_path).astype(np.float32).ravel()
+    literal = "[" + ",".join(f"{x:.9g}" for x in vector.tolist()) + "]"
+    corpus_id = str(document["corpus_id"])
+    text = text_path.read_text(encoding="utf-8").strip()
+    return (
+        Step(
+            name="stamp canary",
+            sql=(
+                "CREATE TABLE IF NOT EXISTS corpus_canary (corpus_id TEXT PRIMARY KEY "
+                "REFERENCES corpus_meta(id) ON DELETE CASCADE, text TEXT NOT NULL, "
+                "dense halfvec NOT NULL);"
+                f" INSERT INTO corpus_canary (corpus_id, text, dense) VALUES "
+                f"({quote_literal(corpus_id)}, {quote_literal(text)}, "
+                f"{quote_literal(literal)}::halfvec);"
+            ),
+            inputs=("reference.txt", "reference.npy"),
+            note="The corpus's own check of the space; the vector declares its width.",
+        ),
+    )
 
 
 def _corpus_meta_insert(document: dict[str, Any]) -> str:

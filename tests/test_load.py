@@ -597,3 +597,21 @@ def test_the_schema_declares_doc_quality(built) -> None:
     assert "CREATE TABLE IF NOT EXISTS doc_quality" in (root / "schema.sql").read_text(
         encoding="utf-8"
     )
+
+
+def test_a_bundle_with_a_reference_loads_it_as_the_corpus_canary(built) -> None:
+    """The loader records the reference sentence and vector in the database, so the engine
+    that serves the corpus can check its embedder against the recipe with that row alone."""
+    root, _ = built
+    for path in ("reference.txt", "reference.npy"):
+        (root / path).unlink(missing_ok=True)
+    assert not [s for s in load_plan(read_bundle(root), root) if s.name == "stamp canary"]
+
+    (root / "reference.txt").write_text("Setiap orang wajib menaati hukum.", encoding="utf-8")
+    np.save(root / "reference.npy", np.array([0.5, -0.25, 0.0], dtype=np.float32))
+    plan = load_plan(read_bundle(root), root)
+    step = next(s for s in plan if s.name == "stamp canary")
+    assert "[0.5,-0.25,0]" in step.sql
+    assert "Setiap orang wajib menaati hukum." in step.sql
+    names = [s.name for s in plan]
+    assert names.index("stamp corpus_meta") < names.index("stamp canary") < names.index("stage")
