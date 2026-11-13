@@ -1454,3 +1454,89 @@ def db_prepare(
         summary.add_row("vocabulary", str(result.vocabulary))
     out.print(summary)
     out.print("[green]ready[/green]")
+
+
+@db_app.command("image")
+def db_image(
+    bundle: BundleArg,
+    target: Annotated[Path, typer.Option("--out", help="Where to write the packed database.")],
+    password: Annotated[
+        str,
+        typer.Option(
+            "--password", envvar="RAVEL_DB_PASSWORD", help="The database role's password."
+        ),
+    ],
+    postgres_image: Annotated[
+        str,
+        typer.Option("--postgres-image", help="The Postgres image the data directory is for."),
+    ] = "vera-db:pg16-rum-bm25",
+    user: Annotated[str, typer.Option("--user")] = "vera",
+    database: Annotated[str, typer.Option("--database")] = "vera",
+    rows_per_cluster: Annotated[int, typer.Option("--rows-per-cluster")] = 2000,
+    tolerance: Annotated[float, typer.Option("--tolerance")] = 0.0,
+) -> None:
+    """Build the database once and pack it: prepare in a throw-away Postgres, then tar its data.
+
+    The snapshot is only valid for the Postgres image it was built with, and records it.
+    """
+    from db.image import ImageError, build_image
+
+    try:
+        result = build_image(
+            bundle,
+            target,
+            postgres_image=postgres_image,
+            user=user,
+            password=password,
+            database=database,
+            rows_per_cluster=rows_per_cluster,
+            tolerance=tolerance,
+            on_note=lambda m: err.print(f"[dim]{m}[/dim]"),
+        )
+    except ImageError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("snapshot", str(result.path))
+    summary.add_row("size", f"{result.bytes / 1e9:.1f} GB")
+    summary.add_row("sha256", result.sha256[:16])
+    for name, seconds in result.seconds.items():
+        summary.add_row(name, f"{seconds:.1f}s")
+    out.print(summary)
+
+
+@db_app.command("attach")
+def db_attach(
+    snapshot: Annotated[Path, typer.Argument(help="A snapshot written by `ravel db image`.")],
+    volume: Annotated[
+        str, typer.Option("--volume", help="A new Docker volume to unpack into.")
+    ],
+    password: Annotated[
+        str, typer.Option("--password", envvar="RAVEL_DB_PASSWORD", help="The role's password.")
+    ],
+    postgres_image: Annotated[
+        str | None, typer.Option("--postgres-image", help="Default: the one it was built with.")
+    ] = None,
+    verify: Annotated[bool, typer.Option("--verify/--no-verify")] = True,
+) -> None:
+    """Unpack a packed database into a new volume and check it is ready."""
+    from db.image import ImageError, attach_image
+
+    try:
+        result = attach_image(
+            snapshot,
+            volume=volume,
+            postgres_image=postgres_image,
+            password=password,
+            verify=verify,
+            on_note=lambda m: err.print(f"[dim]{m}[/dim]"),
+        )
+    except ImageError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("volume", volume)
+    for name, seconds in result.seconds.items():
+        summary.add_row(name, f"{seconds:.1f}s")
+    out.print(summary)
+    out.print("[green]attached[/green]" + (" and verified ready" if verify else ""))

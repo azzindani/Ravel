@@ -46,10 +46,30 @@ placed chunks, a canary at the corpus width, and the provenance guard installed.
 * **The accelerators** (RUM, pg_search) are optional. The engine probes for each and falls
   back to a slower scan. They are attempted and a failure is reported, never swallowed.
 
-## 4. What is not here yet
+## 4. Build once, deploy in a minute
 
-* `pack` and `attach`: snapshot the finished database and restore it, which is the path to a
-  deploy measured in minutes instead of a rebuild.
+```
+ravel db image  <bundle> --out db.tar --password ...   # prepare in a throw-away Postgres, pack its data
+ravel db attach db.tar --volume <new volume> --password ...   # unpack, start, verify
+```
+
+`image` pays the 15-minute build once. `attach` is a copy and a start-up. The snapshot is the
+tar plus `db.tar.json` (the Postgres image id it was built with, the credentials' user and
+database, a sha256, and the bundle manifest). `attach` refuses a Postgres other than the one
+that wrote the data directory, refuses an existing volume, and starts the server and runs
+`verify` before it says attached.
+
+Measured on the 1.7M-chunk corpus (12.3 GB):
+
+* build: prepare 872 s, pack 259 s.
+* attach on the build machine (Windows, Docker Desktop): unpack 369 s, start 2 s, verify 1 s.
+  The unpack is the host-file-to-VM pipe at about 33 MB/s, not the database.
+* the same 12 GB copied volume to volume inside the VM: **10 s**. A Linux server unpacking a
+  tar from its own disk is the second case, not the first.
+* the engine started on the attached data with the bundle-reference canary at cosine 1.00000.
+
+## 4b. What is not here yet
+
 * Updates: delta bundles (add, update, remove) and `ravel db apply`.
 
 ## 5. Measurements behind the design
