@@ -96,6 +96,7 @@ Ravel/
 │   ├── INTERFACES.md              ← CLI / MCP / HTTP faces, Docker images, HF substrate
 │   ├── STACK.md                   ← Python 3.14, libraries, environments, no-orchestrator
 │   ├── CLUSTERING.md              ← domain anchors, k-means, assignment, generations
+│   ├── DATABASE.md                ← bundle → database ready to serve: `ravel db prepare`
 │   ├── LOOPHOLES.md               ← known failure modes + solutions
 │   ├── EVAL.md                    ← how a variant is scored and promoted
 │   ├── MIGRATION.md               ← absorbing notebooks, pre_embed, ID_Legal
@@ -205,6 +206,7 @@ Full detail in the per-stage docs.
 | `ravel chunk <corpus> [--chunker c] [--variant v]` | Phase B: canonical → chunks with provenance |
 | `ravel build <corpus> --variant <v>` | Phase B: chunk → enrich → embed |
 | `ravel sparse <corpus>` | the lexical arm: one BM25 vocabulary over the whole corpus + a sparse vector per chunk (CPU) |
+| `ravel db prepare <bundle> --dsn ...` | the one process that makes a database ready to serve (place, load, index, verify); Vera runs the same code |
 | `ravel cluster <corpus> --variant <v>` | optional offline tool (eval, rehearsal); not in the build path |
 | `ravel bundle <corpus> --variant <v>` | write parquet shards + manifest |
 | `ravel load <bundle> --dsn ...` | preflight, `COPY` into Postgres, verify |
@@ -265,6 +267,7 @@ parsing as a stateless service.
 - [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/QUALITY.md`; the index half does not read it yet
 - [x] Lexical arm: `ravel sparse` fits `corpus.bm25.json` (Vera's `BM25_VOCAB`, required at its startup) and writes sparse vectors; bundled, staged and merged into `chunks.sparse`; run on `id_reg_markdown` — `src/enrich/sparse_run.py`
 - [~] Enrichment: ranking factors, references, whole-corpus citation graph — `src/enrich/`
+- [x] `ravel db prepare`: bundle → database ready to serve, 16.5 min for 1.7M chunks, binary vector COPY (10x), cluster id written with the row, canary + provenance guard + verify — `src/db/`, `docs/DATABASE.md`; `pack`/`attach` and delta updates still to write
 - [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
 - [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;
       Vera's 50-case seed set imported to `eval/id_legal/queries@v1.jsonl` by

@@ -10,7 +10,7 @@ imported here.
 """
 
 from load.execute import ExecReport, LoadError, execute, halfvec_text
-from load.plan import Step, copy_from, load_plan, quote_ident, quote_literal
+from load.plan import Placement, Step, copy_from, load_plan, quote_ident, quote_literal
 from load.preflight import (
     Check,
     LoadReport,
@@ -30,6 +30,7 @@ __all__ = [
     "ExecReport",
     "LoadError",
     "LoadReport",
+    "Placement",
     "Status",
     "Step",
     "check_canary",

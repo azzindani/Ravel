@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-__all__ = ["Step", "load_plan", "copy_from", "quote_literal", "quote_ident"]
+__all__ = ["Placement", "Step", "load_plan", "copy_from", "quote_literal", "quote_ident"]
 
 #: `(staging column, SQL type, destination column in `chunks`)`, in parquet order.
 #:
@@ -79,6 +79,23 @@ _STAGED: tuple[tuple[str, str, str], ...] = (
 )
 
 CHUNK_COLUMNS: tuple[str, ...] = tuple(source for source, _, _ in _STAGED)
+
+
+@dataclass(frozen=True)
+class Placement:
+    """Where every chunk goes in the routing structure, decided before the load.
+
+    `assignments` is a parquet file of `(chunk_id, cluster_id)`; `centroids` is the
+    `(k, dim)` matrix those ids index. The merge writes `cluster_id` in the same pass that
+    writes the row, which is why this is an input to the plan and not an UPDATE afterwards:
+    an UPDATE writes a second version of every row, and on 1.7M rows that is minutes and a
+    table twice the size.
+    """
+
+    assignments: Path
+    centroids: Any
+    row_counts: tuple[int, ...]
+    generation: int = 1
 
 
 def quote_ident(name: str) -> str:
@@ -196,7 +213,12 @@ def copy_from(table: str, columns: tuple[str, ...], source: str) -> str:
 
 
 def _merge(
-    corpus_id: str, *, with_vectors: bool, with_omni: bool = False, with_sparse: bool = False
+    corpus_id: str,
+    *,
+    with_vectors: bool,
+    with_omni: bool = False,
+    with_sparse: bool = False,
+    with_placement: bool = False,
 ) -> str:
     """The one pass that moves staged rows into `chunks`.
 
@@ -217,6 +239,9 @@ def _merge(
         targets.append("sparse")
         sources.append("sp.sparse")
 
+    if with_placement:
+        targets.append("cluster_id")
+        sources.append("pl.cluster_id")
     into = ", ".join(quote_ident(c) for c in ["corpus_id", *targets])
     select = ", ".join([quote_literal(corpus_id), *sources])
     join = (
@@ -232,6 +257,9 @@ def _merge(
         # ! LEFT, like omni: a chunk with no sparse row is still a chunk. The bundle build
         # already refused a sparse set that does not cover the chunks exactly.
         join += "\nLEFT JOIN sparse_stage sp ON sp.chunk_id = c.id"
+    if with_placement:
+        # ! LEFT: a chunk that is not indexable is in no cluster, by design.
+        join += "\nLEFT JOIN placement_stage pl ON pl.chunk_id = c.id"
     return f"INSERT INTO chunks ({into})\nSELECT {select}\n{join};"
 
 
@@ -240,6 +268,7 @@ def load_plan(
     root: Path | str,
     *,
     include_indexes: bool = True,
+    placement: Placement | None = None,
 ) -> tuple[Step, ...]:
     """The whole procedure, in order, for one sealed bundle.
 
@@ -318,6 +347,12 @@ def load_plan(
                     if sparse
                     else ""
                 )
+                + (
+                    "\nCREATE UNLOGGED TABLE placement_stage "
+                    "(chunk_id TEXT, cluster_id INTEGER);"
+                    if placement
+                    else ""
+                )
             ),
             note=(
                 "! Declared from the bundle's columns, never `LIKE chunks`. `LIKE` copies "
@@ -366,6 +401,17 @@ def load_plan(
                 note="The lexical arm's vectors, as sparsevec text (BM25 weights, 1-based).",
             )
         )
+    if placement is not None:
+        steps.append(
+            Step(
+                name="copy placement",
+                sql=copy_from(
+                    "placement_stage", ("chunk_id", "cluster_id"), str(placement.assignments)
+                ),
+                inputs=(str(placement.assignments),),
+                note="Each indexable chunk's cluster, fitted before the load (Placement).",
+            )
+        )
     if vector_files:
         steps.append(
             Step(
@@ -385,6 +431,7 @@ def load_plan(
                     with_vectors=True,
                     with_omni=bool(omni),
                     with_sparse=bool(sparse),
+                    with_placement=placement is not None,
                 ),
                 note=(
                     "One write per row. An UPDATE would write a second version of every "
@@ -574,6 +621,14 @@ def load_plan(
             ),
         )
     )
+    if placement is not None:
+        steps.append(
+            Step(
+                name="clusters",
+                sql=_clusters_sql(corpus_id, placement, int(document["dense"]["dim"])),
+                note="The centroids the engine routes by, in the same transaction as the rows.",
+            )
+        )
     steps.append(
         Step(
             name="drop staging",
@@ -581,6 +636,7 @@ def load_plan(
                 "DROP TABLE chunks_stage; DROP TABLE vectors_stage;"
                 + (" DROP TABLE vectors_omni_stage;" if omni else "")
                 + (" DROP TABLE sparse_stage;" if sparse else "")
+                + (" DROP TABLE placement_stage;" if placement is not None else "")
                 + (
                     " DROP TABLE relations_stage; DROP TABLE status_stage;"
                     if has_relations or has_status
@@ -609,6 +665,30 @@ def load_plan(
             )
         )
     return tuple(steps)
+
+
+def _clusters_sql(corpus_id: str, placement: Placement, dim: int) -> str:
+    """The `clusters` table and one row per centroid. The width is the corpus's `dim`."""
+    if placement.centroids.shape[1] != dim:
+        raise ValueError(
+            f"centroids are {placement.centroids.shape[1]}-dimensional, the corpus is {dim}"
+        )
+    rows = []
+    for index, centroid in enumerate(placement.centroids.tolist()):
+        vector = "[" + ",".join(f"{x:.6g}" for x in centroid) + "]"
+        rows.append(
+            f"({index}, {quote_literal(corpus_id)}, {quote_literal(vector)}::halfvec({dim}), "
+            f"{int(placement.row_counts[index])}, {int(placement.generation)})"
+        )
+    return (
+        "CREATE TABLE IF NOT EXISTS clusters (id INTEGER PRIMARY KEY, "
+        "corpus_id TEXT NOT NULL REFERENCES corpus_meta(id) ON DELETE CASCADE, "
+        f"centroid halfvec({dim}) NOT NULL, row_count BIGINT NOT NULL DEFAULT 0, "
+        "generation INTEGER NOT NULL DEFAULT 1); "
+        "INSERT INTO clusters (id, corpus_id, centroid, row_count, generation) VALUES "
+        + ", ".join(rows)
+        + ";"
+    )
 
 
 def _canary_steps(document: dict[str, Any], root: Path) -> tuple[Step, ...]:

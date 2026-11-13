@@ -37,7 +37,7 @@ import numpy as np
 import pyarrow.parquet as pq
 
 from bundle.writer import read_bundle
-from load.plan import Step, load_plan, quote_ident
+from load.plan import Placement, Step, load_plan, quote_ident
 
 __all__ = ["ExecReport", "LoadError", "execute", "halfvec_text"]
 
@@ -47,6 +47,8 @@ BATCH_ROWS = 4096
 #: Tables a replace clears, children before the `corpus_meta` row they reference. A table
 #: the schema did not create (signals, entities) is skipped rather than assumed.
 _CORPUS_TABLES = (
+    "clusters",
+    "corpus_canary",
     "chunk_signals",
     "chunk_entities",
     "doc_relations",
@@ -236,6 +238,7 @@ def execute(
     *,
     replace: bool = False,
     include_indexes: bool = True,
+    placement: Placement | None = None,
     on_step: Callable[[str, str], None] | None = None,
     on_rows: Callable[[str, int], None] | None = None,
 ) -> ExecReport:
@@ -249,7 +252,7 @@ def execute(
     root = Path(root)
     document = read_bundle(root)
     corpus_id = str(document["corpus_id"])
-    plan = load_plan(document, root, include_indexes=include_indexes)
+    plan = load_plan(document, root, include_indexes=include_indexes, placement=placement)
     report = ExecReport(corpus_id=corpus_id)
     started = time.time()
     current = "connect"

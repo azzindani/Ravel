@@ -578,6 +578,51 @@ def main() -> int:
             f"{after[0]} chunks",
         )
 
+        # 9b. the whole path a deployment takes: place, load with the placement, accelerate,
+        #     verify. The database must say it is ready, and the unusable document's chunks
+        #     must be in no cluster. The server has neither RUM nor pg_search, so the
+        #     accelerators are reported skipped and the rest still has to hold.
+        from db import prepare
+
+        prepared = prepare(root, dsn, replace=True, rows_per_cluster=1)
+        check(
+            "prepare reports the database ready",
+            prepared.ready.get("clusters", 0) >= 1
+            and prepared.ready["placed"] == prepared.ready["servable"],
+            str(prepared.ready),
+        )
+        with psycopg.connect(dsn) as conn:
+            leftover = one(
+                conn.execute(
+                    "SELECT count(*) FILTER (WHERE NOT indexable AND cluster_id IS NOT NULL),"
+                    " count(*) FILTER (WHERE indexable AND cluster_id IS NULL) FROM chunks"
+                ).fetchone(),
+                "placement counted",
+            )
+            canary = one(
+                conn.execute("SELECT vector_dims(dense) FROM corpus_canary").fetchone(),
+                "canary read",
+            )
+        check(
+            "an unusable document's chunks are in no cluster and every other chunk is in one",
+            tuple(leftover) == (0, 0),
+            str(tuple(leftover)),
+        )
+        check(
+            "the corpus canary is recorded at the corpus width", canary[0] == DIM, str(canary)
+        )
+        refused_update = ""
+        try:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                conn.execute("UPDATE chunks SET source_url = 'x' WHERE id = 'c0'")
+        except psycopg.Error as exc:
+            refused_update = str(exc)
+        check(
+            "the provenance guard refuses an UPDATE of provenance",
+            "immutable" in refused_update,
+            refused_update[:60],
+        )
+
         # 10. the second vector space, through the same executor: its own column at its own
         #     width, a partial fill, and a cosine query that touches no text vector.
         omni_root = build_bundle(Path(tmp), omni=True)
@@ -586,6 +631,7 @@ def main() -> int:
                 "DROP TABLE IF EXISTS chunks_stage, vectors_stage, sparse_stage, chunks CASCADE"
             )
             conn.execute("DROP TABLE IF EXISTS vectors_omni_stage")
+            conn.execute("DROP TABLE IF EXISTS clusters, corpus_canary")
             conn.execute(
                 "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
                 "doc_relations, doc_status, doc_quality"

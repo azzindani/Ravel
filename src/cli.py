@@ -37,12 +37,14 @@ canon_app = typer.Typer(help="Inspect and validate canonical documents.", no_arg
 sources_app = typer.Typer(help="Discover and hash source documents.", no_args_is_help=True)
 profiles_app = typer.Typer(help="Inspect the document profile registry.", no_args_is_help=True)
 bundle_app = typer.Typer(help="Inspect and verify corpus bundles.", no_args_is_help=True)
+db_app = typer.Typer(help="Make a database ready to serve from a bundle.", no_args_is_help=True)
 eval_app = typer.Typer(help="Labeled sets and variant scoring.", no_args_is_help=True)
 variants_app = typer.Typer(help="Variant configurations and cache keys.", no_args_is_help=True)
 app.add_typer(canon_app, name="canon")
 app.add_typer(sources_app, name="sources")
 app.add_typer(profiles_app, name="profiles")
 app.add_typer(bundle_app, name="bundle")
+app.add_typer(db_app, name="db")
 app.add_typer(eval_app, name="eval")
 app.add_typer(variants_app, name="variants")
 
@@ -1367,3 +1369,88 @@ def sync_push(
         f"pushed {report.files:,} files ({report.bytes / 1e6:.1f} MB), "
         f"{report.skipped:,} already there"
     )
+
+
+@db_app.command("prepare")
+def db_prepare(
+    bundle: BundleArg,
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn", envvar="DATABASE_URL", help="Target Postgres. Falls back to $DATABASE_URL."
+        ),
+    ] = "",
+    replace: Annotated[
+        bool, typer.Option("--replace", help="Replace this corpus if it is already loaded.")
+    ] = False,
+    rows_per_cluster: Annotated[
+        int,
+        typer.Option(
+            "--rows-per-cluster", help="Routing granularity: servable rows per cluster."
+        ),
+    ] = 2000,
+    tolerance: Annotated[
+        float,
+        typer.Option(
+            "--tolerance", help="Share of failed source documents the bundle may carry."
+        ),
+    ] = 0.0,
+    vocabulary_to: Annotated[
+        Path | None,
+        typer.Option(
+            "--vocabulary-to", help="Copy the BM25 vocabulary here, where the engine reads it."
+        ),
+    ] = None,
+) -> None:
+    """Preflight, place, load, index and verify: a bundle in, a database ready to serve out.
+
+    The one process both Ravel and Vera use to make a database ready. It reports ready only
+    when the database itself says so (`verify`), and exits non-zero otherwise.
+    """
+    from db import PrepareError, prepare
+
+    if not dsn:
+        err.print("[red]no database: pass --dsn or set DATABASE_URL[/red]")
+        raise typer.Exit(2)
+
+    started: dict[str, float] = {}
+
+    def step(name: str, phase: str) -> None:
+        if phase == "start":
+            started[name] = time.time()
+        else:
+            err.print(f"[dim]{name} {time.time() - started[name]:.1f}s[/dim]")
+
+    def rows(name: str, n: int) -> None:
+        if n % 400_000 < 4096:
+            err.print(f"[dim]  {name}: {n:,} rows[/dim]", highlight=False)
+
+    try:
+        result = prepare(
+            bundle,
+            dsn,
+            replace=replace,
+            rows_per_cluster=rows_per_cluster,
+            tolerance=tolerance,
+            vocabulary_to=vocabulary_to,
+            on_step=step,
+            on_rows=rows,
+            on_note=lambda m: err.print(f"[dim]{m}[/dim]"),
+        )
+    except PrepareError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("corpus", result.corpus_id)
+    for name, seconds in result.seconds.items():
+        summary.add_row(name, f"{seconds:.1f}s")
+    for name, n in result.ready.items():
+        summary.add_row(name, f"{n:,}")
+    summary.add_row("applied", ", ".join(result.accelerators.applied))
+    for name, why in result.accelerators.skipped.items():
+        summary.add_row("[yellow]skipped[/yellow]", f"{name}: {why}")
+    if result.vocabulary:
+        summary.add_row("vocabulary", str(result.vocabulary))
+    out.print(summary)
+    out.print("[green]ready[/green]")

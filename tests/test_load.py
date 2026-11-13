@@ -615,3 +615,62 @@ def test_a_bundle_with_a_reference_loads_it_as_the_corpus_canary(built) -> None:
     assert "Setiap orang wajib menaati hukum." in step.sql
     names = [s.name for s in plan]
     assert names.index("stamp corpus_meta") < names.index("stamp canary") < names.index("stage")
+
+
+def test_a_placement_is_written_with_the_row_and_the_centroids_come_with_it(
+    built, tmp_path
+) -> None:
+    """Cluster ids ride in the same merge as the rows: no UPDATE afterwards, and the
+    centroids are inserted in the same transaction."""
+    from load import Placement
+
+    root, _ = built
+    dim = int(read_bundle(root)["dense"]["dim"])
+    placement = Placement(
+        assignments=tmp_path / "placement.parquet",
+        centroids=np.eye(3, dim, dtype=np.float32),
+        row_counts=(2, 1, 0),
+        generation=4,
+    )
+    plan = load_plan(read_bundle(root), root, placement=placement)
+    names = [s.name for s in plan]
+    assert names.index("copy placement") < names.index("merge") < names.index("clusters")
+    merge = next(s for s in plan if s.name == "merge").sql
+    assert "pl.cluster_id" in merge and "LEFT JOIN placement_stage" in merge
+    clusters = next(s for s in plan if s.name == "clusters").sql
+    assert "INSERT INTO clusters" in clusters and "(0, " in clusters and ", 4)" in clusters
+    assert "DROP TABLE placement_stage" in next(s for s in plan if s.name == "drop staging").sql
+    plain = [s.name for s in load_plan(read_bundle(root), root)]
+    assert "copy placement" not in plain and "clusters" not in plain
+
+
+def test_a_placement_of_the_wrong_width_is_refused(built, tmp_path) -> None:
+    from load import Placement
+
+    root, _ = built
+    dim = int(read_bundle(root)["dense"]["dim"])
+    placement = Placement(
+        assignments=tmp_path / "p.parquet",
+        centroids=np.zeros((2, dim + 1), dtype=np.float32),
+        row_counts=(1, 1),
+    )
+    with pytest.raises(ValueError, match="dimensional"):
+        load_plan(read_bundle(root), root, placement=placement)
+
+
+def test_place_assigns_every_chunk_to_one_cluster(built, tmp_path) -> None:
+    import pyarrow.parquet as pq
+
+    from db import place
+
+    root, _ = built
+    placement = place(root, tmp_path, rows_per_cluster=1)
+    rows = pq.read_table(str(placement.assignments)).to_pylist()
+    chunk_ids = {
+        i
+        for shard in sorted((root / "chunks").glob("part-*.parquet"))
+        for i in pq.read_table(shard, columns=["id"]).column("id").to_pylist()
+    }
+    assert {r["chunk_id"] for r in rows} == chunk_ids
+    assert sum(placement.row_counts) == len(rows)
+    assert all(0 <= r["cluster_id"] < len(placement.row_counts) for r in rows)
