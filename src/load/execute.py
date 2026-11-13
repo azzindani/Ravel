@@ -159,7 +159,9 @@ def _copy_vectors(
 ) -> int:
     file = pq.ParquetFile(str(path))
     dim = file.schema_arrow.field("embedding").type.list_size
-    binary = statement.replace("FROM STDIN", "FROM STDIN WITH (FORMAT BINARY)")
+    binary = statement.replace("FORMAT text", "FORMAT binary")
+    if binary == statement:
+        raise ValueError(f"expected a text-format COPY to convert, got {statement[:80]!r}")
     with cur.copy(binary) as copy:
         copy.write(_BINARY_HEADER)
         for batch in file.iter_batches(
