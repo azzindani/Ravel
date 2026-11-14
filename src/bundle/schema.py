@@ -110,6 +110,10 @@ CREATE TABLE IF NOT EXISTS corpus_meta (
     -- and a new factor family must not be a migration on a table Vera only reads.
     -- NULL means a corpus loaded before this existed; the engine falls back and says so.
     scoring_vocabulary  JSONB,
+    -- ! The domain gate's floor, measured on THIS database's clusters by
+    -- `ravel db calibrate` (src/db/calibrate.py), with what it was measured on. NULL
+    -- until calibrated; the engine then falls back to its own configuration.
+    gate                JSONB,
     text_search_config  TEXT NOT NULL,
     source_manifest_sha256 TEXT NOT NULL,
     manifest_sha256     TEXT NOT NULL,

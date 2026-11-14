@@ -1,6 +1,6 @@
 """The whole path from a sealed bundle to a database ready to serve.
 
-    preflight -> place -> load (with the placement) -> accelerate -> layout -> verify
+    preflight -> place -> load (with the placement) -> accelerate -> parents -> layout -> verify
 
 Ravel runs this to build a deployable database and Vera runs the same code to deploy one,
 which is the point of it living here once. Each stage is the library already tested on its
@@ -21,6 +21,7 @@ from typing import Any
 from db.accelerate import AcceleratorReport, accelerate
 from db.layout import LayoutReport, build_layout
 from db.place import place
+from db.routing import ParentReport, build_parents
 from db.verify import VerifyError, verify_ready
 
 __all__ = ["PrepareError", "PrepareReport", "prepare"]
@@ -39,6 +40,7 @@ class PrepareReport:
     ready: dict[str, int] = field(default_factory=dict)
     vocabulary: Path | None = None
     layout: LayoutReport | None = None
+    parents: ParentReport | None = None
 
 
 def prepare(
@@ -122,6 +124,16 @@ def prepare(
     # but a cold probe is ~140x slower (`db.layout`), and that is the difference between
     # routing holding at scale and not.
     import psycopg
+
+    # ! The parent level of two-level routing (`db.routing`): ~√k centroids over the leaf
+    # centroids, so the engine's resident set stops growing with the corpus. One
+    # transaction, since its staging table lives only as long as one.
+    started = time.time()
+    with psycopg.connect(dsn) as conn:
+        report.parents = build_parents(
+            conn, report.corpus_id, normalize=bool(document["dense"]["normalize"])
+        )
+    timed("parents", started)
 
     started = time.time()
     with psycopg.connect(dsn, autocommit=True) as conn:

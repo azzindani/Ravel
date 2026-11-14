@@ -644,6 +644,66 @@ def main() -> int:
             refused_update[:60],
         )
 
+        # 9c. the gate floor: measured on these clusters, recorded in corpus_meta. In-domain
+        #     questions embed beside a centroid, off-topic ones opposite it, so the floor
+        #     must refuse none of the first and every one of the second.
+        import json
+
+        from db import CalibrationError, calibrate_gate
+
+        with psycopg.connect(dsn) as conn:
+            cents = [
+                np.array(json.loads(r[0]), dtype=np.float32)
+                for r in conn.execute("SELECT centroid::text FROM clusters").fetchall()
+            ]
+            rng = np.random.default_rng(0)
+            lookup: dict[str, np.ndarray[Any, Any]] = {}
+            cases: list[dict[str, Any]] = []
+            for i in range(30):
+                q = f"in {i}"
+                lookup[q] = cents[i % len(cents)] + rng.normal(0, 0.05, DIM).astype(np.float32)
+                cases.append({"query": q, "type": "numeric"})
+            for i in range(10):
+                q = f"off {i}"
+                lookup[q] = -cents[i % len(cents)] + rng.normal(0, 0.05, DIM).astype(np.float32)
+                cases.append({"query": q, "type": "out_of_domain"})
+            # A named regulation is exempt from the gate, so it must not set the floor.
+            cases.append({"query": "PP 1 tahun 2000", "type": "exact_ref"})
+            lookup["PP 1 tahun 2000"] = -cents[0]
+            gate = calibrate_gate(
+                conn, "ci_fixture", cases, lambda qs: np.stack([lookup[q] for q in qs])
+            )
+            stored = one(
+                conn.execute("SELECT gate->>'centroid_floor' FROM corpus_meta").fetchone(),
+                "gate read back",
+            )
+            too_few = ""
+            try:
+                calibrate_gate(conn, "ci_fixture", cases[:5], lambda qs: None, write=False)
+            except CalibrationError as exc:
+                too_few = str(exc)
+        check(
+            "calibrate refuses no real question, refuses the off-topic ones, and records it",
+            gate.off_topic_refused == 10
+            and gate.in_domain == 30
+            and gate.centroid_floor < gate.lowest_in_domain
+            and float(stored[0]) == gate.centroid_floor,
+            str(gate),
+        )
+        check(
+            "calibrate refuses a set too small to fit a floor on", "needed" in too_few, too_few
+        )
+        with psycopg.connect(dsn) as conn:
+            no_parents = one(
+                conn.execute("SELECT to_regclass('cluster_parents') IS NULL").fetchone(),
+                "parent level probed",
+            )
+        check(
+            "a corpus with fewer leaves than MIN_LEAVES gets no parent level",
+            prepared.parents is None and no_parents[0] is True,
+            str(prepared.parents),
+        )
+
         # 10. the second vector space, through the same executor: its own column at its own
         #     width, a partial fill, and a cosine query that touches no text vector.
         omni_root = build_bundle(Path(tmp), omni=True)

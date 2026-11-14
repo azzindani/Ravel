@@ -17,6 +17,7 @@ ravel db prepare <bundle> --dsn ... [--replace] [--rows-per-cluster 2000]
 | place | fit the routing structure from the bundle's vectors; assign every servable chunk | 184 s |
 | load | schema, canary, COPY (binary for vectors), merge **with the cluster id**, base indexes | 636 s |
 | accelerate | the provenance guard, then RUM and BM25 where the server can build them | 161 s |
+| parents | two-level routing: √k parent centroids over the leaves, `clusters.parent_id` (from 256 leaves) | 2 s |
 | layout | `chunk_vectors`: every servable vector again, sorted by cluster, `dense` stored PLAIN | ~600 s |
 | verify | asserted from the database against the manifest | 0.5 s |
 
@@ -52,6 +53,16 @@ placed chunks, a canary at the corpus width, and the provenance guard installed.
   ~2.7 KB a row of disk (4.6 GB at 1.7M). A delta keeps it exact (`sync_layout`: delete what
   left, append what arrived); appended rows sit out of order until the next full prepare, and
   `verify` refuses a database whose layout does not match `chunks`.
+* **The parent level** (`src/db/routing.py`, also `ravel db parents`) lets the engine hold
+  ~√k centroids instead of every leaf: 184 MB -> 15 MB at 20.6M rows (Vera
+  `docs/SCALING.md` §2). It is built from 256 leaves; the engine uses it from
+  `TWO_LEVEL_FROM` leaves (8,192), because below that it costs routing recall for memory
+  nobody is short of.
+* **The gate floor** (`src/db/calibrate.py`, `ravel db calibrate <corpus> --queries ...`)
+  is measured after `prepare`, on these clusters, with the corpus's own embedder, and
+  written to `corpus_meta.gate`. It needs labelled questions (≥30 in-domain, ≥10
+  off-topic), so it is a separate step. Re-run it after a re-cluster: the engine refuses
+  a calibration made on a different cluster count.
 * **The accelerators** (RUM, pg_search) are optional. The engine probes for each and falls
   back to a slower scan. They are attempted and a failure is reported, never swallowed.
 

@@ -1576,6 +1576,117 @@ def bundle_delta(
     out.print(summary)
 
 
+@db_app.command("parents")
+def db_parents(
+    corpus_id: Annotated[str, typer.Argument(help="The corpus id in corpus_meta.")],
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="DATABASE_URL",
+            help="The prepared database. Falls back to $DATABASE_URL.",
+        ),
+    ] = "",
+    parents: Annotated[
+        int,
+        typer.Option("--parents", help="Parent centroids to fit; 0 = the square root of k."),
+    ] = 0,
+) -> None:
+    """Fit the parent level of two-level routing over this database's clusters.
+
+    `db prepare` does this itself; this is for a database prepared before it did, or to
+    refit after a re-cluster. Re-run `db calibrate` afterwards if the clusters changed.
+    """
+    import psycopg
+
+    from db.routing import build_parents
+
+    if not dsn:
+        err.print("[red]no database: pass --dsn or set DATABASE_URL[/red]")
+        raise typer.Exit(2)
+    with psycopg.connect(dsn) as conn:
+        result = build_parents(conn, corpus_id, parents=parents)
+    if result is None:
+        out.print(
+            "[yellow]too few clusters for a parent level: the engine scans them all[/yellow]"
+        )
+    else:
+        out.print(
+            f"[green]{result.parents} parents over {result.leaves:,} leaves[/green] "
+            f"(largest parent holds {result.largest})"
+        )
+
+
+@db_app.command("calibrate")
+def db_calibrate(
+    corpus_id: CorpusArg,
+    queries: Annotated[
+        Path,
+        typer.Option(
+            "--queries",
+            help="Labelled questions (the eval set's format): in-domain and out_of_domain.",
+        ),
+    ],
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn",
+            envvar="DATABASE_URL",
+            help="The prepared database. Falls back to $DATABASE_URL.",
+        ),
+    ] = "",
+    margin: Annotated[
+        float, typer.Option("--margin", help="Below the lowest in-domain similarity seen.")
+    ] = 0.02,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Measure and report; write nothing.")
+    ] = False,
+) -> None:
+    """Measure the domain gate's floor on this database's clusters; record it in corpus_meta.
+
+    Queries are embedded with the corpus's own embedder, exactly as the engine embeds them.
+    Re-run after a re-cluster: the floor belongs to the clusters it was measured on.
+    """
+    import psycopg
+
+    from db import CalibrationError, calibrate_gate, load_cases
+    from embed import build_embedder
+
+    if not dsn:
+        err.print("[red]no database: pass --dsn or set DATABASE_URL[/red]")
+        raise typer.Exit(2)
+    spec = CorpusSpec.find(corpus_id)
+    if spec.embed is None:
+        err.print(f"[red]{spec.id} has no `embed:` section[/red]")
+        raise typer.Exit(1)
+    embedder = build_embedder(spec.embed)
+    try:
+        with psycopg.connect(dsn) as conn:
+            result = calibrate_gate(
+                conn,
+                spec.id,
+                load_cases(str(queries)),
+                embedder.embed_queries,
+                margin=margin,
+                write=not dry_run,
+            )
+    except CalibrationError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    out.print(
+        f"centroid floor [bold]{result.centroid_floor:.2f}[/bold] "
+        f"(lowest real question {result.lowest_in_domain:.3f}, margin {result.margin}) · "
+        f"real refused 0/{result.in_domain} · off-topic refused "
+        f"{result.off_topic_refused}/{result.out_of_domain} · AUC {result.auc:.3f} · "
+        f"{result.clusters:,} clusters"
+    )
+    out.print(
+        "[yellow]dry run: nothing written[/yellow]"
+        if dry_run
+        else "[green]recorded in corpus_meta.gate[/green]"
+    )
+
+
 @db_app.command("apply")
 def db_apply(
     delta: Annotated[Path, typer.Argument(help="A delta written by `ravel bundle delta`.")],
