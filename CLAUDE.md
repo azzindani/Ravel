@@ -207,6 +207,7 @@ Full detail in the per-stage docs.
 | `ravel build <corpus> --variant <v>` | Phase B: chunk → enrich → embed |
 | `ravel sparse <corpus>` | the lexical arm: one BM25 vocabulary over the whole corpus + a sparse vector per chunk (CPU) |
 | `ravel db prepare <bundle> --dsn ...` | the one process that makes a database ready to serve (place, load, index, verify); Vera runs the same code |
+| `ravel bundle delta <old> <new> --out d/`, `ravel db apply d/ --dsn ...` | a change to a loaded corpus: remove, add, replace derived rows, one transaction |
 | `ravel cluster <corpus> --variant <v>` | optional offline tool (eval, rehearsal); not in the build path |
 | `ravel bundle <corpus> --variant <v>` | write parquet shards + manifest |
 | `ravel load <bundle> --dsn ...` | preflight, `COPY` into Postgres, verify |
@@ -267,7 +268,7 @@ parsing as a stateless service.
 - [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/QUALITY.md`; the index half does not read it yet
 - [x] Lexical arm: `ravel sparse` fits `corpus.bm25.json` (Vera's `BM25_VOCAB`, required at its startup) and writes sparse vectors; bundled, staged and merged into `chunks.sparse`; run on `id_reg_markdown` — `src/enrich/sparse_run.py`
 - [~] Enrichment: ranking factors, references, whole-corpus citation graph — `src/enrich/`
-- [x] `ravel db prepare`: bundle → database ready to serve, 16.5 min for 1.7M chunks, binary vector COPY (10x), cluster id written with the row, canary + provenance guard + verify — `src/db/`, `docs/DATABASE.md`; `ravel db image`/`attach` (build once, deploy by copy; 12.3 GB, 10 s volume copy, engine verified on it); delta updates still to write
+- [x] `ravel db prepare`: bundle → database ready to serve, 16.5 min for 1.7M chunks, binary vector COPY (10x), cluster id written with the row, canary + provenance guard + verify — `src/db/`, `docs/DATABASE.md`; `ravel db image`/`attach` (build once, deploy by copy; 12.3 GB, 10 s volume copy, engine verified on it); `ravel bundle delta` + `ravel db apply` (add/update/remove, applied == rebuilt, checked in CI)
 - [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
 - [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;
       Vera's 50-case seed set imported to `eval/id_legal/queries@v1.jsonl` by

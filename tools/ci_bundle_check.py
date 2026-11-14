@@ -685,6 +685,149 @@ def main() -> int:
             )
             check("the omni index was built after the load", indexed[0] == 1)
 
+        # 11. the update path: a delta from version 1 to version 2 must leave the database
+        #     holding what a rebuild of version 2 would have loaded. Documents leave (b),
+        #     arrive (d, e), one revokes an unchanged one (d revokes a, so a's status
+        #     changes though a itself did not), and one arrives unusable (e).
+        from synthetic_corpus import CORPUS as DELTA_CORPUS
+        from synthetic_corpus import DocSpec, build_corpus
+
+        from db import ApplyError, apply_delta, build_delta, prepare
+
+        v1 = build_corpus(
+            Path(tmp),
+            {
+                "a": DocSpec(2),
+                "b": DocSpec(2),
+                "c": DocSpec(1),
+                "u": DocSpec(2, indexable=False),
+            },
+            name="delta-v1",
+        )
+        v2 = build_corpus(
+            Path(tmp),
+            {
+                "a": DocSpec(2),
+                "c": DocSpec(1),
+                "d": DocSpec(3, revokes="a"),
+                "e": DocSpec(1, indexable=False),
+                "u": DocSpec(2, indexable=False),
+            },
+            name="delta-v2",
+        )
+        delta = build_delta(v1, v2, Path(tmp) / "delta-1-2")
+
+        def reset() -> None:
+            with psycopg.connect(dsn, autocommit=True) as conn:
+                conn.execute(
+                    "DROP TABLE IF EXISTS chunks_stage, vectors_stage, sparse_stage, "
+                    "placement_stage, scope_stage, relations_stage, status_stage, "
+                    "quality_stage, "
+                    "doc_relations, doc_status, doc_quality, clusters, corpus_canary, "
+                    "corpus_versions, chunks CASCADE"
+                )
+                conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
+
+        def state() -> dict[str, Any]:
+            with psycopg.connect(dsn) as conn:
+                q = conn.execute
+                return {
+                    "chunks": sorted(
+                        q(
+                            "SELECT id, doc_id, indexable, (cluster_id IS NOT NULL) "
+                            "FROM chunks ORDER BY id"
+                        ).fetchall()
+                    ),
+                    "status": sorted(
+                        q("SELECT doc_id, status, revoked_by FROM doc_status").fetchall()
+                    ),
+                    "relations": sorted(
+                        q(
+                            "SELECT source_doc_id, relation, target_doc_id, resolution "
+                            "FROM doc_relations"
+                        ).fetchall()
+                    ),
+                    "quality": sorted(
+                        q("SELECT doc_id, indexable FROM doc_quality").fetchall()
+                    ),
+                    "meta": q(
+                        "SELECT manifest_sha256, source_manifest_sha256 FROM corpus_meta"
+                    ).fetchone(),
+                    "sizes": q("SELECT coalesce(sum(row_count), 0) FROM clusters").fetchone(),
+                    "servable": q(
+                        "SELECT count(*) FROM chunks WHERE indexable AND cluster_id IS NOT NULL"
+                    ).fetchone(),
+                }
+
+        reset()
+        prepare(v1, dsn, replace=True, rows_per_cluster=1)
+        applied = apply_delta(delta.out, dsn)
+        after_delta = state()
+        with psycopg.connect(dsn) as conn:
+            versions = one(
+                conn.execute(
+                    "SELECT count(*), max(parent_sha256), max(manifest_sha256) "
+                    "FROM corpus_versions"
+                ).fetchone(),
+                "lineage read",
+            )
+
+        reset()
+        prepare(v2, dsn, replace=True, rows_per_cluster=1)
+        rebuilt = state()
+        check(
+            "applying a delta leaves the chunks a rebuild would have",
+            [c[:3] for c in after_delta["chunks"]] == [c[:3] for c in rebuilt["chunks"]],
+            f"{len(after_delta['chunks'])} vs {len(rebuilt['chunks'])} chunks",
+        )
+        check(
+            "the derived rows match a rebuild, including an unchanged document's new status",
+            after_delta["status"] == rebuilt["status"]
+            and after_delta["relations"] == rebuilt["relations"]
+            and after_delta["quality"] == rebuilt["quality"],
+            f"{after_delta['status']}",
+        )
+        check(
+            "every servable chunk is in a cluster and the cluster sizes add up",
+            all(c[3] == c[2] for c in after_delta["chunks"])
+            and after_delta["sizes"][0] == after_delta["servable"][0] > 0,
+            f"{after_delta['sizes']} vs {after_delta['servable']}",
+        )
+        check(
+            "the database is at the child version, and the lineage says from where",
+            after_delta["meta"][0] == read_bundle(v2)["manifest_sha256"]
+            and tuple(versions)
+            == (1, read_bundle(v1)["manifest_sha256"], read_bundle(v2)["manifest_sha256"]),
+            str(tuple(versions)),
+        )
+        check(
+            "the delta reported what it changed",
+            (applied.added_docs, applied.removed_docs) == (2, 1),
+        )
+
+        stale = ""
+        try:
+            apply_delta(
+                delta.out, dsn
+            )  # the database was rebuilt at v2: not the delta's parent
+        except ApplyError as exc:
+            stale = str(exc)
+        check(
+            "a delta is refused by a database that is not at its parent version",
+            "version" in stale,
+            stale[:80],
+        )
+        reset()
+        prepare(v1, dsn, replace=True, rows_per_cluster=1)
+        apply_delta(delta.out, dsn)
+        twice = ""
+        try:
+            apply_delta(delta.out, dsn)
+        except ApplyError as exc:
+            twice = str(exc)
+        check("applying the same delta twice is refused", "version" in twice, twice[:80])
+        del DELTA_CORPUS
+
     print("\nall bundle SQL executed against a real server")
     return 0
 

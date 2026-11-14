@@ -42,7 +42,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-__all__ = ["Placement", "Step", "load_plan", "copy_from", "quote_literal", "quote_ident"]
+__all__ = [
+    "DeltaSpec",
+    "Placement",
+    "Step",
+    "load_plan",
+    "copy_from",
+    "quote_literal",
+    "quote_ident",
+]
 
 #: `(staging column, SQL type, destination column in `chunks`)`, in parquet order.
 #:
@@ -96,6 +104,109 @@ class Placement:
     centroids: Any
     row_counts: tuple[int, ...]
     generation: int = 1
+
+
+@dataclass(frozen=True)
+class DeltaSpec:
+    """A bundle that is a change to a loaded corpus, not a corpus (`db.delta`).
+
+    The delta directory is bundle-shaped (the same shards, sidecars and checksummed
+    inventory) plus a `scope.parquet` of `(kind, doc_id)`: `removed` documents leave the
+    corpus, `status` and `relations` name documents whose derived rows are replaced.
+    `parent_manifest_sha256` is the version the database must be at, checked inside the
+    transaction, and `child_*` is the version it is at afterwards.
+    """
+
+    parent_manifest_sha256: str
+    child_manifest_sha256: str
+    child_source_manifest_sha256: str
+    child_chunk_count: int
+    added_docs: int = 0
+    removed_docs: int = 0
+    added_chunks: int = 0
+    removed_chunks: int = 0
+    run_id: str = ""
+
+
+def _guarded(table: str, statement: str) -> str:
+    """`statement`, run only when `table` exists: a corpus without that sidecar has none."""
+    return (
+        f"DO $$ BEGIN IF to_regclass({quote_literal(table)}) IS NOT NULL THEN "
+        f"{statement} END IF; END $$;"
+    )
+
+
+def _delta_removals(corpus_id: str) -> str:
+    c = quote_literal(corpus_id)
+    removed = "SELECT doc_id FROM scope_stage WHERE kind = 'removed'"
+    own_chunks = f"SELECT id FROM chunks WHERE corpus_id = {c} AND doc_id IN ({removed})"
+    return "\n".join(
+        [
+            _guarded(
+                "chunk_signals",
+                f"DELETE FROM chunk_signals WHERE corpus_id = {c} "
+                f"AND chunk_id IN ({own_chunks});",
+            ),
+            _guarded(
+                "chunk_entities",
+                f"DELETE FROM chunk_entities WHERE corpus_id = {c} "
+                f"AND chunk_id IN ({own_chunks});",
+            ),
+            f"DELETE FROM chunks WHERE corpus_id = {c} AND doc_id IN ({removed});",
+            _guarded(
+                "doc_quality",
+                f"DELETE FROM doc_quality WHERE corpus_id = {c} AND doc_id IN ({removed});",
+            ),
+            _guarded(
+                "doc_status",
+                f"DELETE FROM doc_status WHERE corpus_id = {c} AND doc_id IN "
+                "(SELECT doc_id FROM scope_stage WHERE kind IN ('removed', 'status'));",
+            ),
+            _guarded(
+                "doc_relations",
+                f"DELETE FROM doc_relations WHERE corpus_id = {c} AND source_doc_id IN "
+                "(SELECT doc_id FROM scope_stage WHERE kind IN ('removed', 'relations'));",
+            ),
+        ]
+    )
+
+
+def _delta_parent_check(corpus_id: str, parent: str) -> str:
+    c, p = quote_literal(corpus_id), quote_literal(parent)
+    return (
+        "DO $$ DECLARE current_sha TEXT; BEGIN\n"
+        "  SELECT manifest_sha256 INTO current_sha FROM corpus_meta "
+        f"WHERE id = {c} FOR UPDATE;\n"
+        f"  IF current_sha IS NULL THEN RAISE EXCEPTION\n"
+        f"    'ravel: corpus % is not loaded; a delta changes a loaded corpus', {c};\n"
+        "  END IF;\n"
+        f"  IF current_sha <> {p} THEN RAISE EXCEPTION\n"
+        f"    'ravel: the database is at version %, this delta is from %', current_sha, {p};\n"
+        "  END IF;\nEND $$;"
+    )
+
+
+def _delta_advance(corpus_id: str, delta: DeltaSpec) -> str:
+    c = quote_literal(corpus_id)
+    run = f", run_id = {quote_literal(delta.run_id)}" if delta.run_id else ""
+    return (
+        "UPDATE corpus_meta SET "
+        f"manifest_sha256 = {quote_literal(delta.child_manifest_sha256)}, "
+        f"source_manifest_sha256 = {quote_literal(delta.child_source_manifest_sha256)}{run} "
+        f"WHERE id = {c};\n"
+        "CREATE TABLE IF NOT EXISTS corpus_versions (\n"
+        "    corpus_id TEXT NOT NULL REFERENCES corpus_meta(id) ON DELETE CASCADE,\n"
+        "    manifest_sha256 TEXT NOT NULL, parent_sha256 TEXT NOT NULL,\n"
+        "    applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n"
+        "    added_docs INTEGER, removed_docs INTEGER,\n"
+        "    added_chunks BIGINT, removed_chunks BIGINT,\n"
+        "    PRIMARY KEY (corpus_id, manifest_sha256, applied_at)\n);\n"
+        "INSERT INTO corpus_versions (corpus_id, manifest_sha256, parent_sha256, added_docs, "
+        "removed_docs, added_chunks, removed_chunks) VALUES "
+        f"({c}, {quote_literal(delta.child_manifest_sha256)}, "
+        f"{quote_literal(delta.parent_manifest_sha256)}, {delta.added_docs}, "
+        f"{delta.removed_docs}, {delta.added_chunks}, {delta.removed_chunks});"
+    )
 
 
 def quote_ident(name: str) -> str:
@@ -269,6 +380,7 @@ def load_plan(
     *,
     include_indexes: bool = True,
     placement: Placement | None = None,
+    delta: DeltaSpec | None = None,
 ) -> tuple[Step, ...]:
     """The whole procedure, in order, for one sealed bundle.
 
@@ -279,6 +391,7 @@ def load_plan(
     counts: dict[str, int] = inventory.get("counts", {})
     corpus_id = str(document["corpus_id"])
     chunk_count = int(document["chunk_count"])
+    expected_total = delta.child_chunk_count if delta is not None else chunk_count
 
     def files(prefix: str) -> tuple[str, ...]:
         return tuple(sorted(n for n in counts if n.startswith(prefix)))
@@ -295,7 +408,7 @@ def load_plan(
         )
     sparse_files = files("sparse/")
     sparse = document.get("sparse")
-    if bool(sparse) != bool(sparse_files):
+    if bool(sparse) != bool(sparse_files) and not (delta is not None and not chunk_files):
         raise ValueError(
             "the manifest declares a sparse arm and the bundle has no sparse shards, or the "
             "reverse: a vocabulary with no vectors would leave the fallback arm answering "
@@ -373,6 +486,39 @@ def load_plan(
             inputs=chunk_files,
         ),
     ]
+    if delta is not None:
+        steps = [
+            Step(
+                name=s.name,
+                sql=s.sql + "\nCREATE UNLOGGED TABLE scope_stage (kind TEXT, doc_id TEXT);",
+                inputs=s.inputs,
+                note=s.note,
+            )
+            if s.name == "stage"
+            else s
+            for s in steps
+            if s.name not in ("schema", "stamp corpus_meta", "stamp canary")
+        ]
+        steps.insert(
+            0,
+            Step(
+                name="check parent",
+                sql=_delta_parent_check(corpus_id, delta.parent_manifest_sha256),
+                note=(
+                    "! Inside the transaction and under a row lock: a delta applied to the "
+                    "wrong version, or twice, or beside another delta, is refused rather "
+                    "than producing a corpus that is neither version."
+                ),
+            ),
+        )
+        steps.append(
+            Step(
+                name="copy scope",
+                sql=copy_from("scope_stage", ("kind", "doc_id"), str(root / "scope.parquet")),
+                inputs=("scope.parquet",),
+                note="Which documents leave, and whose derived rows are replaced.",
+            )
+        )
 
     if omni_files:
         steps.append(
@@ -585,7 +731,12 @@ def load_plan(
                     "FROM doc_quality q\n"
                     f"WHERE c.corpus_id = {quote_literal(corpus_id)}\n"
                     "  AND q.corpus_id = c.corpus_id AND q.doc_id = c.doc_id\n"
-                    "  AND NOT q.indexable;"
+                    "  AND NOT q.indexable"
+                    + (
+                        "\n  AND c.doc_id IN (SELECT doc_id FROM quality_stage);"
+                        if delta is not None
+                        else ";"
+                    )
                 ),
                 note=(
                     "! The engine already searches `WHERE indexable`, so a document the gate "
@@ -611,8 +762,8 @@ def load_plan(
                 "DO $$ DECLARE loaded BIGINT; BEGIN\n"
                 "  SELECT count(*) INTO loaded FROM chunks WHERE corpus_id = "
                 f"{quote_literal(corpus_id)};\n"
-                f"  IF loaded <> {chunk_count} THEN RAISE EXCEPTION\n"
-                f"    'ravel: loaded % rows, manifest claims {chunk_count}', loaded;\n"
+                f"  IF loaded <> {expected_total} THEN RAISE EXCEPTION\n"
+                f"    'ravel: loaded % rows, manifest claims {expected_total}', loaded;\n"
                 "  END IF;\nEND $$;"
             ),
             note=(
@@ -621,12 +772,38 @@ def load_plan(
             ),
         )
     )
-    if placement is not None:
+    if placement is not None and delta is None:
         steps.append(
             Step(
                 name="clusters",
                 sql=_clusters_sql(corpus_id, placement, int(document["dense"]["dim"])),
                 note="The centroids the engine routes by, in the same transaction as the rows.",
+            )
+        )
+    if delta is not None:
+        removal = Step(
+            name="remove",
+            sql=_delta_removals(corpus_id),
+            note="Deleted whole, never edited: provenance is immutable (the guard forbids it).",
+        )
+        at = next(i for i, step in enumerate(steps) if step.name == "merge")
+        steps.insert(at, removal)
+        steps.append(
+            Step(
+                name="recount clusters",
+                sql=(
+                    "UPDATE clusters k SET row_count = (SELECT count(*) FROM chunks c "
+                    f"WHERE c.corpus_id = {quote_literal(corpus_id)} AND c.cluster_id = k.id) "
+                    f"WHERE k.corpus_id = {quote_literal(corpus_id)};"
+                ),
+                note="The centroids stay (same generation); only their sizes change.",
+            )
+        )
+        steps.append(
+            Step(
+                name="advance version",
+                sql=_delta_advance(corpus_id, delta),
+                note="The database is now at the child version, and the lineage says how.",
             )
         )
     steps.append(
@@ -637,6 +814,7 @@ def load_plan(
                 + (" DROP TABLE vectors_omni_stage;" if omni else "")
                 + (" DROP TABLE sparse_stage;" if sparse else "")
                 + (" DROP TABLE placement_stage;" if placement is not None else "")
+                + (" DROP TABLE scope_stage;" if delta is not None else "")
                 + (
                     " DROP TABLE relations_stage; DROP TABLE status_stage;"
                     if has_relations or has_status
@@ -650,7 +828,7 @@ def load_plan(
         Step(name="commit", sql="COMMIT;", note="Everything above is one transaction.")
     )
 
-    if include_indexes:
+    if include_indexes and delta is None:
         steps.append(
             Step(
                 name="indexes",

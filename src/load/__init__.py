@@ -10,7 +10,15 @@ imported here.
 """
 
 from load.execute import ExecReport, LoadError, execute, halfvec_text
-from load.plan import Placement, Step, copy_from, load_plan, quote_ident, quote_literal
+from load.plan import (
+    DeltaSpec,
+    Placement,
+    Step,
+    copy_from,
+    load_plan,
+    quote_ident,
+    quote_literal,
+)
 from load.preflight import (
     Check,
     LoadReport,
@@ -27,6 +35,7 @@ from load.preflight import (
 
 __all__ = [
     "Check",
+    "DeltaSpec",
     "ExecReport",
     "LoadError",
     "LoadReport",

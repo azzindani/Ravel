@@ -68,9 +68,37 @@ Measured on the 1.7M-chunk corpus (12.3 GB):
   tar from its own disk is the second case, not the first.
 * the engine started on the attached data with the bundle-reference canary at cosine 1.00000.
 
-## 4b. What is not here yet
+## 4b. Updates: add, update, remove
 
-* Updates: delta bundles (add, update, remove) and `ravel db apply`.
+```
+ravel bundle delta <old bundle> <new bundle> --out delta/
+ravel db apply delta/ --dsn ...
+```
+
+Documents are content-addressed (`doc_id` is the sha256 of the source bytes), so a changed source
+is a new document and the old one is gone. A delta is the difference of two sealed bundles'
+document sets; the new bundle comes from the ordinary pipeline, where extraction and embeddings
+are cached by content hash and only new documents cost anything.
+
+* **Derived rows are compared, not assumed.** A relation row of an *unchanged* document changes
+  when a document it cites arrives or leaves, and a status derived from relations changes with
+  it. The delta names every document whose rows differ and replaces them.
+* **The recipe must be identical.** A different embedder, chunker, profile or BM25 vocabulary
+  makes old and new rows different spaces; the delta builder refuses, and the answer is a full
+  rebuild.
+* **The version is checked inside the transaction, under a row lock.** The database must be at
+  the delta's parent: a delta applied twice, out of order, or beside another is refused.
+* **New chunks go to the nearest existing centroid**; the clusters keep their generation and
+  their sizes are recounted. The mean distance of the new chunks to their centroids is
+  reported against the corpus's own, so a re-cluster is a decision made against a number.
+* **Removal is deletion**, never an edit: the provenance guard forbids editing, and nothing
+  is updated in place. The BM25 vocabulary stays fixed until a refit, which is a rebuild.
+* **The lineage is recorded** in `corpus_versions` (parent, child, counts), and `corpus_meta`
+  moves to the child version in the same transaction.
+
+Checked against real Postgres in CI: applying a delta leaves the chunks, the derived rows
+(including an unchanged document's new status) and the cluster sizes that a clean rebuild of the
+new version would have, and a stale or repeated delta is refused.
 
 ## 5. Measurements behind the design
 

@@ -1540,3 +1540,83 @@ def db_attach(
         summary.add_row(name, f"{seconds:.1f}s")
     out.print(summary)
     out.print("[green]attached[/green]" + (" and verified ready" if verify else ""))
+
+
+@bundle_app.command("delta")
+def bundle_delta(
+    old: Annotated[Path, typer.Argument(help="The bundle the database is at.")],
+    new: Annotated[Path, typer.Argument(help="The bundle it should be at.")],
+    target: Annotated[Path, typer.Option("--out", help="A new directory for the delta.")],
+) -> None:
+    """Derive the change between two sealed bundles: what to remove, what to add.
+
+    Refuses bundles built by different recipes (their vectors are not comparable).
+    """
+    from db import DeltaError, build_delta
+
+    try:
+        report = build_delta(old, new, target)
+    except DeltaError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("delta", str(report.out))
+    summary.add_row("from", report.parent[:16])
+    summary.add_row("to", report.child[:16])
+    summary.add_row(
+        "documents",
+        f"+{report.added_docs:,}  -{report.removed_docs:,}  "
+        f"({report.replaced_docs:,} replace a source) of {report.unchanged_docs:,} kept",
+    )
+    summary.add_row("chunks", f"+{report.added_chunks:,}  -{report.removed_chunks:,}")
+    summary.add_row(
+        "derived rows replaced",
+        f"status {report.reset_status:,}, relations {report.reset_relations:,}",
+    )
+    out.print(summary)
+
+
+@db_app.command("apply")
+def db_apply(
+    delta: Annotated[Path, typer.Argument(help="A delta written by `ravel bundle delta`.")],
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn", envvar="DATABASE_URL", help="The database. Falls back to $DATABASE_URL."
+        ),
+    ] = "",
+) -> None:
+    """Apply a delta to a loaded corpus, in one transaction, and verify the result.
+
+    The database must be at the delta's parent version; anything else is refused.
+    """
+    from db import ApplyError, apply_delta
+
+    if not dsn:
+        err.print("[red]no database: pass --dsn or set DATABASE_URL[/red]")
+        raise typer.Exit(2)
+    try:
+        result = apply_delta(delta, dsn, on_note=lambda m: err.print(f"[dim]{m}[/dim]"))
+    except ApplyError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("corpus", result.corpus_id)
+    summary.add_row("version", f"{result.parent[:16]} -> {result.child[:16]}")
+    summary.add_row("documents", f"+{result.added_docs:,}  -{result.removed_docs:,}")
+    summary.add_row("chunks", f"+{result.added_chunks:,}  -{result.removed_chunks:,}")
+    for name, seconds in result.seconds.items():
+        summary.add_row(name, f"{seconds:.1f}s")
+    for name, n in result.ready.items():
+        summary.add_row(name, f"{n:,}")
+    if result.drift:
+        summary.add_row(
+            "drift", f"new {result.drift['new']:.4f} vs corpus {result.drift['existing']:.4f}"
+        )
+    out.print(summary)
+    if result.recluster_advised:
+        out.print(
+            "[yellow]the new chunks sit farther from their centroids than the corpus does: "
+            "a re-cluster is advised[/yellow]"
+        )
+    out.print("[green]applied[/green]")

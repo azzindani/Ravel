@@ -11,16 +11,24 @@ are its parts, public so they can be run and tested alone.
 """
 
 from db.accelerate import AcceleratorReport, accelerate
+from db.apply import ApplyError, ApplyReport, apply_delta
+from db.delta import DeltaError, DeltaReport, build_delta
 from db.place import place
 from db.prepare import PrepareError, PrepareReport, prepare
 from db.verify import VerifyError, verify_ready
 
 __all__ = [
     "AcceleratorReport",
+    "ApplyError",
+    "ApplyReport",
+    "DeltaError",
+    "DeltaReport",
     "PrepareError",
     "PrepareReport",
     "VerifyError",
     "accelerate",
+    "apply_delta",
+    "build_delta",
     "place",
     "prepare",
     "verify_ready",
