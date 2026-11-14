@@ -37,6 +37,7 @@ import pyarrow.parquet as pq
 
 from bundle.writer import read_bundle
 from cluster import Clustering, metric_for
+from db.layout import sync_layout
 from db.verify import VerifyError, verify_ready
 from load import DeltaSpec, LoadError, Placement, execute
 from load.preflight import check_checksums
@@ -260,6 +261,17 @@ def apply_delta(
             report.seconds["apply"] = time.time() - started
         finally:
             shutil.rmtree(work, ignore_errors=True)
+
+    # ! After the delta's own transaction, ✗ inside it: `load.execute` owns that one. Until
+    # this runs the dense arm reads the old layout -- a removed chunk's id is dropped by the
+    # engine as a candidate with no row, and an added chunk is reachable by the lexical arms
+    # only. `sync_layout` is idempotent, so a failure here is fixed by applying nothing and
+    # re-running it, and `verify_ready` below refuses to call the database ready until it has.
+    started = time.time()
+    with psycopg.connect(dsn) as conn:
+        synced = sync_layout(conn)
+    note(f"layout: {synced.removed:,} vectors removed, {synced.added:,} added")
+    report.seconds["layout"] = time.time() - started
 
     started = time.time()
     with psycopg.connect(dsn, autocommit=True) as conn:

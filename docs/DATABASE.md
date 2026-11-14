@@ -17,6 +17,7 @@ ravel db prepare <bundle> --dsn ... [--replace] [--rows-per-cluster 2000]
 | place | fit the routing structure from the bundle's vectors; assign every servable chunk | 184 s |
 | load | schema, canary, COPY (binary for vectors), merge **with the cluster id**, base indexes | 636 s |
 | accelerate | the provenance guard, then RUM and BM25 where the server can build them | 161 s |
+| layout | `chunk_vectors`: every servable vector again, sorted by cluster, `dense` stored PLAIN | ~600 s |
 | verify | asserted from the database against the manifest | 0.5 s |
 
 About 16.5 minutes end to end, from parquet. It reports ready only when `verify` says so.
@@ -43,6 +44,14 @@ placed chunks, a canary at the corpus width, and the provenance guard installed.
 * **The canary** is the bundle's reference sentence and vector, recorded by the load in
   `corpus_canary`. The engine embeds the sentence through its own query path and must land on
   the vector.
+* **The routed layout is required** (`src/db/layout.py`). `chunks` cannot be in cluster order,
+  because the cluster id is decided after the rows exist, and a 2 KB `halfvec(1024)` lives in
+  TOAST, so a cold probe of 5 clusters is ~114K scattered reads: 7,622 ms on the 1.7M corpus.
+  `chunk_vectors (cluster_id, id, dense)` holds only servable rows, sorted, inline: 2K reads,
+  54 ms. Vera's dense arm reads it when present (Vera `docs/HARDWARE.md` §9). It costs
+  ~2.7 KB a row of disk (4.6 GB at 1.7M). A delta keeps it exact (`sync_layout`: delete what
+  left, append what arrived); appended rows sit out of order until the next full prepare, and
+  `verify` refuses a database whose layout does not match `chunks`.
 * **The accelerators** (RUM, pg_search) are optional. The engine probes for each and falls
   back to a slower scan. They are attempted and a failure is reported, never swallowed.
 

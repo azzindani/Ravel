@@ -608,6 +608,27 @@ def main() -> int:
             tuple(leftover) == (0, 0),
             str(tuple(leftover)),
         )
+        with psycopg.connect(dsn) as conn:
+            from db.layout import layout_problems
+
+            laid = one(
+                conn.execute(
+                    "SELECT count(*), bool_and(cluster_id IS NOT NULL) FROM chunk_vectors"
+                ).fetchone(),
+                "layout counted",
+            )
+            servable_rows = one(
+                conn.execute(
+                    "SELECT count(*) FROM chunks WHERE indexable AND cluster_id IS NOT NULL"
+                ).fetchone(),
+                "servable counted",
+            )
+            layout_issues = layout_problems(conn)
+        check(
+            "chunk_vectors holds every servable vector, in a cluster, stored PLAIN",
+            laid[0] == servable_rows[0] > 0 and not layout_issues,
+            f"{laid[0]} vs {servable_rows[0]} {layout_issues}",
+        )
         check(
             "the corpus canary is recorded at the corpus width", canary[0] == DIM, str(canary)
         )
@@ -630,7 +651,7 @@ def main() -> int:
             conn.execute(
                 "DROP TABLE IF EXISTS chunks_stage, vectors_stage, sparse_stage, chunks CASCADE"
             )
-            conn.execute("DROP TABLE IF EXISTS vectors_omni_stage")
+            conn.execute("DROP TABLE IF EXISTS vectors_omni_stage, chunk_vectors")
             conn.execute("DROP TABLE IF EXISTS clusters, corpus_canary")
             conn.execute(
                 "DROP TABLE IF EXISTS relations_stage, status_stage, quality_stage, "
@@ -724,7 +745,7 @@ def main() -> int:
                     "placement_stage, scope_stage, relations_stage, status_stage, "
                     "quality_stage, "
                     "doc_relations, doc_status, doc_quality, clusters, corpus_canary, "
-                    "corpus_versions, chunks CASCADE"
+                    "corpus_versions, chunk_vectors, chunks CASCADE"
                 )
                 conn.execute("DROP TABLE IF EXISTS ingest_progress, corpus_meta CASCADE")
 
@@ -757,6 +778,7 @@ def main() -> int:
                     "servable": q(
                         "SELECT count(*) FROM chunks WHERE indexable AND cluster_id IS NOT NULL"
                     ).fetchone(),
+                    "layout": sorted(q("SELECT id FROM chunk_vectors").fetchall()),
                 }
 
         reset()
@@ -786,6 +808,11 @@ def main() -> int:
             and after_delta["relations"] == rebuilt["relations"]
             and after_delta["quality"] == rebuilt["quality"],
             f"{after_delta['status']}",
+        )
+        check(
+            "after a delta, chunk_vectors holds what a rebuild's would",
+            after_delta["layout"] == rebuilt["layout"] and len(rebuilt["layout"]) > 0,
+            f"{len(after_delta['layout'])} vs {len(rebuilt['layout'])} vectors",
         )
         check(
             "every servable chunk is in a cluster and the cluster sizes add up",

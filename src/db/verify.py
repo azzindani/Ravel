@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from db.layout import layout_problems
+
 __all__ = ["VerifyError", "verify_ready"]
 
 
@@ -55,6 +57,7 @@ def verify_ready(dsn: str, document: dict[str, Any]) -> dict[str, int]:
             conn,
             "SELECT count(*) FROM pg_trigger WHERE tgname = 'chunks_provenance_immutable'",
         )
+        problems.extend(layout_problems(conn))
     if total != expect:
         problems.append(f"{total:,} chunks in the database, the manifest says {expect:,}")
     if dense != total:

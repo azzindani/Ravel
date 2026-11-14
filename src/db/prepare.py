@@ -1,6 +1,6 @@
 """The whole path from a sealed bundle to a database ready to serve.
 
-    preflight -> place -> load (with the placement) -> accelerate -> verify
+    preflight -> place -> load (with the placement) -> accelerate -> layout -> verify
 
 Ravel runs this to build a deployable database and Vera runs the same code to deploy one,
 which is the point of it living here once. Each stage is the library already tested on its
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from db.accelerate import AcceleratorReport, accelerate
+from db.layout import LayoutReport, build_layout
 from db.place import place
 from db.verify import VerifyError, verify_ready
 
@@ -37,6 +38,7 @@ class PrepareReport:
     accelerators: AcceleratorReport = field(default_factory=AcceleratorReport)
     ready: dict[str, int] = field(default_factory=dict)
     vocabulary: Path | None = None
+    layout: LayoutReport | None = None
 
 
 def prepare(
@@ -115,6 +117,16 @@ def prepare(
     started = time.time()
     report.accelerators = accelerate(dsn)
     timed("accelerate", started)
+
+    # ! Required, ✗ an accelerator. Without it the dense arm still answers, from `chunks`,
+    # but a cold probe is ~140x slower (`db.layout`), and that is the difference between
+    # routing holding at scale and not.
+    import psycopg
+
+    started = time.time()
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        report.layout = build_layout(conn)
+    timed("layout", started)
 
     if vocabulary_to is not None and (root / "corpus.bm25.json").exists():
         target = Path(str(vocabulary_to))
