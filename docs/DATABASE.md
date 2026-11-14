@@ -96,6 +96,22 @@ are cached by content hash and only new documents cost anything.
 * **The lineage is recorded** in `corpus_versions` (parent, child, counts), and `corpus_meta`
   moves to the child version in the same transaction.
 
+Measured on the real 1.7M-chunk database (846 clusters), a round trip: remove 300 documents
+(13,304 chunks), then add them back.
+
+| | remove | re-add |
+|---|---|---|
+| place | 0 s | 327 s |
+| apply (one transaction) | 26 s | 85 s |
+| analyze, verify | 11 s | 10 s |
+
+The database ended at the original manifest (`add1aa61a4039dab`), 1,716,628 chunks, 1,691,419
+placed, cluster row counts summing to the placed chunks, and two lineage rows in
+`corpus_versions`. The new chunks sat 0.2052 from their centroids against 0.2064 for the corpus
+(no drift: they are the same documents). The 327 s of placement is not the assignment (13k
+vectors); it is the drift reading, `ORDER BY random()` over every row's vector, and wants a
+sampled scan.
+
 Checked against real Postgres in CI: applying a delta leaves the chunks, the derived rows
 (including an unchanged document's new status) and the cluster sizes that a clean rebuild of the
 new version would have, and a stale or repeated delta is refused.
