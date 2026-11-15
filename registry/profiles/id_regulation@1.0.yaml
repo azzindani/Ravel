@@ -338,6 +338,17 @@ scoring:
     - sebagai
   min_term_chars: 3
 
+  # A law's definitions article mentions every term the law uses, so it matches
+  # nearly any question about that law and takes the law's first slot. Vera puts it
+  # after the law's other operative text, unless the question asks what something
+  # means (`ROADMAP.md` Stage 3 in Vera: 10 wins, 3 losses over the eval pool).
+  # How the provision opens and how a question asks are language, so they live here.
+  definitions:
+    marker: ['yang dimaksud dengan']
+    cues: ['apa itu', 'apa yang dimaksud', 'apakah yang dimaksud', 'yang dimaksud',
+           'pengertian', 'definisi', 'maksudnya', 'artinya', 'diartikan']
+    window: 200
+
 # Per-extractor overrides. Absent keys fall back to the extractor's defaults.
 extract:
   native:

@@ -253,6 +253,21 @@ class CleanupSpec(Base):
     tell and is why this is a rule over neighbours and not another regex."""
 
 
+class DefinitionsSpec(Base):
+    """How a corpus's definitions provision opens, and how a question asks for a meaning.
+
+    ! Read by Vera, not by Ravel. A definitions article mentions every term its law uses,
+    so it matches nearly any question about that law; Vera ranks it after the law's other
+    operative text unless the question asks what something means. Each entry is a regular
+    expression, matched case-insensitively: `marker` within the first `window` characters
+    of a chunk's body, `cues` in the question on word boundaries.
+    """
+
+    marker: list[str] = Field(min_length=1)
+    cues: list[str] = Field(min_length=1)
+    window: int = Field(default=200, ge=1)
+
+
 class ScoringSpec(Base):
     """The vocabulary the query-independent ranking factors are computed from.
 
@@ -324,6 +339,10 @@ class ScoringSpec(Base):
     here in the units the engine actually uses rather than the ones the name suggests.
     """
 
+    definitions: DefinitionsSpec | None = None
+    """The corpus's definitions provision · `None` declares none, and Vera reorders nothing
+    for one, and `scoring_vocabulary` carries `null`."""
+
     def resolved(self, authority: dict[str, int]) -> dict[str, Any]:
         """The whole vocabulary, as one JSON document for `corpus_meta`.
 
@@ -336,7 +355,7 @@ class ScoringSpec(Base):
         Keys are uppercased here, once, rather than per candidate on every request in
         the engine.
         """
-        return {
+        out: dict[str, Any] = {
             "authority": {k.upper(): v for k, v in authority.items()},
             "authority_scale": self.authority_scale,
             "annex": list(self.annex),
@@ -348,6 +367,12 @@ class ScoringSpec(Base):
             "stopwords": [w.lower() for w in self.stopwords],
             "min_term_chars": self.min_term_chars,
         }
+        # ! Always present, null when undeclared: the engine reads this blind, and a key
+        # that is sometimes absent is one a reader learns to guard.
+        out["definitions"] = (
+            self.definitions.model_dump() if self.definitions is not None else None
+        )
+        return out
 
     @model_validator(mode="after")
     def _annex_outranks_nothing(self) -> Self:

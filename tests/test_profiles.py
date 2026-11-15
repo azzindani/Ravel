@@ -429,6 +429,18 @@ def test_a_profile_with_no_ladder_resolves_to_an_empty_one_not_a_missing_key() -
     assert set(generic) == set(id_reg), "same shape, different data"
 
 
+def test_the_definitions_provision_is_declared_beside_the_corpus_or_null() -> None:
+    """Vera ranks a law's definitions article after its other operative text unless the
+    question asks for a meaning. Both halves are language, so the profile declares them."""
+    id_reg = Registry.load().get("id_regulation").spec.scoring_vocabulary
+    generic = Registry.load().get("generic").spec.scoring_vocabulary
+
+    assert id_reg["definitions"]["marker"] == ["yang dimaksud dengan"]
+    assert "apa itu" in id_reg["definitions"]["cues"]
+    assert id_reg["definitions"]["window"] == 200
+    assert generic["definitions"] is None
+
+
 def test_the_vocabulary_is_json_serialisable() -> None:
     """It goes into a JSONB column as a literal. A set or a compiled pattern in here
     fails at load time, against a real database, at the end of an ingest."""
