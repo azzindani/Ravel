@@ -136,6 +136,37 @@ Checked against real Postgres in CI: applying a delta leaves the chunks, the der
 (including an unchanged document's new status) and the cluster sizes that a clean rebuild of the
 new version would have, and a stale or repeated delta is refused.
 
+
+## 4c. Relabels: a newer profile's text rules, without a rebuild
+
+```
+ravel bundle relabel <bundle> --out <new bundle> --corpus <id> [--profile <ref>] [--dry-run]
+ravel db relabel <new bundle> --dsn ...
+```
+
+A delta refuses a changed profile, because a changed recipe is usually a new space. One kind
+of profile change is not: a label decided by the chunk's **own text** (`structure.explanation`,
+`src/chunk/labels.py`). The chunker applies it to every chunk it emits; `bundle relabel` applies
+the same function to a built bundle, so the result carries the labels a rebuild would, and
+chunk ids do not move (an id hashes the locator and blocks, never the chapter).
+
+* **Only what changed is re-embedded.** The embed header carries `{chapter}`, so a relabelled
+  chunk's vector is redone; nothing else is.
+* **The embedder must reproduce the bundle first.** Unchanged chunks are re-embedded and must
+  match their stored vectors at cosine >= 0.999, or nothing is written (`CLAUDE.md` §7.3).
+* **A new bundle, never an edit.** Unchanged files are hard links; shards holding a changed
+  row are rewritten; `relabel.parquet` lists each id with its old and new chapter; the
+  manifest gets a new hash, a `relabel` block naming its parent, and a resealed inventory.
+* **`db relabel` keeps the provenance guard on.** Under the same row-locked version check as
+  `db apply`, it requires every row to still read its old label, then deletes and re-inserts
+  those rows with the new chapter and vector (the guard forbids an `UPDATE` of labels, and is
+  never disabled), updates `chunk_vectors`, and records the step in `corpus_versions`.
+
+Measured 2026-11-15 on the 1.7M `id_reg_markdown` bundle with `id_regulation_md@1.3`: 3,077
+explanation chunks in 537 documents relabelled `PENJELASAN` (their heading was lost to OCR),
+embedder reproduction cosine 1.00000, mean cosine of a relabelled chunk to its old vector
+0.968, 111 shards rewritten, applied to the live database in 92 s.
+
 ## 5. Measurements behind the design
 
 * Vector copy: text route 1,353 s, binary 139 s, identical `halfvec` (all 20,000 values of one

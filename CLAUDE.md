@@ -208,6 +208,7 @@ Full detail in the per-stage docs.
 | `ravel sparse <corpus>` | the lexical arm: one BM25 vocabulary over the whole corpus + a sparse vector per chunk (CPU) |
 | `ravel db prepare <bundle> --dsn ...` | the one process that makes a database ready to serve (place, load, index, verify); Vera runs the same code |
 | `ravel bundle delta <old> <new> --out d/`, `ravel db apply d/ --dsn ...` | a change to a loaded corpus: remove, add, replace derived rows, one transaction |
+| `ravel bundle relabel <b> --out b2/ --corpus <id>`, `ravel db relabel b2/ --dsn ...` | a newer profile's text label rules on a built bundle: re-embed only the relabelled chunks, apply in one transaction, provenance guard kept (`docs/DATABASE.md` §4c) |
 | `ravel cluster <corpus> --variant <v>` | optional offline tool (eval, rehearsal); not in the build path |
 | `ravel bundle <corpus> --variant <v>` | write parquet shards + manifest |
 | `ravel load <bundle> --dsn ...` | preflight, `COPY` into Postgres, verify |

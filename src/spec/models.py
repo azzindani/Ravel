@@ -122,6 +122,30 @@ class MatchSpec(Base):
     """Tie-breaker. The generic fallback sets this negative so anything specific wins."""
 
 
+class ExplanationSpec(Base):
+    """A chunk that reads as explanation is explanation, whatever heading it fell under.
+
+    ! For the documents whose explanation heading the extractor lost. On the 1.7M corpus
+    92,498 `Pasal` chunks sit in the `PENJELASAN` region its heading opened, and ~2,860 more
+    fell under `PENUTUP`, `LAMPIRAN` or the last `BAB` because OCR garbled or dropped the
+    heading. Their own text gives them away: an explanation opens `Ayat (1) Cukup jelas`,
+    `Huruf a`, `Yang dimaksud dengan`, and the operative text never does (it writes `(1)`
+    and `a.`).
+
+    Applied per chunk, never as a region it opens, so `ravel bundle relabel` can apply the
+    same rule to a built bundle and get what a rebuild would (`chunk.labels`).
+    """
+
+    region: str
+    """The chapter such a chunk is labelled with: the region the lost heading would open."""
+    article: str
+    """Only chunks whose article label matches this (`^Pasal `): a `Pembukaan` that
+    happens to open `Yang dimaksud dengan` is not an explanation of anything."""
+    opens: str
+    """How the chunk's body opens, after an optional repeat of the article label."""
+    ignorecase: bool = True
+
+
 class StructureSpec(Base):
     max_line_chars: int = Field(default=120, ge=1)
     max_title_chars: int = Field(default=80, ge=0)
@@ -132,6 +156,7 @@ class StructureSpec(Base):
     opening: str | None = None
     """`article` label for what precedes the first marker: the title block of a regulation
     is its `Pembukaan`, and a chunk with no label at all cannot be cited."""
+    explanation: ExplanationSpec | None = None
 
     @model_validator(mode="after")
     def _names_unique(self) -> Self:

@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 
 from canon import Block, BlockType, CanonicalDoc
 from chunk.base import BODY_TYPES, Builder, ChunkConfig, chunker
+from chunk.labels import ExplanationRule
 from chunk.models import Chunk
 from spec import Facts, Profile, Unit
 
@@ -165,8 +166,12 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
 
     _keep_orphan_headings(plans, doc, where, title_of, profile, citation)
 
+    # ! The text decides when the heading was lost (`chunk.labels`). Per chunk, after the
+    # split, because that is the unit `ravel bundle relabel` sees in a built bundle.
+    spec = profile.spec.structure.explanation if profile is not None else None
+    rule = ExplanationRule.compile(spec) if spec is not None else None
     for plan in plans:
-        yield from builder.split(
+        for chunk in builder.split(
             plan.blocks,
             locator=plan.locator or None,
             identifier=plan.identifier,
@@ -175,7 +180,11 @@ def chunk_by_unit(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
             lead_block_ids=plan.lead_blocks,
             chapter=plan.where.chapter,
             article=plan.where.article,
-        )
+        ):
+            relabelled = (
+                rule.chapter_for(chunk.chapter, chunk.article, chunk.body) if rule else None
+            )
+            yield chunk.model_copy(update={"chapter": relabelled}) if relabelled else chunk
     yield from builder.tables()
 
 

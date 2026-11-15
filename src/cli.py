@@ -1576,6 +1576,84 @@ def bundle_delta(
     out.print(summary)
 
 
+@bundle_app.command("relabel")
+def bundle_relabel(
+    source: Annotated[Path, typer.Argument(help="The sealed bundle to relabel.")],
+    target: Annotated[Path, typer.Option("--out", help="A new directory for the result.")],
+    corpus_id: Annotated[str, typer.Option("--corpus", help="Corpus whose embedder to use.")],
+    profile_ref: Annotated[
+        str | None, typer.Option("--profile", help="Profile ref; default: newest of its id.")
+    ] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Count, write nothing.")] = False,
+) -> None:
+    """Apply a newer profile's text label rules to a built bundle; re-embed only what changed.
+
+    Refuses an embedder that does not reproduce the bundle's stored vectors.
+    """
+    from bundle.relabel import RelabelError, plan_relabel, relabel_bundle
+    from bundle.writer import read_bundle
+    from embed import build_embedder
+    from spec import default_registry
+
+    document = read_bundle(source)
+    registry = default_registry()
+    profile = registry.get(profile_ref or str(document["profile_ref"]).split("@")[0])
+    if dry_run:
+        changes = plan_relabel(source, profile)
+        out.print(f"{len(changes):,} chunks would be relabelled by {profile.ref}")
+        return
+    cfg = CorpusSpec.find(corpus_id).embed
+    if cfg is None:
+        err.print(f"[red]{corpus_id} has no embed section[/red]")
+        raise typer.Exit(1)
+    if cfg.hardware != "none":
+        from embed.factory import with_hardware
+        from spec import HardwareRegistry
+
+        hw, _why = HardwareRegistry.load().resolve(cfg.hardware or None)
+        cfg = with_hardware(cfg, hw)
+    embedder = build_embedder(cfg)
+
+    def embed(texts: list[str]):  # type: ignore[no-untyped-def]
+        import numpy as np
+
+        order = sorted(range(len(texts)), key=lambda i: len(texts[i]), reverse=True)
+        res = np.empty((len(texts), embedder.spec.dim), dtype=np.float32)
+        for b in range(0, len(order), 16):
+            idx = order[b : b + 16]
+            res[idx] = embedder.embed_documents([texts[i] for i in idx])
+        return res
+
+    try:
+        report = relabel_bundle(source, target, profile, embed, on_note=err.print)
+    except RelabelError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    out.print(
+        f"{report.changed:,} chunks relabelled · {len(report.shards)} shards rewritten · "
+        f"{report.parent[:16]} -> {report.child[:16]} · {target}"
+    )
+
+
+@db_app.command("relabel")
+def db_relabel(
+    bundle: Annotated[Path, typer.Argument(help="A bundle written by `bundle relabel`.")],
+    dsn: Annotated[str, typer.Option("--dsn", envvar="DATABASE_URL")],
+) -> None:
+    """Apply a relabelled bundle to the database serving its parent, in one transaction."""
+    from db.relabel import RelabelApplyError, apply_relabel
+
+    try:
+        r = apply_relabel(bundle, dsn, on_note=err.print)
+    except RelabelApplyError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    out.print(
+        f"{r.corpus_id}: {'already at' if r.already else f'{r.rows:,} chunks relabelled,'} "
+        f"{r.child[:16]} (from {r.parent[:16]})"
+    )
+
+
 @db_app.command("parents")
 def db_parents(
     corpus_id: Annotated[str, typer.Argument(help="The corpus id in corpus_meta.")],
