@@ -65,6 +65,19 @@ placed chunks, a canary at the corpus width, and the provenance guard installed.
   a calibration made on a different cluster count.
 * **The accelerators** (RUM, pg_search) are optional. The engine probes for each and falls
   back to a slower scan. They are attempted and a failure is reported, never swallowed.
+* **The region scope** (Vera migration 0007, `src/db/accelerate.py`) has two parts.
+  * The BM25 index carries `enacting_body` as a literal field
+    (`(enacting_body::pdb.literal)`). An index built before the field is replaced, not kept.
+  * `corpus_regions` lists the regional `enacting_body` values, without two-letter
+    artefacts or generic words like `KABUPATEN`.
+
+  Vera's region arm searches within the region a question names. It needs both parts and
+  stays off without them. On the 604-case eval it took Recall@5 from 59.1 to 63.6%
+  (`Vera/docs/ROADMAP.md` Stage 3).
+
+  A pg_search too old for the literal field gets the plain index (`fallback 1` in the
+  report) and no list. A delta refreshes the list after it lands, since it can add a
+  region. A relabel cannot: it changes only `chapter`.
 
 ## 4. Build once, deploy in a minute
 

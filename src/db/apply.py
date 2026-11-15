@@ -37,6 +37,7 @@ import pyarrow.parquet as pq
 
 from bundle.writer import read_bundle
 from cluster import Clustering, metric_for
+from db.accelerate import refresh_regions
 from db.layout import sync_layout
 from db.verify import VerifyError, verify_ready
 from load import DeltaSpec, LoadError, Placement, execute
@@ -276,6 +277,11 @@ def apply_delta(
     started = time.time()
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute("ANALYZE chunks")
+        # ! A delta can add a region, and Vera's region arm only scopes to names listed in
+        # `corpus_regions`. Rebuilt whole (one GROUP BY over the column), and only where
+        # the BM25 index can serve the scope (`db.accelerate.refresh_regions`).
+        if refresh_regions(conn):
+            note("corpus_regions refreshed")
     report.seconds["analyze"] = time.time() - started
 
     started = time.time()

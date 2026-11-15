@@ -10,7 +10,7 @@ before anything is loaded) and `accelerate` (the provenance guard and the option
 are its parts, public so they can be run and tested alone.
 """
 
-from db.accelerate import AcceleratorReport, accelerate
+from db.accelerate import AcceleratorReport, accelerate, refresh_regions
 from db.apply import ApplyError, ApplyReport, apply_delta
 from db.calibrate import CalibrationError, GateCalibration, calibrate_gate, load_cases
 from db.delta import DeltaError, DeltaReport, build_delta
@@ -36,5 +36,6 @@ __all__ = [
     "load_cases",
     "place",
     "prepare",
+    "refresh_regions",
     "verify_ready",
 ]
