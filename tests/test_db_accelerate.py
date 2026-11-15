@@ -7,10 +7,13 @@ migration 0007 (`Vera/docs/ROADMAP.md` Stage 3).
 
 from __future__ import annotations
 
-import psycopg
 import pytest
 
-from db.accelerate import (
+# ! Skipped, ✗ failed, where the `db` extra is absent: the samples-routing job installs
+# only `pymupdf` and collects every test module before selecting by marker.
+psycopg = pytest.importorskip("psycopg")
+
+from db.accelerate import (  # noqa: E402 · after the skip, on purpose
     BM25_PLAIN,
     BM25_WITH_REGION,
     REGION_FIELD,
