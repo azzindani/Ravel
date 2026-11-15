@@ -18,6 +18,8 @@ The rule is deliberately simple, and recorded with its inputs:
   of the other half).
 * **The lexical floor is 0.** Its signal does not separate the two populations on this
   corpus (AUC 0.52) and caused every false refusal; it is still reported by the engine.
+* **The foreign jurisdictions are declared, not measured.** They come from the corpus
+  spec (`gate.foreign`) and are recorded beside the floors, so re-calibrating keeps them.
 * **What it buys is reported, never assumed:** off-topic refused at that floor, and the
   AUC of the signal, so a corpus whose space does not separate the two is visible.
 
@@ -64,6 +66,7 @@ class GateCalibration:
     clusters: int
     queries_sha256: str
     calibrated_at: str
+    foreign: tuple[str, ...] = ()
 
 
 def load_cases(path: str) -> list[dict[str, Any]]:
@@ -89,6 +92,7 @@ def calibrate_gate(
     embed_queries: Callable[[list[str]], Any],
     *,
     margin: float = 0.02,
+    foreign: Sequence[str] = (),
     write: bool = True,
 ) -> GateCalibration:
     """Measure the floor on this database's clusters; record it unless `write` is false."""
@@ -132,6 +136,8 @@ def calibrate_gate(
         clusters=len(rows),
         queries_sha256=digest,
         calibrated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        # Lowercased and de-duplicated, order kept: the engine lowercases too.
+        foreign=tuple(dict.fromkeys(f.strip().lower() for f in foreign if f.strip())),
     )
     if write:
         conn.execute("ALTER TABLE corpus_meta ADD COLUMN IF NOT EXISTS gate JSONB")

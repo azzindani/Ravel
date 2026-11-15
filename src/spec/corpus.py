@@ -256,6 +256,19 @@ class EmbedSpec(Base):
         return self
 
 
+class GateSpec(Base):
+    """What the engine's domain gate needs to know about the corpus beyond its floors.
+
+    `ravel db calibrate` writes this into `corpus_meta.gate` beside the floors it measures,
+    so a re-calibration keeps it. Nothing here changes a built artifact.
+    """
+
+    foreign: list[str] = Field(default_factory=list)
+    """Jurisdictions the corpus does NOT cover. Vera refuses a query naming one unless a
+    retrieved text names it too, so the corpus's own treaties with them stay answerable
+    (Vera `docs/ROADMAP.md` Stage 1). Matched as whole words, case-insensitive."""
+
+
 class CorpusSpec(Base):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     title: str
@@ -265,6 +278,7 @@ class CorpusSpec(Base):
     extract: ExtractSpec = Field(default_factory=ExtractSpec)
     chunk: ChunkSpec = Field(default_factory=ChunkSpec)
     embed: EmbedSpec | None = None
+    gate: GateSpec = Field(default_factory=GateSpec)
 
     @property
     def config_hash(self) -> str:

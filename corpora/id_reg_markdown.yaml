@@ -54,3 +54,20 @@ embed:
   # measures one.
   hardware: auto
   shard_rows: 20000
+
+gate:
+  # Jurisdictions this corpus does not cover. `ravel db calibrate` records them in
+  # corpus_meta.gate; Vera refuses a query naming one unless a retrieved text names it too,
+  # so Indonesia's own treaties stay answerable (Vera docs/ROADMAP.md Stage 1: off-topic
+  # refused 62 -> 74 of 106, real questions refused 0 of 496).
+  foreign: [
+    malaysia, singapura, singapore, thailand, filipina, philippine, philippines,
+    vietnam, brunei, myanmar, kamboja, laos, timor leste, australia, selandia baru,
+    new zealand, jepang, japan, japanese, korea, tiongkok, china, cina, taiwan, hong
+    kong, india, pakistan, bangladesh, arab saudi, saudi, uni emirat arab, emirat,
+    qatar, mesir, egypt, turki, turkey, iran, amerika serikat, amerika, united states,
+    usa, kanada, canada, meksiko, brasil, brazil, inggris, united kingdom, england,
+    britain, british, belanda, netherlands, dutch, jerman, germany, prancis, perancis,
+    france, italia, spanyol, swedia, sweden, norwegia, denmark, finlandia, swiss,
+    rusia, russia, uni eropa, european union, eu, gdpr, pdpa
+  ]

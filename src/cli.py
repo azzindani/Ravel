@@ -1668,6 +1668,7 @@ def db_calibrate(
                 load_cases(str(queries)),
                 embedder.embed_queries,
                 margin=margin,
+                foreign=spec.gate.foreign,
                 write=not dry_run,
             )
     except CalibrationError as exc:
@@ -1678,7 +1679,7 @@ def db_calibrate(
         f"(lowest real question {result.lowest_in_domain:.3f}, margin {result.margin}) · "
         f"real refused 0/{result.in_domain} · off-topic refused "
         f"{result.off_topic_refused}/{result.out_of_domain} · AUC {result.auc:.3f} · "
-        f"{result.clusters:,} clusters"
+        f"{result.clusters:,} clusters · {len(result.foreign)} foreign jurisdictions"
     )
     out.print(
         "[yellow]dry run: nothing written[/yellow]"
