@@ -45,7 +45,46 @@ SAMPLE = (
 
 
 def test_a_markdown_regulation_routes_to_the_markdown_profile(registry: Registry) -> None:
-    assert registry.route(mime="text/markdown", sample=SAMPLE).ref == "id_regulation_md@1.3"
+    assert registry.route(mime="text/markdown", sample=SAMPLE).ref == "id_regulation_md@1.4"
+
+
+# ===========================================================================
+# What the embedder is shown · 1.4 · labelled lines, the region included
+# ===========================================================================
+def _chunk(**kw):
+    from types import SimpleNamespace
+
+    base = dict(identifier=None, effective_date=None, article=None, body="Isi pasal.",
+                regulation_type=None, enacting_body=None, regulation_number=None, year=None,
+                about=None, chapter=None, heading_path=None)
+    return SimpleNamespace(**{**base, **kw})
+
+
+def test_the_embedded_header_names_the_region_and_the_place(md: Profile) -> None:
+    from chunk.derive import embed_text
+
+    text = embed_text(_chunk(
+        regulation_type="PERATURAN DAERAH KABUPATEN", enacting_body="SAMPANG",
+        regulation_number="1", year=2016, about="PERLINDUNGAN DAN PEMBERDAYAAN PETAMBAK GARAM",
+        chapter="BAB IV - PEMASARAN", heading_path="BAB IV › Bagian Keempat › Pasal 38"), md)
+    assert text == (
+        "Peraturan: PERATURAN DAERAH KABUPATEN SAMPANG\n"
+        "Nomor: 1 Tahun 2016\n"
+        "Tentang: PERLINDUNGAN DAN PEMBERDAYAAN PETAMBAK GARAM\n"
+        "Bab: BAB IV - PEMASARAN\n"
+        "Letak: BAB IV › Bagian Keempat › Pasal 38\n"
+        "Isi:\n\nIsi pasal."
+    )
+
+
+def test_a_region_artefact_is_no_region_and_a_missing_number_drops_its_line(
+    md: Profile,
+) -> None:
+    from chunk.derive import embed_text
+
+    text = embed_text(_chunk(regulation_type="PERATURAN DAERAH KABUPATEN",
+                             enacting_body="KABUPATEN", chapter="BAB I"), md)
+    assert text == "Peraturan: PERATURAN DAERAH KABUPATEN\nBab: BAB I\nIsi:\n\nIsi pasal."
 
 
 @pytest.mark.parametrize("mime", ["application/pdf", "text/plain", "text/html"])
