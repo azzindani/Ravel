@@ -3,15 +3,20 @@
 
 from __future__ import annotations
 
+import io
+import json
+import tarfile
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from chunk import Builder, ChunkConfig, get
 from extract.structure import Structurer
 from extract.xml import XmlExtractor
-from spec import default_registry
+from sources.fetch import Fetcher
+from spec import CorpusSpec, default_registry
 
 TEXT = "LEGITEXT000005634379"
 
@@ -175,3 +180,103 @@ def test_a_link_outside_the_folder_is_not_followed(tmp_path: Path, profile: Any)
     )
     # The version page and article L1; the section's file lies outside the text's folder.
     assert raw.extraction.params["links"]["followed"] == 2
+
+
+def _tar(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def _legi_corpus(root: Path, **fetch: Any) -> CorpusSpec:
+    base = "https://echanges.example/LEGI/"
+    return CorpusSpec.model_validate(
+        {
+            "id": "fr_legi",
+            "title": "t",
+            "sources": {"root": str(root), "snapshot": "current.txt"},
+            "fetch": {
+                "kind": "archive_index",
+                "listing": base,
+                "files": base,
+                "archive": r"^Freemium_legi_global_(?P<edition>\d{8}-\d{6})\.tar\.gz$",
+                "paths": ["*/legi/global/code_et_TNC_en_vigueur/*"],
+                "documents": ["texte/struct/*.xml"],
+                **fetch,
+            },
+            "provenance": {"base_url": base, "archive_suffix": ".tar.gz"},
+        }
+    )
+
+
+def test_archive_index_takes_the_newest_dump_and_cites_members(tmp_path: Path) -> None:
+    base = "https://echanges.example/LEGI/"
+    text = "20261108-140000/legi/global/code_et_TNC_en_vigueur/code_en_vigueur/LEGI/T"
+    dump = _tar(
+        {
+            f"{text}/texte/struct/LEGITEXT1.xml": b"<TEXTELR/>",
+            f"{text}/article/LEGI/ARTI/a.xml": b"<ARTICLE/>",
+            "20261108-140000/legi/global/code_et_TNC_non_vigueur/x.xml": b"<old/>",
+        }
+    )
+    index = (
+        b'<a href="Freemium_legi_global_20251001-120000.tar.gz">old</a>'
+        b'<a href="Freemium_legi_global_20261108-140000.tar.gz">new</a>'
+        b'<a href="LEGI_20261109-210000.tar.gz">increment</a>'
+    )
+    asked: list[str] = []
+
+    def opener(url: str, headers: dict[str, str], timeout: float) -> io.BytesIO:
+        asked.append(url)
+        return io.BytesIO(dump if url.endswith(".tar.gz") else index)
+
+    corpus = _legi_corpus(tmp_path)
+    report = Fetcher(corpus, opener=opener, sleep=lambda _: None).run()
+    assert report.editions == {"archive": "20261108-140000"}
+    assert asked[-1] == f"{base}Freemium_legi_global_20261108-140000.tar.gz"
+    # The members in force, unpacked; the repealed ones are not.
+    assert report.unpacked == 2
+    struct = f"Freemium_legi_global_20261108-140000/{text}/texte/struct/LEGITEXT1.xml"
+    lines = (tmp_path / "current.txt").read_text(encoding="utf-8").splitlines()
+    assert [x for x in lines if not x.startswith("#")] == [struct]
+    assert (tmp_path / struct).read_bytes() == b"<TEXTELR/>"
+    records = {
+        json.loads(x)["path"]: json.loads(x)
+        for x in (tmp_path / "fetch.jsonl").read_text(encoding="utf-8").splitlines()
+    }
+    cited = (
+        f"{base}Freemium_legi_global_20261108-140000.tar.gz#{text}/texte/struct/LEGITEXT1.xml"
+    )
+    assert records[struct]["url"] == cited
+    # The citation the extractor writes is the manifest's.
+    assert corpus.provenance.url_for(struct) == cited
+    # A second run unpacks nothing again.
+    again = Fetcher(corpus, opener=opener, sleep=lambda _: None).run()
+    assert again.present == 1 and again.unpacked == 2
+
+
+def test_archive_index_refuses_a_member_escaping(tmp_path: Path) -> None:
+    dump = _tar({"x/legi/global/code_et_TNC_en_vigueur/../../../../evil.xml": b"<x/>"})
+    index = b'<a href="Freemium_legi_global_20261108-140000.tar.gz">new</a>'
+
+    def opener(url: str, headers: dict[str, str], timeout: float) -> io.BytesIO:
+        return io.BytesIO(dump if url.endswith(".tar.gz") else index)
+
+    with pytest.raises(ValueError, match="escapes"):
+        Fetcher(_legi_corpus(tmp_path), opener=opener, sleep=lambda _: None).run()
+    assert not (tmp_path.parent / "evil.xml").exists()
+
+
+def test_archive_index_needs_a_dated_archive(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="edition"):
+        _legi_corpus(tmp_path, archive=r"^Freemium.*\.tar\.gz$")
+
+
+def test_the_corpus_loads() -> None:
+    corpus = CorpusSpec.find("fr_legi")
+    assert corpus.extract.profile == "fr_legi@1.0"
+    assert corpus.provenance.url_for("a.tar.gz") == f"{corpus.provenance.base_url}a.tar.gz"

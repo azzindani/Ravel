@@ -51,10 +51,12 @@ class FetchSpec(Base):
     whose `files` is not its `provenance.base_url`.
     """
 
-    kind: Literal["govinfo_cfr", "ecfr", "github"]
+    kind: Literal["govinfo_cfr", "ecfr", "github", "archive_index"]
     listing: str
     """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
-    `github`: the repository's API URL (`https://api.github.com/repos/owner/name`)."""
+    `github`: the repository's API URL (`https://api.github.com/repos/owner/name`).
+    `archive_index`: a web server's directory index of dated archives
+    (`https://echanges.dila.gouv.fr/OPENDATA/LEGI/`)."""
     files: str
     """URL prefix of the files; their path below it is their path below `sources.root`.
     `github`: `https://raw.githubusercontent.com/owner/name/`, below which each file is
@@ -63,7 +65,17 @@ class FetchSpec(Base):
     """`latest` (newest edition of each title), a year (`govinfo_cfr`) or a date (`ecfr`).
     `github`: `latest` (the default branch's head) or a commit sha."""
     paths: list[str] = Field(default_factory=list)
-    """`github`: the repository paths that make the corpus, as globs (`eng/acts/*.xml`)."""
+    """`github`: the repository paths that make the corpus, as globs (`eng/acts/*.xml`).
+    `archive_index`: the archive members unpacked, as globs
+    (`*/legi/global/code_et_TNC_en_vigueur/*`)."""
+    archive: str | None = None
+    """`archive_index`: the archive's file name, as a regex whose `edition` group dates it
+    (`^Freemium_legi_global_(?P<edition>\\d{8}-\\d{6})\\.tar\\.gz$`). `edition: latest` takes
+    the newest the index lists."""
+    documents: list[str] = Field(default_factory=list)
+    """`archive_index`: the unpacked members that are documents, as globs, written to the
+    snapshot. The others are read only through a document's links (`legi@1.0`). Empty:
+    every member unpacked."""
     lookback: int = Field(default=3, ge=1)
     """Editions searched back from the newest for a title the newest does not hold."""
     titles: list[int] = Field(default_factory=list)
@@ -105,6 +117,12 @@ class ProvenanceSpec(Base):
     note: str = ""
     """What `base_url` points at and why it is authoritative. Goes into the bundle."""
 
+    archive_suffix: str | None = None
+    """A source unpacked from an archive (`fetch.kind: archive_index`): its path's first
+    part is the archive's name without this suffix (`.tar.gz`), and it is cited as the
+    archive's member, `<base_url>/<archive>#<member>`. ! The archive is the only URL the
+    bytes were read from; no per-file URL is made up for them."""
+
     @model_validator(mode="after")
     def _plausible(self) -> Self:
         if "://" not in self.base_url:
@@ -112,7 +130,11 @@ class ProvenanceSpec(Base):
         return self
 
     def url_for(self, relative_path: str) -> str:
-        return f"{self.base_url.rstrip('/')}/{relative_path.lstrip('/')}"
+        relative = relative_path.lstrip("/")
+        if self.archive_suffix and "/" in relative:
+            archive, member = relative.split("/", 1)
+            return f"{self.base_url.rstrip('/')}/{archive}{self.archive_suffix}#{member}"
+        return f"{self.base_url.rstrip('/')}/{relative}"
 
 
 class ExtractSpec(Base):
@@ -331,6 +353,18 @@ class CorpusSpec(Base):
             raise ValueError("a corpus with fetch: needs sources.snapshot, the list it writes")
         if self.fetch and self.fetch.kind == "github" and not self.fetch.paths:
             raise ValueError("fetch.kind github needs fetch.paths, the files that make it")
+        if self.fetch and self.fetch.kind == "archive_index":
+            if not (self.fetch.archive and "(?P<edition>" in self.fetch.archive):
+                raise ValueError(
+                    "fetch.kind archive_index needs fetch.archive with (?P<edition>)"
+                )
+            if not self.fetch.paths:
+                raise ValueError("fetch.kind archive_index needs fetch.paths, the members")
+            if not self.provenance.archive_suffix:
+                raise ValueError(
+                    "fetch.kind archive_index needs provenance.archive_suffix: a member is "
+                    "cited as the archive's"
+                )
         if self.fetch and self.fetch.files.rstrip("/") != self.provenance.base_url.rstrip("/"):
             raise ValueError(
                 f"fetch.files {self.fetch.files!r} must equal provenance.base_url "

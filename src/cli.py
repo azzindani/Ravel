@@ -241,6 +241,8 @@ def sources_fetch(
     )
     summary.add_row("conflicts", f"{len(report.conflicts):,}")
     summary.add_row("failed", f"{len(report.failed):,}")
+    if report.unpacked:
+        summary.add_row("unpacked", f"{report.unpacked:,} archive members")
     editions: dict[str, int] = {}
     for edition in report.editions.values():
         editions[edition] = editions.get(edition, 0) + 1

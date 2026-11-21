@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import tarfile
 import time
 import urllib.error
 import urllib.parse
@@ -70,6 +71,8 @@ class FetchReport:
     held: dict[str, str] = field(default_factory=dict)
     """Group -> why a newer edition was not taken (published only in part)."""
     snapshot: str | None = None
+    unpacked: int = 0
+    """`archive_index`: members unpacked from the archive."""
     seconds: float = 0.0
 
     @property
@@ -167,6 +170,8 @@ class Fetcher:
             return self._plan_govinfo()
         if self.spec.kind == "github":
             return self._plan_github()
+        if self.spec.kind == "archive_index":
+            return self._plan_archive_index()
         return self._plan_ecfr()
 
     def _relative(self, url: str) -> str:
@@ -308,6 +313,85 @@ class Fetcher:
         groups = {w.group for w in wanted}
         return sorted(wanted, key=lambda w: w.path), {g: sha for g in sorted(groups)}
 
+    def _plan_archive_index(self) -> tuple[list[Wanted], dict[str, str]]:
+        """The one archive of the edition: the newest the index lists, or the one named.
+
+        ! One archive, never a mix: a full dump and the increments published after it are
+        separate editions, and a corpus is built from one dump as it stands.
+        """
+        assert self.spec.archive is not None  # the corpus loader holds it present
+        listing = self.spec.listing.rstrip("/") + "/"
+        html = self._retrying(
+            listing, lambda s: s.read().decode("utf-8", "replace"), compressed=False
+        )
+        pattern = re.compile(self.spec.archive)
+        found: dict[str, str] = {}
+        for href in re.findall(r'href="([^"?#]+)"', html):
+            name = urllib.parse.unquote(href.rsplit("/", 1)[-1])
+            match = pattern.fullmatch(name)
+            if match:
+                found[match.group("edition")] = name
+        if not found:
+            raise ValueError(f"{listing}: no archive matches {self.spec.archive!r}")
+        edition = max(found) if self.spec.edition == "latest" else self.spec.edition
+        if edition not in found:
+            raise ValueError(f"{listing}: no archive of edition {edition!r}")
+        name = found[edition]
+        url = self.spec.files.rstrip("/") + "/" + urllib.parse.quote(name)
+        return [Wanted(path=self._relative(url), url=url, group="archive")], {
+            "archive": edition
+        }
+
+    def _unpack(self, item: Wanted) -> list[str]:
+        """The archive's wanted members, unpacked beside it into a folder of its name.
+
+        Each member goes in `fetch.jsonl`, cited as `<archive url>#<member>`. Unpacked once:
+        the folder's `.members` list, written last, is what says it is whole.
+        """
+        suffix = self.corpus.provenance.archive_suffix or ""
+        if not item.path.endswith(suffix):
+            raise ValueError(f"{item.path}: not a {suffix} archive")
+        folder = item.path[: len(item.path) - len(suffix)]
+        done = self.root / folder / ".members"
+        if done.is_file():
+            return done.read_text(encoding="utf-8").split("\n")[:-1]
+        members: list[str] = []
+        with (
+            tarfile.open(self.root / item.path, "r:*") as archive,
+            open(self.manifest_path, "a", encoding="utf-8", newline="\n") as manifest,
+        ):
+            for member in archive:
+                name = member.name.lstrip("./")
+                if not member.isfile() or not any(
+                    fnmatch.fnmatchcase(name, glob) for glob in self.spec.paths
+                ):
+                    continue
+                if ".." in Path(name).parts or Path(name).is_absolute():
+                    raise ValueError(f"{item.path}: member {name} escapes the archive")
+                relative = f"{folder}/{name}"
+                target = self.root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(member)
+                assert source is not None  # a regular file
+                digest = hashlib.sha256()
+                with open(target, "wb") as handle:
+                    while block := source.read(READ_BLOCK):
+                        handle.write(block)
+                        digest.update(block)
+                entry = {
+                    "path": relative,
+                    "url": f"{item.url}#{name}",
+                    "bytes": member.size,
+                    "sha256": digest.hexdigest(),
+                    "group": item.path,
+                    "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                }
+                manifest.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                members.append(relative)
+        members.sort()
+        done.write_text("".join(m + "\n" for m in members), encoding="utf-8", newline="\n")
+        return members
+
     # -- the run --------------------------------------------------------------
     def run(
         self,
@@ -361,6 +445,17 @@ class Fetcher:
                 if on_progress:
                     on_progress(report, item)
 
+        listed = sorted(w.path for w in wanted)
+        if self.spec.kind == "archive_index" and report.complete and not dry_run:
+            members = [m for w in wanted for m in self._unpack(w)]
+            report.unpacked = len(members)
+            listed = sorted(
+                m
+                for m in members
+                if not self.spec.documents
+                or any(fnmatch.fnmatchcase(m, f"*/{glob}") for glob in self.spec.documents)
+            )
+
         # ! Written only when the snapshot is whole. A list naming files that were never
         # fetched would make the next extraction a partial corpus that looks complete.
         if report.complete and not dry_run and self.corpus.sources.snapshot:
@@ -368,7 +463,7 @@ class Fetcher:
             lines = [
                 f"# {self.corpus.id} · {datetime.now(UTC).isoformat(timespec='seconds')}",
                 *(f"# {group} {edition}" for group, edition in sorted(report.editions.items())),
-                *sorted(w.path for w in wanted),
+                *listed,
             ]
             temporary = snapshot.with_suffix(snapshot.suffix + ".part")
             temporary.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")

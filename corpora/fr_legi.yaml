@@ -1,0 +1,47 @@
+id: fr_legi
+title: French consolidated codes, laws and decrees in force (DILA LEGI)
+description: >
+  The texts in force in LEGI, the consolidated French legislation DILA publishes as open data
+  (docs/SOURCE_FR_LEGI.md): the codes and the uncodified laws, ordinances, decrees and
+  orders, one folder of XML files per text, as of one full dump. Licence Ouverte 2.0.
+  Fetched by `ravel sources fetch fr_legi`; sources are read-only and not in git. Build
+  each dump in its own workspace (-w work/fr_legi/<edition>).
+
+sources:
+  root: sources/FR_LEGI
+  include: ["**/texte/struct/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: archive_index
+  listing: https://echanges.dila.gouv.fr/OPENDATA/LEGI/
+  files: https://echanges.dila.gouv.fr/OPENDATA/LEGI/
+  edition: latest
+  # The full dump. The daily increments after it are not applied: a corpus is one dump.
+  archive: '^Freemium_legi_global_(?P<edition>\d{8}-\d{6})\.tar\.gz$'
+  # The texts in force only; `code_et_TNC_non_vigueur` holds the repealed ones.
+  paths: ["*/legi/global/code_et_TNC_en_vigueur/*"]
+  # A text's documents are its tables of contents; its articles and sections are read
+  # through the struct's links.
+  documents: ["texte/struct/*.xml"]
+  delay_s: 0
+  timeout_s: 3600
+
+provenance:
+  # ! The dump is the only URL the bytes were read from: each file is cited as its member,
+  # `.../Freemium_legi_global_<edition>.tar.gz#<member>`.
+  base_url: https://echanges.dila.gouv.fr/OPENDATA/LEGI/
+  archive_suffix: .tar.gz
+  note: >
+    DILA (Direction de l'information légale et administrative), LEGI open data
+    (echanges.dila.gouv.fr/OPENDATA/LEGI), the consolidated legislation behind
+    Légifrance, as one full dump. Licence Ouverte / Open Licence 2.0. Légifrance is the
+    official reading; this is not.
+
+extract:
+  profile: fr_legi@1.0
+  extractors: [xml]
+  failure_tolerance: 0.001
+
+chunk:
+  chunker: markup
