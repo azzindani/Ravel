@@ -79,7 +79,8 @@ class HeadingRule(_Base):
       not consumed, since the element holding it is furniture skipped anyway.
     - `join`: slots of direct children, each the first present of its tags, joined by a
       space in slot order (`[[SECTNO], [SUBJECT, RESERVED]]`; `[[Label], [MarginalNote]]`
-      reads `2 Purpose of Act` where the note is printed first). Consumed.
+      reads `2 Purpose of Act` where the note is printed first). Consumed. When no slot
+      is present, `first` is tried.
     - `first`: the first direct child past the `skip` tags, if its tag is one of these;
       any other child ends the search. With `anywhere`, the first child with the tag,
       wherever it sits. Consumed.
@@ -223,6 +224,10 @@ class XmlDialect(_Base):
     #: (`REVTXT`). A unit inside is read as body -- its heading a paragraph -- and never as
     #: structure: it would otherwise open a second section of the same number inside a note.
     quoted: list[str] = Field(default_factory=list)
+    #: The publisher may leave a quote open (GPO's `REVTXT` runs to the end of a volume): a
+    #: quote then ends at a unit that cannot be part of it. A publisher whose quotes always
+    #: close says false, and a quoted amendment holding a whole schedule stays quoted.
+    quotes_run_on: bool = True
     #: An element that stands for `[Reserved]` text in a body: counted, not read.
     reserved_text: list[str] = Field(default_factory=list)
     text: Text = Field(default_factory=Text)

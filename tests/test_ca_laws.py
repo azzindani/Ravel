@@ -71,6 +71,10 @@ REGULATION = f"""<?xml version="1.0" encoding="utf-8"?>
       <Section><Label>5</Label><Text>A transitional rule.</Text></Section>
     </RelatedOrNotInForce></BillPiece>
   </Schedule>
+  <RecentAmendments>
+    <Amendment><AmendmentCitation>SOR/2025-242</AmendmentCitation><AmendmentDate>2026-10-01</AmendmentDate></Amendment>
+    <Amendment><AmendmentCitation>SOR/2024-7</AmendmentCitation><AmendmentDate>2024-02-01</AmendmentDate></Amendment>
+  </RecentAmendments>
 </Regulation>
 """
 
@@ -217,6 +221,8 @@ def test_signals(tmp_path: Path, profile: Any) -> None:
     assert row["defined_terms"] == ["food"]
     assert row["regulation_references"] == ["SOR/2016-12", "SOR/2019-12"]
     assert (row["paragraph_first"], row["paragraph_last"]) == ("(1)", "(2)(a)(i)")
+    assert row["recent_amendments"] == ["SOR/2025-242, 2026-10-01", "SOR/2024-7, 2024-02-01"]
+    assert row["recent_amendments_latest"] == "2026-10-01"
 
 
 def test_github_fetch_pins_a_commit(tmp_path: Path) -> None:
@@ -285,3 +291,62 @@ def test_the_corpus_loads() -> None:
     corpus = CorpusSpec.find("ca_laws")
     assert corpus.extract.profile == "ca_laws@1.0"
     assert corpus.fetch is not None and corpus.fetch.kind == "github"
+
+
+GROUPED = f"""<?xml version="1.0" encoding="utf-8"?>
+<Statute {LIMS} lims:current-date="2026-10-19">
+  <Identification>
+    <ShortTitle>Elevators Act</ShortTitle>
+    <Chapter><ConsolidatedNumber>H-5.6</ConsolidatedNumber></Chapter>
+  </Identification>
+  <Body>
+    <Group1-Part><Heading><Label>PART I</Label><TitleText>Acts</TitleText></Heading>
+      <Section><Label>1</Label><Text>The Elevator Act.</Text></Section>
+    </Group1-Part>
+    <Section><Label>2</Label><Text>After the Part.</Text></Section>
+  </Body>
+  <Schedule>
+    <BillPiece><RelatedOrNotInForce>
+      <Section><Label>2</Label><Text>The schedule is replaced by the following:</Text></Section>
+      <Schedule><ScheduleFormHeading><Label>SCHEDULE</Label></ScheduleFormHeading>
+        <Section><Label>1</Label><Text>Quoted.</Text></Section></Schedule>
+      <Section><Label>3</Label><Text>Still the amending Act.</Text></Section>
+    </RelatedOrNotInForce></BillPiece>
+  </Schedule>
+</Statute>
+"""
+
+
+def test_a_part_wrapped_in_an_element_is_the_same_unit(tmp_path: Path, profile: Any) -> None:
+    doc = extracted(tmp_path, GROUPED, profile)
+    paths = {b.text: b.heading_path for b in doc.blocks if b.type is BlockType.HEADING}
+    assert paths["1"] == ["Elevators Act", "PART I Acts", "1"]
+    assert paths["2"] == ["Elevators Act", "2"]
+
+
+def test_a_quote_holding_a_schedule_stays_quoted(tmp_path: Path, profile: Any) -> None:
+    doc = extracted(tmp_path, GROUPED, profile)
+    sections = [b.attrs["number"] for b in doc.blocks if b.attrs.get("unit") == "section"]
+    # Justice Canada closes its quotes: the quoted schedule ends nothing.
+    assert sections == ["1", "2"]
+    assert doc.extraction.params["quotes_ended"] == 0
+    related = [b.text for b in doc.blocks if b.attrs.get("kind") == "related_provisions"]
+    assert "Still the amending Act." in related
+
+
+def test_a_long_table_splits_by_rows_with_its_header(tmp_path: Path, profile: Any) -> None:
+    rows = "".join(
+        f"<row><entry>{i}</entry><entry>Point {i} at latitude 49, longitude 123</entry></row>"
+        for i in range(400)
+    )
+    xml = REGULATION.replace(
+        "<tbody><row><entry>1</entry><entry>Licence</entry><entry>$250</entry></row></tbody>",
+        f"<tbody>{rows}</tbody>",
+    )
+    doc = extracted(tmp_path, xml, profile)
+    tables = [c for c in chunked(doc, profile) if c.attrs.get("kind") == "table"]
+    assert len(tables) > 1
+    assert all(c.token_count <= 1024 for c in tables)
+    assert all(c.body.startswith("| Item | Fee |") for c in tables)
+    assert [c.part for c in tables] == [(i + 1, len(tables)) for i in range(len(tables))]
+    assert len({c.id for c in tables}) == len(tables)

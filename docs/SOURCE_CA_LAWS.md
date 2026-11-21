@@ -92,8 +92,52 @@ second section 5. They are read as text of kind `related_provisions` instead. `A
 | `defined_terms` | `X means ...` where `X` is a `DefinedTermEn` |
 | `paragraph_first`, `paragraph_last` | `(1)` to `(2)(a)(i)`: subsection, paragraph, subparagraph, clause |
 
-## 6. The first build
+## 6. The first build (commit `855cdfc`, current to 2026-10-19)
 
-✗ Not yet run on the full snapshot. The 45 sample files (17 Acts, 28 regulations, including the
-Criminal Code, the Income Tax Act and the Food and Drug Regulations) extract with no
-unknown element. They give 8,383 chunks, every one with an identifier.
+```bash
+ravel sources fetch ca_laws                         # 5,874 files, 307 MB, 888 s, 0 failed
+W=work/ca_laws/2026-11-16
+ravel extract ca_laws -w $W                         # 5,874 extracted, 0 failed, 107 s
+ravel chunk   ca_laws -w $W --enforce               # 166,569 chunks, 43 s
+ravel signals ca_laws -w $W                         # 39 s
+```
+
+| | |
+|---|---|
+| instruments | 5,874: 973 Acts, 4,901 regulations (`SOR` 81,874 chunks, `Act` 70,836, `SI` 10,422, `DATED` 6) |
+| units | 122,123 sections, 5,071 schedules; headings 29,558 / 22,366 / 9,450 / 3,396 / 223 at levels 1–5 |
+| tables | 4,189 |
+| chunks | 166,569, **100% with an identifier**; 7,620 of them tables |
+| tokens | 39.2M; median 108, p99 1,030, max 12,800; 1 chunk over 8,192 |
+| unknown elements | 0. `quotes_ended` 0 |
+
+**What the first full extract found**, each now in the dialect:
+
+- 20 elements never seen in the 45 samples, about 1,100 occurrences. `Group1-Part`,
+  `Group2-Division` and `Group3-Subdivision` wrap a Part in an element instead of printing a
+  flat heading (H-5.6). `AmendedContent` and `ReadAsContent` are quotes. The rest are MathML,
+  `ConventionAgreementTreaty` (a treaty's text in a schedule), `ProvisionHeading`,
+  `OtherAuthority`, and `PageBreak` / `Separator` / `StatuteYear` (furniture).
+- **16 quotes ended early.** A related provision that quotes a whole amending schedule
+  (N-3.4, SOR-2002-227, SOR-96-332) met the runaway-quote rule written for GPO, which ends a
+  quote at a shallower unit. Its sections then read as this Act's: 26 repeated section
+  numbers in 3 instruments. Justice Canada closes every quote, so the dialect says
+  `quotes_run_on: false`.
+- **Tables of 245,616 tokens.** Schedules of boundary coordinates (SOR/2013-202) and species
+  lists were one chunk each: 53 of the 54 chunks over 8,192 tokens. `markup` 1.1 splits a
+  table longer than `max_tokens` by rows and repeats its header.
+- `recent_amendments_latest` read no ISO date. The signals' date reader now takes
+  `2026-10-01` as well as `Oct. 1, 2026`.
+
+One repeated section number remains, and it is the text's: N-16.62 enacts two sections
+`15.1`.
+
+| signal | coverage | why |
+|---|---|---|
+| `authority` | 57.9% | regulations only: an Act is made under none |
+| `recent_amendments` (+ `_latest`) | 56.6% | instruments amended recently enough to list |
+| `amendments` | 39.8% | sections with a historical note |
+| `paragraph_first` / `_last` | 41.6% | sections with labelled subsections; a one-sentence section has none |
+| `regulation_references` | 26.6% | |
+| `statute_references` | 5.4% | the text names Acts by title more often than by chapter |
+| `defined_terms` | 3.2% | definitions sit in interpretation sections (CFR: 4.3%) |

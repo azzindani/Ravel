@@ -239,4 +239,8 @@ says so: "determined, ✗ measured".
 | Canada | related provisions print sections numbered by the amending Act | they are `quoted` |
 | Canada | the marginal note is printed before the section number | `join` reads in slot order |
 | Canada | raw GitHub at 1 request at a time: 0.6 files/s, 2.5 hours | `fetch.concurrency` |
+| Canada | 45 samples showed none of 20 rarer elements, about 1,100 occurrences | the first full extract is a probe too: total the warnings, fix the dialect, re-extract |
+| Canada | the GPO runaway-quote rule ended well-formed quotes holding a schedule | `quotes_run_on: false` for a publisher whose quotes close |
+| Canada | coordinate schedules became 245,616-token table chunks | `markup` 1.1 splits a table by rows under `max_tokens` |
+| Canada | `2026-10-01` was no date to the signals | ISO dates are read as well as `Oct. 1, 2026` |
 | HF | an upload sent every byte and stalled before its commit | verify the commit on the Hub, never the exit code |

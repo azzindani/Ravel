@@ -191,6 +191,10 @@ section or appendix, split into `part n of m` over the budget; a part's own text
 | chunks | 366,277 (342,470 text, 23,807 tables), 138 s; ids unique |
 | identifier | 100.0%; median 371 tokens, 185M tokens in all; 219 over 8,192 |
 
+✗ Built with `markup` 1.0, which kept a table whole: the 219 chunks over 8,192 tokens are
+mostly tables. `markup` 1.1 (`SOURCE_CA_LAWS.md` §6) splits them by rows; the next CFR build
+takes it, and the published dataset is the 1.0 build until then.
+
 The section count is independent of the extractor: every `SECTION` and `APPENDIX` element
 outside a table of contents, counted with `ElementTree` per volume, against the extractor's
 own count. Spot checks cite as a lawyer would: `40 CFR 52.21` (EPA, 39 parts, p. 15 of 2024

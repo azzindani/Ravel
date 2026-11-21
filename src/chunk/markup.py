@@ -32,13 +32,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from canon import Block, BlockType, CanonicalDoc
-from canon.render import render_table
+from canon.render import render_table_parts
 from chunk.base import BODY_TYPES, Builder, chunker
 from chunk.models import Chunk
 from spec import Facts, Profile
 from spec.models import MarkupIdentity
 
-VERSION = "1.0"
+#: 1.1: a table longer than `max_tokens` is split by rows, its header repeated.
+VERSION = "1.1"
 
 
 @dataclass(slots=True)
@@ -84,20 +85,24 @@ def chunk_by_markup(doc: CanonicalDoc, builder: Builder) -> Iterator[Chunk]:
         if builder.config.include_tables:
             for anchor in tables:
                 table = doc.table(str(anchor.ref))
-                grid = render_table(table).strip() if table is not None else ""
-                if not grid:
+                if table is None:
                     continue
-                chunk = builder.make(
-                    [anchor],
-                    body=grid,
-                    locator=(table.caption if table and table.caption else locator),
-                    identifier=identifier,
-                    attrs={**attrs, "table_id": str(anchor.ref), "kind": "table"},
-                    chapter=chapter,
-                    article=article,
+                grids = render_table_parts(
+                    table, builder.config.max_tokens, builder.count_tokens
                 )
-                if chunk:
-                    yield chunk
+                for index, grid in enumerate(grids):
+                    chunk = builder.make(
+                        [anchor],
+                        body=grid.strip(),
+                        locator=(table.caption or locator),
+                        identifier=identifier,
+                        part=(index + 1, len(grids)),
+                        attrs={**attrs, "table_id": str(anchor.ref), "kind": "table"},
+                        chapter=chapter,
+                        article=article,
+                    )
+                    if chunk:
+                        yield chunk
 
 
 def _segments(doc: CanonicalDoc) -> Iterator[Segment]:

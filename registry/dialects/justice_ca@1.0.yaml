@@ -21,6 +21,11 @@ units:
     Regulation: instrument
     Section: section
     Schedule: schedule
+    # A few instruments wrap a Part in an element instead of printing a flat heading
+    # (H-5.6): `<Group1-Part><Heading><Label>PART I</Label>...</Heading><Section>`.
+    Group1-Part: heading1
+    Group2-Division: heading2
+    Group3-Subdivision: heading3
   flat:
     tag: '^Heading$'
     attr: level
@@ -43,7 +48,8 @@ headings:
   instrument:
     path: [Identification/ShortTitle, Identification/LongTitle]
   # `PART I` + `General`.
-  heading1: &flat {join: [[Label], [TitleText]]}
+  # A flat heading joins its label and title; a `Group1-Part` holds a `Heading` that does.
+  heading1: &flat {join: [[Label], [TitleText]], first: [Heading]}
   heading2: *flat
   heading3: *flat
   heading4: *flat
@@ -76,11 +82,14 @@ reserved:
 
 skip: [InstrumentNumber, RegistrationDate, ConsolidationDate, LongTitle, ShortTitle, RunningHead,
        BillHistory, Chapter, RegulationMakerOrder, BillNumber, Parliament, BillRefNumber,
-       ScheduleFormHeading]
+       ScheduleFormHeading, StatuteYear, PageBreak, Separator]
 graphics: [Image]
 leaves: [Text, MarginalNote, Label, TitleText, HistoricalNoteSubItem, Caption, AlternateText,
          LongDescription, FormulaText, FormulaConnector, FormulaTerm, Note, GroupHeading,
-         SignatureLine, SignatureName, SignatureTitle, Amendment, OriginatingRef]
+         SignatureLine, SignatureName, SignatureTitle, Amendment, OriginatingRef, ProvisionHeading,
+         OtherAuthority, MathML,
+         # A heading with no level, printed inside a related provision: its text.
+         Heading]
 containers:
   Body: ""
   Identification: ""
@@ -127,6 +136,7 @@ containers:
   SignatureBlock: ""
   DocumentInternal: ""
   Group: ""
+  ConventionAgreementTreaty: ""
   # Provisions of OTHER enactments printed after the Act: related provisions, amendments not
   # in force. Their sections carry the amending Act's numbers (`5` of 1995, c. 29) and would
   # otherwise cite as sections of this one.
@@ -137,10 +147,16 @@ containers:
   AmendedText: amended_text
   ReadAsText: read_as_text
   QuotedText: quoted_text
+  AmendedContent: amended_text
+  ReadAsContent: read_as_text
 inline: [XRefExternal, XRefInternal, DefinedTermEn, DefinedTermFr, DefinitionEnOnly, Emphasis,
          Language, DefinitionRef, FootnoteRef, Sup, Sub, InlineFont, Repealed, Leader,
          LeaderRightJustified, FormBlank, Keep, AmendmentCitation, AmendmentDate]
-quoted: [BillPiece, RegulationPiece, RelatedOrNotInForce, AmendedText, ReadAsText, QuotedText]
+quoted: [BillPiece, RegulationPiece, RelatedOrNotInForce, AmendedText, ReadAsText, QuotedText,
+         AmendedContent, ReadAsContent]
+# ! Justice Canada closes every quote: a related provision that quotes a whole amending
+# schedule (N-3.4, SOR-2002-227) is still quoted, and its sections are not this Act's.
+quotes_run_on: false
 reserved_text: [Reserved]
 
 text:

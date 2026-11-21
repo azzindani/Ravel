@@ -358,8 +358,9 @@ class XmlExtractor:
                 )
                 if index is not None and index not in used:
                     used.append(index)
-            parts = [self._text(children[i], state.d) for i in used]
-            return clean(" ".join(p for p in parts if p)), set(used)
+            if used:
+                parts = [self._text(children[i], state.d) for i in used]
+                return clean(" ".join(p for p in parts if p)), set(used)
         for i, child in enumerate(children):
             if child.tag in rule.first:
                 return self._text(child, state.d), {i}
@@ -458,7 +459,7 @@ class XmlExtractor:
             return
         unit = d.unit_of(element)
         quote = state.quotes[-1] if quoted and state.quotes else None
-        if unit and quote is not None and not quote.ended:
+        if unit and quote is not None and not quote.ended and d.dialect.quotes_run_on:
             self._check_quote(quote, unit, element, state)
         if unit and (quote is None or quote.ended):
             self._unit(element, state)

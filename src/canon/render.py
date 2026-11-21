@@ -10,6 +10,7 @@ beats ambiguous: an ambiguous dialect silently reclassifies blocks.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from canon.models import Block, BlockType, Table
 
@@ -104,6 +105,36 @@ def render_blocks(blocks: list[Block]) -> str:
 
 def parse_blocks(markdown: str) -> list[tuple[BlockType, str, int | None, str | None]]:
     return [parse_block(chunk) for chunk in markdown.split(BLOCK_SEP) if chunk.strip()]
+
+
+def render_table_parts(table: Table, max_tokens: int, count: Callable[[str], int]) -> list[str]:
+    """A table as one grid, or as several when one would exceed `max_tokens`.
+
+    Each part is the caption, the header rows and as many data rows as fit, so every part
+    reads as the same table with its columns named. A row is never cut: one row longer than
+    the limit is a part of its own. ! A schedule of boundary coordinates ran to 245,616
+    tokens as one chunk (SOR/2013-202, `SOURCE_CA_LAWS.md` §6): no embedder reads that.
+    """
+    whole = render_table(table)
+    if not whole or count(whole) <= max_tokens:
+        return [whole] if whole else []
+    lines = whole.split("\n")
+    head = (1 if table.caption else 0) + min(table.header_rows, table.n_rows) + 1
+    header, rows = lines[:head], lines[head:]
+    budget = max_tokens - count("\n".join(header))
+    parts: list[list[str]] = []
+    current: list[str] = []
+    spent = 0
+    for row in rows:
+        cost = count(row) + 1
+        if current and spent + cost > budget:
+            parts.append(current)
+            current, spent = [], 0
+        current.append(row)
+        spent += cost
+    if current:
+        parts.append(current)
+    return ["\n".join([*header, *part]) for part in parts]
 
 
 def render_table(table: Table) -> str:

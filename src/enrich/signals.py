@@ -55,8 +55,16 @@ def _formatted(rule: SignalPattern, text: str, context: dict[str, str]) -> Itera
             continue  # a group or a context value the match does not have: no value, no guess
 
 
+_ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
 def iso(text: str) -> str | None:
-    """`Aug. 31, 1989` -> `1989-08-31`."""
+    """`Aug. 31, 1989` -> `1989-08-31`; an ISO date in the text is read as it is."""
+    if found := _ISO_DATE.search(text):
+        try:
+            return date.fromisoformat(found.group(0)).isoformat()
+        except ValueError:
+            return None
     match = _DATE.search(text)
     if not match or match.group("m").lower() not in _MONTHS:
         return None
