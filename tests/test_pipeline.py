@@ -144,28 +144,40 @@ def test_a_template_may_not_name_a_field_a_chunk_lacks() -> None:
         )
 
 
-@pytest.mark.parametrize(("embed", "message"), [
-    ({"context": [{"part": "{about}", "when_empty": ["nonsense"]}]}, "names 'nonsense'"),
-    ({"context": ["{about}"], "rewrite": {"nonsense": []}}, "rewrite names 'nonsense'"),
-    ({"context": ["{about}"], "rewrite": {"about": [{"pattern": "("}]}}, "rewrite.about"),
-])
+@pytest.mark.parametrize(
+    ("embed", "message"),
+    [
+        ({"context": [{"part": "{about}", "when_empty": ["nonsense"]}]}, "names 'nonsense'"),
+        ({"context": ["{about}"], "rewrite": {"nonsense": []}}, "rewrite names 'nonsense'"),
+        ({"context": ["{about}"], "rewrite": {"about": [{"pattern": "("}]}}, "rewrite.about"),
+    ],
+)
 def test_a_stand_in_or_a_rewrite_is_checked_like_a_part(embed: dict, message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         with_pipeline(default_registry().get(MD), derive={"embed_text": embed})
 
 
 def test_a_stand_in_part_shows_only_when_what_it_stands_in_for_is_missing() -> None:
-    p = with_pipeline(default_registry().get(MD), derive={"embed_text": {
-        "context": ["{regulation_type}", {"part": "file {source_title}",
-                                          "when_empty": ["regulation_type"]}],
-        "rewrite": {"regulation_type": [{"pattern": r"\s*SALINAN$"}]},
-    }})
+    p = with_pipeline(
+        default_registry().get(MD),
+        derive={
+            "embed_text": {
+                "context": [
+                    "{regulation_type}",
+                    {"part": "file {source_title}", "when_empty": ["regulation_type"]},
+                ],
+                "rewrite": {"regulation_type": [{"pattern": r"\s*SALINAN$"}]},
+            }
+        },
+    )
     assert embed_text(chunk(source_title="pb_26"), p).startswith("file pb_26\n\n")
-    assert embed_text(chunk(regulation_type="PERATURAN BUPATI", source_title="pb_26"),
-                      p).startswith("PERATURAN BUPATI\n\n")
+    assert embed_text(
+        chunk(regulation_type="PERATURAN BUPATI", source_title="pb_26"), p
+    ).startswith("PERATURAN BUPATI\n\n")
     # A value the rewrite empties counts as missing, so the stand-in shows.
-    assert embed_text(chunk(regulation_type="SALINAN", source_title="pb_26"),
-                      p).startswith("file pb_26\n\n")
+    assert embed_text(chunk(regulation_type="SALINAN", source_title="pb_26"), p).startswith(
+        "file pb_26\n\n"
+    )
 
 
 def test_search_text_repairs_damage_in_the_matched_copy_only(md: Profile) -> None:

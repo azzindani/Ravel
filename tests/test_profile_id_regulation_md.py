@@ -54,21 +54,40 @@ def test_a_markdown_regulation_routes_to_the_markdown_profile(registry: Registry
 def _chunk(**kw):
     from types import SimpleNamespace
 
-    base = dict(identifier=None, effective_date=None, article=None, body="Isi pasal.",
-                regulation_type=None, enacting_body=None, regulation_number=None, year=None,
-                about=None, chapter=None, heading_path=None, locator_section=None,
-                source_title="Perda_1_2016")
+    base = dict(
+        identifier=None,
+        effective_date=None,
+        article=None,
+        body="Isi pasal.",
+        regulation_type=None,
+        enacting_body=None,
+        regulation_number=None,
+        year=None,
+        about=None,
+        chapter=None,
+        heading_path=None,
+        locator_section=None,
+        source_title="Perda_1_2016",
+    )
     return SimpleNamespace(**{**base, **kw})
 
 
 def test_the_embedded_header_names_the_region_and_the_place(md: Profile) -> None:
     from chunk.derive import embed_text
 
-    text = embed_text(_chunk(
-        regulation_type="PERATURAN DAERAH KABUPATEN", enacting_body="SAMPANG",
-        regulation_number="1", year=2016, identifier="Perda Kab. 1/2016 Pasal 38",
-        about="PERLINDUNGAN DAN PEMBERDAYAAN PETAMBAK GARAM",
-        chapter="BAB IV - PEMASARAN", heading_path="BAB IV › Bagian Keempat › Pasal 38"), md)
+    text = embed_text(
+        _chunk(
+            regulation_type="PERATURAN DAERAH KABUPATEN",
+            enacting_body="SAMPANG",
+            regulation_number="1",
+            year=2016,
+            identifier="Perda Kab. 1/2016 Pasal 38",
+            about="PERLINDUNGAN DAN PEMBERDAYAAN PETAMBAK GARAM",
+            chapter="BAB IV - PEMASARAN",
+            heading_path="BAB IV › Bagian Keempat › Pasal 38",
+        ),
+        md,
+    )
     # ! No `Berkas`: the identity was extracted, so the filename would only repeat it.
     assert text == (
         "Peraturan: PERATURAN DAERAH KABUPATEN SAMPANG\n"
@@ -86,21 +105,35 @@ def test_the_filename_stands_in_only_for_an_identity_that_was_not_extracted(
 ) -> None:
     from chunk.derive import embed_text
 
-    text = embed_text(_chunk(about="PEDOMAN UMUM PENGELOLAAN ALOKASI DANA KELURAHAN",
-                             source_title="PERBUP_NO_2_TAHUN_2013_TENTANG_PEDOMAN_UMUM"), md)
-    assert text == ("Tentang: PEDOMAN UMUM PENGELOLAAN ALOKASI DANA KELURAHAN\n"
-                    "Berkas: PERBUP_NO_2_TAHUN_2013_TENTANG_PEDOMAN_UMUM\nIsi:\n\nIsi pasal.")
+    text = embed_text(
+        _chunk(
+            about="PEDOMAN UMUM PENGELOLAAN ALOKASI DANA KELURAHAN",
+            source_title="PERBUP_NO_2_TAHUN_2013_TENTANG_PEDOMAN_UMUM",
+        ),
+        md,
+    )
+    assert text == (
+        "Tentang: PEDOMAN UMUM PENGELOLAAN ALOKASI DANA KELURAHAN\n"
+        "Berkas: PERBUP_NO_2_TAHUN_2013_TENTANG_PEDOMAN_UMUM\nIsi:\n\nIsi pasal."
+    )
 
 
-@pytest.mark.parametrize(("about", "shown"), [
-    ("KETENTUAN UMUM PAJAK DAERAH DENGAN RAHMAT TUHAN YANG MAHA ESA",
-     "KETENTUAN UMUM PAJAK DAERAH"),
-    ("RETRIBUSI PARKIR BISMILLAHIRRAHMAANIRRAHIM ATAS RAHMAT ALLAH", "RETRIBUSI PARKIR"),
-    ("APBD 2015 Diundangkan dalam Lembaran Daerah Kota Bogor", "APBD 2015"),
-    # The preamble FIRST and the title after it: kept whole, ✗ emptied.
-    ("DENGAN RAHMAT TUHAN YANG MAHA ESA PAJAK BUMI DAN BANGUNAN",
-     "DENGAN RAHMAT TUHAN YANG MAHA ESA PAJAK BUMI DAN BANGUNAN"),
-])
+@pytest.mark.parametrize(
+    ("about", "shown"),
+    [
+        (
+            "KETENTUAN UMUM PAJAK DAERAH DENGAN RAHMAT TUHAN YANG MAHA ESA",
+            "KETENTUAN UMUM PAJAK DAERAH",
+        ),
+        ("RETRIBUSI PARKIR BISMILLAHIRRAHMAANIRRAHIM ATAS RAHMAT ALLAH", "RETRIBUSI PARKIR"),
+        ("APBD 2015 Diundangkan dalam Lembaran Daerah Kota Bogor", "APBD 2015"),
+        # The preamble FIRST and the title after it: kept whole, ✗ emptied.
+        (
+            "DENGAN RAHMAT TUHAN YANG MAHA ESA PAJAK BUMI DAN BANGUNAN",
+            "DENGAN RAHMAT TUHAN YANG MAHA ESA PAJAK BUMI DAN BANGUNAN",
+        ),
+    ],
+)
 def test_the_subject_is_cut_where_the_extractor_read_past_the_title(
     md: Profile, about: str, shown: str
 ) -> None:
@@ -116,8 +149,14 @@ def test_a_region_artefact_is_no_region_and_a_missing_number_drops_its_line(
 ) -> None:
     from chunk.derive import embed_text
 
-    text = embed_text(_chunk(regulation_type="PERATURAN DAERAH KABUPATEN",
-                             enacting_body="KABUPATEN", chapter="BAB I"), md)
+    text = embed_text(
+        _chunk(
+            regulation_type="PERATURAN DAERAH KABUPATEN",
+            enacting_body="KABUPATEN",
+            chapter="BAB I",
+        ),
+        md,
+    )
     assert text == "Peraturan: PERATURAN DAERAH KABUPATEN\nBab: BAB I\nIsi:\n\nIsi pasal."
 
 
