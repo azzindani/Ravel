@@ -3,7 +3,8 @@
 Canada's consolidated federal Acts and regulations, in English: corpus `ca_laws`, profile
 `ca_laws@1.0`, dialect `justice_ca@1.0`. The second source after the CFR
 (`SOURCES_NEXT.md` #1), and the first one read with **no code of its own**: the generic `xml`
-extractor gained three generic rules (§3), and the rest is YAML.
+extractor gained three generic rules (§3), and the rest is YAML. Built by the process in
+`ADDING_A_SOURCE.md`.
 
 ## 1. The source
 

@@ -1,6 +1,7 @@
 # SOURCES_NEXT.md — Ravel
 
-Open regulation sources outside the US, surveyed 2026-11-21, to be added **one at a time**:
+Open regulation sources outside the US, surveyed 2026-11-21, to be added **one at a time**,
+each by the process in `ADDING_A_SOURCE.md`:
 each gets a corpus file, a profile and an XML dialect in YAML (`CLAUDE.md` rule 12), its
 own `SOURCE_<ID>.md`, a full build, and a dataset. ✗ None is fetched yet unless its row
 says so.

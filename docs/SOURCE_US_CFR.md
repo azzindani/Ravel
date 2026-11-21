@@ -1,5 +1,7 @@
 # SOURCE_US_CFR.md — Ravel
 
+> The first source built by the process now written down in `ADDING_A_SOURCE.md`.
+
 The US Code of Federal Regulations as a corpus: where it comes from, how it is fetched
 again on every update, and how its XML becomes cited chunks.
 
