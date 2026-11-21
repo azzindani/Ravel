@@ -100,6 +100,24 @@ pipeline:
 
 A context part is dropped when every field in it is empty (`N/A` counts as empty), so a
 document whose subject could not be read gets a shorter header, not a header with a hole.
+
+Two more knobs, both on the embedded copy only:
+
+```yaml
+      context:
+        - "Peraturan: {regulation_type} {enacting_body}"
+        - part: "Berkas: {source_title}"            # a STAND-IN: shown only when every
+          when_empty: [regulation_type, year]      # field it names is empty
+      rewrite:                                     # per field, before skip_values
+        about:
+          - {pattern: '(?is)(?<=\S)\s+\bDENGAN\s+RAHMAT\b.*$', replace: ''}
+```
+
+A stand-in carries context that would otherwise be missing (the filename, for a chunk whose
+identity was not extracted) without repeating context that is there. A rewrite trims a
+value the extractor over-read before the model sees it; the chunk keeps the value as it was
+extracted. Field names in `when_empty` and `rewrite`, and every pattern, are checked when the
+profile loads. `id_regulation_md@1.4` uses both.
 Names in templates and in `expected.coverage` are checked against the chunk's fields when
 the profile loads; a typo is an error there, not a silently empty header at embed time.
 

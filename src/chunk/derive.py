@@ -10,18 +10,30 @@ re-index and never a re-chunk.
 
 from __future__ import annotations
 
+import functools
 import re
 import string
 
 from chunk.models import Chunk
 from spec import Profile
+from spec.models import Rewrite
 
 __all__ = ["embed_text", "search_text"]
 
 
-def _value(chunk: Chunk, name: str, skip: frozenset[str]) -> str:
+@functools.lru_cache(maxsize=256)
+def _compiled(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern)
+
+
+def _value(
+    chunk: Chunk, name: str, skip: frozenset[str], rewrite: dict[str, list[Rewrite]]
+) -> str:
     raw = getattr(chunk, name, None)
-    text = "" if raw is None else str(raw).strip()
+    text = "" if raw is None else str(raw)
+    for rule in rewrite.get(name, ()):
+        text = _compiled(rule.pattern).sub(rule.replace, text)
+    text = text.strip()
     return "" if text in skip else text
 
 
@@ -30,16 +42,22 @@ def embed_text(chunk: Chunk, profile: Profile | None) -> str:
 
     A part of the context is dropped when every field in it is empty, so a document whose
     subject could not be read gets a shorter header rather than a header with a hole in it.
-    With no template the body is returned unchanged.
+    A `ContextPart` with `when_empty` is shown only when those fields are all empty: a
+    stand-in for missing context, never a repeat of present context. Field rewrites change
+    the value the model sees, never the chunk. With no template the body is returned
+    unchanged.
     """
     spec = profile.spec.pipeline.derive.embed_text if profile else None
     if spec is None or not spec.context:
         return chunk.body
     skip = frozenset(spec.skip_values)
     parts: list[str] = []
-    for template in spec.context:
+    for item in spec.context:
+        template, when = (item, ()) if isinstance(item, str) else (item.part, item.when_empty)
+        if any(_value(chunk, n, skip, spec.rewrite) for n in when):
+            continue
         names = [n for _, n, _, _ in string.Formatter().parse(template) if n]
-        values = {n: _value(chunk, n, skip) for n in names}
+        values = {n: _value(chunk, n, skip, spec.rewrite) for n in names}
         if names and not any(values.values()):
             continue
         rendered = re.sub(r"\s+", " ", template.format(**values)).strip(" /-—")

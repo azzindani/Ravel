@@ -433,6 +433,20 @@ class Rewrite(Base):
     replace: str = ""
 
 
+class ContextPart(Base):
+    """A part of the embedded context that stands in for others when they are missing.
+
+    `{part: "Berkas: {source_title}", when_empty: [regulation_type, year]}` shows the
+    filename only for a chunk whose identity was not extracted: there it is the only
+    identity left, and on every other chunk it would repeat the header as noise.
+    """
+
+    part: str
+    when_empty: list[str] = Field(default_factory=list)
+    """Rendered only when every one of these fields is empty (after `rewrite` and
+    `skip_values`). An empty list means always, the same as a plain string part."""
+
+
 class EmbedText(Base):
     """How a chunk is presented to the embedder: context first, then the body.
 
@@ -441,20 +455,35 @@ class EmbedText(Base):
     costs no extra extraction -- and it is *derived*: `body` is never touched.
     """
 
-    context: list[str] = Field(default_factory=list)
+    context: list[str | ContextPart] = Field(default_factory=list)
     """Parts joined by `separator`. A part is dropped when every field in it is empty."""
     separator: str = " › "
     skip_values: list[str] = Field(default_factory=lambda: ["N/A"])
     """Field values that count as empty (`N/A` is a label, not information)."""
+    rewrite: dict[str, list[Rewrite]] = Field(default_factory=dict)
+    """Per field, rewrites applied to its value in the EMBEDDED copy only, in order, before
+    `skip_values`. For a value the extractor over-read, such as an `about` that runs on into
+    `DENGAN RAHMAT TUHAN ...`: the chunk keeps what was extracted, the model sees the title."""
 
     @model_validator(mode="after")
     def _known_fields(self) -> Self:
-        for part in self.context:
-            for _, name, _, _ in string.Formatter().parse(part):
-                if name and name not in CHUNK_FIELDS:
+        known = sorted(CHUNK_FIELDS)
+        for item in self.context:
+            part, when = (item, []) if isinstance(item, str) else (item.part, item.when_empty)
+            names = [n for _, n, _, _ in string.Formatter().parse(part) if n]
+            for name in (*names, *when):
+                if name not in CHUNK_FIELDS:
+                    raise ValueError(f"embed_text names {name!r} · known: {known}")
+        for name, rules in self.rewrite.items():
+            if name not in CHUNK_FIELDS:
+                raise ValueError(f"embed_text.rewrite names {name!r} · known: {known}")
+            for rule in rules:
+                try:
+                    re.compile(rule.pattern)
+                except re.error as e:
                     raise ValueError(
-                        f"embed_text names {name!r} · known: {sorted(CHUNK_FIELDS)}"
-                    )
+                        f"embed_text.rewrite.{name}: {rule.pattern!r} · {e}"
+                    ) from None
         return self
 
 
