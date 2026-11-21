@@ -27,8 +27,8 @@ REGULATION = f"""<?xml version="1.0" encoding="utf-8"?>
   <Identification>
     <InstrumentNumber>SOR/2018-108</InstrumentNumber>
     <EnablingAuthority>
-      <XRefExternal reference-type="act" link="F-27">FOOD AND DRUGS ACT</XRefExternal><XRefExternal
-        reference-type="act" link="S-1.1">SAFE FOOD FOR CANADIANS ACT</XRefExternal>
+      <XRefExternal link="F-27">FOOD AND DRUGS ACT</XRefExternal><XRefExternal
+        link="S-1.1">SAFE FOOD FOR CANADIANS ACT</XRefExternal>
     </EnablingAuthority>
     <LongTitle>Safe Food for Canadians Regulations</LongTitle>
   </Identification>
