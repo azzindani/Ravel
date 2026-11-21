@@ -37,7 +37,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 #: Levels deeper than this cannot be expressed in the canonical format.
-MAX_LEVEL = 9
+MAX_LEVEL = 16
 
 _FLAGS = {
     "ignorecase": re.IGNORECASE,

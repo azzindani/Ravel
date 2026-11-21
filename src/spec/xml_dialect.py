@@ -156,11 +156,49 @@ class Document(_Base):
 
 
 class Text(_Base):
-    """Inline reading: superscripts as `^n`, break elements as a space, dropped elements."""
+    """Inline reading: superscripts as `^n`, break elements as a space, dropped elements.
+
+    `split_at`: elements that end a paragraph inside a leaf (`<br/>` in LEGI's
+    `<CONTENU>I. - ...<br/><br/>1° ...</CONTENU>`): each stretch is its own paragraph, so a
+    long article splits on its own lines instead of as one block.
+    """
 
     superscript: list[str] = Field(default_factory=list)
     breaks: list[str] = Field(default_factory=list)
     drop: list[str] = Field(default_factory=list)
+    split_at: list[str] = Field(default_factory=list)
+
+
+class Link(_Base):
+    """An element that stands for another file of the same document (`<LIEN_ART id=...>`).
+
+    The file is read and its root put inside the link element, so the document is walked
+    as one tree. `keep`: attribute -> the values a link must have to be followed (`etat:
+    [VIGUEUR]`, the version in force); any other link is dropped with what it names.
+    `file` is formatted with the attribute's value (`{value}`) and the named groups of
+    `pattern`, and read relative to `Links.base`. The link's own text (a title repeated from
+    the file) is dropped once the file is in place. `parents`: followed only where its parent
+    is one of these (an article's own list of its other versions is not its content).
+    """
+
+    element: str
+    attr: str
+    file: str
+    pattern: str | None = None
+    keep: dict[str, list[str]] = Field(default_factory=dict)
+    parents: list[str] = Field(default_factory=list)
+
+    _pattern = field_validator("pattern")(_regex)
+
+
+class Links(_Base):
+    """A document stored as many files: `base` is the document's folder, relative to the
+    folder of the file the corpus lists (`../..` from `texte/struct/<id>.xml`)."""
+
+    base: str = "."
+    rules: list[Link] = Field(min_length=1)
+    #: Files read at most, so a link cycle or a runaway tree ends the document, loudly.
+    max_files: int = Field(default=100_000, ge=1)
 
 
 class Emphasis(_Base):
@@ -228,6 +266,8 @@ class XmlDialect(_Base):
     #: quote then ends at a unit that cannot be part of it. A publisher whose quotes always
     #: close says false, and a quoted amendment holding a whole schedule stays quoted.
     quotes_run_on: bool = True
+    #: A document made of many files, assembled by following its links.
+    links: Links | None = None
     #: Containers whose children are items, each read as its own paragraph even when they
     #: are inline markup: `<EnablingAuthority>` lists one `<XRefExternal>` per Act, printed
     #: with nothing between them.

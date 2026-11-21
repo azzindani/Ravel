@@ -1725,6 +1725,15 @@ def bundle_relabel(
         str | None, typer.Option("--profile", help="Profile ref; default: newest of its id.")
     ] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Count, write nothing.")] = False,
+    base_url: Annotated[
+        str,
+        typer.Option(
+            "--base-url",
+            help="Re-embed through this OpenAI-compatible endpoint (vLLM, TEI) instead of the "
+            "corpus's backend. The stored-vector check still decides whether it may.",
+        ),
+    ] = "",
+    api_key_env: Annotated[str, typer.Option("--api-key-env")] = "EMBED_API_KEY",
 ) -> None:
     """Apply a newer profile's text label rules to a built bundle; re-embed only what changed.
 
@@ -1746,7 +1755,11 @@ def bundle_relabel(
     if cfg is None:
         err.print(f"[red]{corpus_id} has no embed section[/red]")
         raise typer.Exit(1)
-    if cfg.hardware != "none":
+    if base_url:
+        from embed.factory import as_serving
+
+        cfg = as_serving(cfg, base_url, api_key_env)
+    elif cfg.hardware != "none":
         from embed.factory import with_hardware
         from spec import HardwareRegistry
 

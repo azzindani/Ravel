@@ -1,0 +1,139 @@
+id: legi
+version: "1.0"
+title: DILA LEGI (consolidated French codes, laws and decrees)
+description: >
+  France's LEGI database as DILA publishes it (docs/SOURCE_FR_LEGI.md). A text is a folder of
+  files: `texte/struct/<id>.xml` (its table of contents), `texte/version/<id>.xml` (its
+  title), `section_ta/.../LEGISCTA*.xml` (a section's table of contents) and
+  `article/.../LEGIARTI*.xml` (one version of one article). Every version is kept: the
+  struct links each article version with its `etat`, and only the version in force is
+  followed. Article text is HTML inside `<CONTENU>`.
+
+document:
+  detect: {root: '^TEXTELR$'}
+  # The text's last modification: `<DERNIERE_MODIFICATION>2026-10-01</...>`.
+  date: [META/META_SPEC/META_TEXTE_CHRONICLE/DERNIERE_MODIFICATION]
+  dated_unit: text
+
+links:
+  # From `texte/struct/<id>.xml`, the text's folder is two up.
+  base: ../..
+  rules:
+    # The text's title page (`TITRE`, `TITREFULL`, visas, signatories).
+    - element: LIEN_TXT
+      attr: id
+      file: 'texte/version/{value}.xml'
+      parents: [VERSION]
+    # A section in force: `url="/LEGI/SCTA/00/00/06/08/32/LEGISCTA000006083281.xml"`.
+    - element: LIEN_SECTION_TA
+      attr: url
+      file: 'section_ta{value}'
+      keep: {etat: [VIGUEUR]}
+      parents: [STRUCT, STRUCTURE_TA]
+    # The article version in force. Its file is named by its id, in the publisher's
+    # layout: LEGIARTI000030927196 -> article/LEGI/ARTI/00/00/30/92/71/LEGIARTI000030927196.xml.
+    - element: LIEN_ART
+      attr: id
+      pattern: '^(?P<o>[A-Z]{4})ARTI(?P<a>\d\d)(?P<b>\d\d)(?P<c>\d\d)(?P<d>\d\d)(?P<e>\d\d)\d\d$'
+      file: 'article/{o}/ARTI/{a}/{b}/{c}/{d}/{e}/{value}.xml'
+      keep: {etat: [VIGUEUR]}
+      # A text without sections links its articles from STRUCT. ! Not inside an article's
+      # own VERSIONS, which links every version of itself.
+      parents: [STRUCT, STRUCTURE_TA]
+
+units:
+  tags:
+    TEXTELR: text
+    ARTICLE: article
+  # A section's depth is stated on its link (`niv="3"`), not by its own element: sections
+  # nest Partie > Livre > Titre > Chapitre > Section > ..., one level each.
+  by_attr:
+    tag: '^LIEN_SECTION_TA$'
+    attr: niv
+    values: {"1": section1, "2": section2, "3": section3, "4": section4, "5": section5,
+             "6": section6, "7": section7, "8": section8, "9": section9, "10": section10,
+             "11": section11, "12": section12}
+  attrs:
+    text:
+      # `CODE`, `LOI`, `DECRET`, `ORDONNANCE`, `ARRETE`.
+      type: [META/META_COMMUN/NATURE]
+      # `LEGITEXT000005634379`: the text's own id, what Légifrance names it by.
+      number: [META/META_COMMUN/ID]
+      num: [META/META_SPEC/META_TEXTE_CHRONICLE/NUM]
+      signed: [META/META_SPEC/META_TEXTE_CHRONICLE/DATE_TEXTE]
+    article:
+      number: [META/META_SPEC/META_ARTICLE/NUM]
+      id: [META/META_COMMUN/ID]
+      in_force_from: [META/META_SPEC/META_ARTICLE/DATE_DEBUT]
+
+headings:
+  default: {first: [TITRE_TA]}
+  # `TITRE` is the text's title as cited: `Code de commerce`, `LOI n° 2004-575 du 21 juin 2004 ...`.
+  text:
+    path: [VERSIONS/VERSION/LIEN_TXT/TEXTE_VERSION/META/META_SPEC/META_TEXTE_VERSION/TITRE,
+           VERSIONS/VERSION/LIEN_TXT/TEXTE_VERSION/META/META_SPEC/META_TEXTE_VERSION/TITREFULL]
+  section1: &section
+    path: SECTION_TA/TITRE_TA
+  section2: *section
+  section3: *section
+  section4: *section
+  section5: *section
+  section6: *section
+  section7: *section
+  section8: *section
+  section9: *section
+  section10: *section
+  section11: *section
+  section12: *section
+  # `L233-1`; an article with no number is named by nothing and cited by its section.
+  article:
+    path: META/META_SPEC/META_ARTICLE/NUM
+
+labels:
+  default:
+    # `LIVRE II : Des sociétés commerciales ...`, `Chapitre III : ...`, `Section 3 : ...`.
+    pattern: '^(?P<marker>[^:]{1,60}?)\s*:\s*(?P<name>.*)$'
+    number: '\s(?P<number>\S+)$'
+  text:
+    pattern: '^(?P<marker>)(?P<name>.*)$'
+  article:
+    pattern: '^(?P<marker>.*)(?P<name>)$'
+    number: '^(?P<number>.+)$'
+
+reserved:
+  pattern: '^\[\s*réservé\s*\]$'
+  never: [text]
+
+# The text's and the article's metadata, read through `units.attrs`; the article's
+# context (its place in the code, repeated) and its other versions.
+# `VERSIONS`: the text's title is read through it by path; an article's lists its versions.
+skip: [META, CONTEXTE, VERSIONS, VERSIONS_A_VENIR, LIENS, VISAS, SIGNATAIRES, TP, ABRO, RECT, SM, ENTREPRISE,
+       TITRE_TA, COMMENTAIRE, ID, TITRE_TXT]
+graphics: [img]
+leaves: [p, li, h1, h2, h3, h4, h5, h6, caption, dt, dd, NOTICE]
+containers:
+  STRUCT: ""
+  STRUCTURE_TA: ""
+  SECTION_TA: ""
+  LIEN_ART: ""
+  BLOC_TEXTUEL: ""
+  CONTENU: ""
+  # `Nota : Conformément à l'article 32 de la loi ..., ces dispositions entrent en vigueur ...`.
+  NOTA: nota
+  div: ""
+  blockquote: ""
+  ul: ""
+  ol: ""
+  dl: ""
+  center: ""
+inline: [br, b, i, u, em, strong, sup, sub, span, font, a, s, strike, small, big, tt, code]
+text:
+  superscript: [sup]
+  # `<br/>` ends a paragraph inside an article: `I. - ...<br/><br/>1° ...`.
+  split_at: [br]
+emphasis:
+  elements: {i: null, em: null}
+label:
+  tags: []
+tables:
+  elements: {table: html}

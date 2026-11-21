@@ -95,7 +95,9 @@ class Block(Base):
     id: str
     type: BlockType
     text: str = ""
-    level: int | None = Field(default=None, ge=1, le=9)
+    # ! 16, not 9: a French code nests Partie > Livre > Titre > Chapitre > Section >
+    # Sous-section > Paragraphe > ... under its title, and the article below them all.
+    level: int | None = Field(default=None, ge=1, le=16)
     heading_path: list[str] = Field(default_factory=list)
     page: int | None = Field(default=None, ge=1)
     bbox: tuple[float, float, float, float] | None = None

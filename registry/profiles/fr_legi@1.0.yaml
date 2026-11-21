@@ -1,0 +1,88 @@
+id: fr_legi
+version: "1.0"
+title: French consolidated codes, laws and decrees in force (DILA LEGI)
+description: >
+  The texts in force in DILA's LEGI database: the codes and the uncodified laws, ordinances,
+  decrees and orders, each assembled from its folder of files by the `legi` dialect's links
+  and chunked by `markup` (docs/SOURCE_FR_LEGI.md). Only the version of each article in
+  force is read. Identity is the text's: its title and LEGI id, and the article
+  (`Code de commerce, art. L233-1`).
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<TEXTELR\b']
+  min_hits: 1
+
+extract:
+  xml:
+    dialects: [legi@1.0]
+
+structure:
+  from_markup: true
+  units:
+    - {name: text, level: 1, pattern: '^.'}
+    - {name: section1, level: 2, pattern: '^.', role: chapter}
+    - {name: section2, level: 3, pattern: '^.'}
+    - {name: section3, level: 4, pattern: '^.'}
+    - {name: section4, level: 5, pattern: '^.'}
+    - {name: section5, level: 6, pattern: '^.'}
+    - {name: section6, level: 7, pattern: '^.'}
+    - {name: section7, level: 8, pattern: '^.'}
+    - {name: section8, level: 9, pattern: '^.'}
+    - {name: section9, level: 10, pattern: '^.'}
+    - {name: section10, level: 11, pattern: '^.'}
+    - {name: section11, level: 12, pattern: '^.'}
+    - {name: section12, level: 13, pattern: '^.'}
+    - {name: article, level: 14, pattern: '^.', role: article}
+
+identity:
+  markup:
+    scope: text
+    facts:
+      # `CODE`, `LOI`, `DECRET`, `ORDONNANCE`, `ARRETE`.
+      regulation_type: "{text.type}"
+      regulation_number: "{text.number}"
+      about: "{text.name}"
+      year: "{text.year}"
+      # The text's last modification. ISO, so it sorts.
+      effective_date: "{text.date}"
+    identifier:
+      # `Code de commerce, art. L233-1`.
+      article: "{text.name}, art. {article.number}"
+      text: "{text.name}"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per article; longer ones split into `part n of m` on paragraph boundaries.
+    # ! Determined, ✗ measured: no French eval set exists yet.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      regulation_number: 0.99
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    # Articles cited by number: `article L. 233-3`, `art. R123-220` -> `L233-3`.
+    article_references:
+      - {pattern: '\b(?:articles?|art\.)\s+(?P<k>[LRDA])\.?\s?\*?(?P<n>\d+(?:-\d+)*)', format: '{k}{n}', ignorecase: true}
+    law_references:
+      - {pattern: '\bloi\s+(?:organique\s+)?n°\s?(?P<n>\d{2,4}-\d+)', format: 'Loi n° {n}', ignorecase: true}
+      - {pattern: '\bordonnance\s+n°\s?(?P<n>\d{2,4}-\d+)', format: 'Ordonnance n° {n}', ignorecase: true}
+      - {pattern: '\bdécret\s+n°\s?(?P<n>\d{2,4}-\d+)', format: 'Décret n° {n}', ignorecase: true}
+    eu_references:
+      - {pattern: '\b(?P<k>règlement|directive|décision)\s+(?:\((?:UE|CE|CEE|Euratom)\)\s+)?(?:n°\s?)?(?P<n>\d{2,4}/\d+(?:/(?:UE|CE|CEE))?)', format: '{k} {n}', ignorecase: true}
+  blocks:
+    # `Nota : Conformément à l'article 32 ..., ces dispositions entrent en vigueur ...`.
+    nota: {kind: nota, scope: identifier}

@@ -46,6 +46,8 @@ if TYPE_CHECKING:
 VERSION = "1.0"
 
 _SPACE = re.compile(r"\s+")
+#: Where `split_at` cuts a leaf: a character no text holds.
+_CUT = "\x00"
 _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 _DATE = re.compile(r"([A-Z][a-z]{2})[a-z]*\.?\s+(\d{1,2}),\s+(\d{4})")
 
@@ -90,6 +92,7 @@ class _Compiled:
     superscript: frozenset[str]
     breaks: frozenset[str]
     drop: frozenset[str]
+    split_at: frozenset[str]
 
     @classmethod
     def build(cls, dialect: XmlDialect, levels: dict[str, int]) -> _Compiled:
@@ -105,6 +108,7 @@ class _Compiled:
             superscript=frozenset(dialect.text.superscript),
             breaks=frozenset(dialect.text.breaks),
             drop=frozenset(dialect.text.drop) | frozenset(dialect.graphics),
+            split_at=frozenset(dialect.text.split_at),
         )
 
     def unit_of(self, element: ET.Element) -> str | None:
@@ -186,9 +190,10 @@ class XmlExtractor:
             raise ExtractionFailed(
                 f"{path.name}: no dialect of {profile.ref} reads a <{root.tag}> document"
             )
+        dialect = compiled.dialect
+        assembled = _assemble(root, path, dialect) if dialect.links else None
         state = _Walk(compiled)
         self._document(root, state)
-        dialect = compiled.dialect
 
         if not any(b.type is not BlockType.HEADING for b in state.builder.blocks):
             raise ExtractionFailed(f"{path.name}: produced no text ({dialect.ref} dialect)")
@@ -224,6 +229,7 @@ class XmlExtractor:
                     "skipped": dict(state.skipped),
                     "tables": len(state.tables),
                     "quotes_ended": state.quotes_ended,
+                    **({"links": assembled} if assembled is not None else {}),
                 },
                 extracted_at=datetime.now(UTC),
                 warnings=warnings,
@@ -494,13 +500,11 @@ class XmlExtractor:
         if tag in d.leaves or not block_children:
             # ! A container holding its text directly (`<SECAUTH>16 U.S.C. 1531</SECAUTH>`)
             # is still that container: its kind is kept, not the enclosing one.
-            self._paragraph(
-                self._text(element, d),
-                state,
-                kind=kind if quoted else (containers.get(tag) or kind),
-                tag=tag,
-                emphasis=self._emphasis(element, d),
-            )
+            own = kind if quoted else (containers.get(tag) or kind)
+            emphasis = self._emphasis(element, d)
+            for piece in self._pieces(element, d):
+                spans = [e for e in emphasis if e in piece]
+                self._paragraph(piece, state, kind=own, tag=tag, emphasis=spans)
             return
         opens = tag in d.quoted and not quoted
         # Inside a quote everything is the quote's: an `AUTH` quoted in revised text is not
@@ -577,11 +581,20 @@ class XmlExtractor:
             tag = state.d.dialect.label.tags[0] if state.d.dialect.label.tags else ""
             state.builder.add(BlockType.PARAGRAPH, label, page=state.page, attrs={"tag": tag})
 
-    def _text(self, element: ET.Element, d: _Compiled) -> str:
+    def _pieces(self, element: ET.Element, d: _Compiled) -> list[str]:
+        """The element's text, cut where a `split_at` element stands."""
+        if not d.split_at or not any(n.tag in d.split_at for n in element.iter()):
+            return [self._text(element, d)]
+        pieces = (clean(t) for t in self._text(element, d, raw=True).split(_CUT))
+        return [p for p in pieces if p]
+
+    def _text(self, element: ET.Element, d: _Compiled, *, raw: bool = False) -> str:
         """The element's text with inline markup read in place; superscripts as `^n`."""
         parts: list[str] = []
 
         def walk(node: ET.Element) -> None:
+            if raw and node is not element and node.tag in d.split_at:
+                parts.append(_CUT)
             if node.tag in d.superscript:
                 inner = "".join(node.itertext()).strip()
                 if inner:
@@ -597,7 +610,7 @@ class XmlExtractor:
                 parts.append(node.tail)
 
         walk(element)
-        return clean("".join(parts))
+        return "".join(parts) if raw else clean("".join(parts))
 
     def _emphasis(self, element: ET.Element, d: _Compiled) -> list[str]:
         """The italic spans of a paragraph, in order: where the CFR marks a defined term."""
@@ -648,6 +661,53 @@ class XmlExtractor:
                 self._paragraph(
                     self._text(note, d), state, kind=d.dialect.tables.note_kind, tag=note_tag
                 )
+
+
+def _assemble(root: ET.Element, path: Path, dialect: XmlDialect) -> dict[str, int]:
+    """Put every followed link's file inside its link element, in place, depth first.
+
+    ! A link whose file is missing keeps its own text and is counted, never guessed at: an
+    article the dump does not hold is a gap that shows, not an empty article.
+    """
+    assert dialect.links is not None
+    links = dialect.links
+    base = (path.parent / links.base).resolve()
+    rules = {rule.element: rule for rule in links.rules}
+    counts = {"followed": 0, "dropped": 0, "missing": 0}
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        for child in list(node):
+            rule = rules.get(child.tag)
+            if rule is None or (rule.parents and node.tag not in rule.parents):
+                pending.append(child)
+                continue
+            if any(child.get(a, "") not in values for a, values in rule.keep.items()):
+                node.remove(child)
+                counts["dropped"] += 1
+                continue
+            value = child.get(rule.attr, "")
+            match = _re(rule.pattern).fullmatch(value) if rule.pattern else None
+            if rule.pattern and match is None:
+                counts["missing"] += 1
+                continue
+            groups = match.groupdict() if match else {}
+            target = (base / rule.file.format(value=value, **groups).lstrip("/")).resolve()
+            if not target.is_relative_to(base) or not target.is_file():
+                counts["missing"] += 1
+                continue
+            if counts["followed"] >= links.max_files:
+                limit = f"{links.max_files:,}"
+                raise ExtractionFailed(f"{path.name}: more than {limit} linked files")
+            try:
+                linked = ET.parse(target).getroot()
+            except ET.ParseError as exc:
+                raise ExtractionFailed(f"{target.name}: not well-formed XML: {exc}") from exc
+            child.text = None
+            child.append(linked)
+            counts["followed"] += 1
+            pending.append(linked)
+    return counts
 
 
 def _dialect_for(profile: Profile, root_tag: str) -> _Compiled | None:
@@ -763,14 +823,16 @@ def _cals_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], in
 
 
 def _html_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], int, str]:
-    caption_el = element.find("CAPTION")
+    # ! Tag names in either case: GPO's eCFR prints `TR`, LEGI's HTML prints `tr`.
+    caption_el = next((e for e in element if e.tag.upper() == "CAPTION"), None)
     caption = text(caption_el) if caption_el is not None else ""
     grid: dict[tuple[int, int], str] = {}
     header_rows = 0
-    for r, tr in enumerate(element.iter("TR")):
+    rows_of = [e for e in element.iter() if e.tag.upper() == "TR"]
+    for r, tr in enumerate(rows_of):
         c = 0
         for cell in tr:
-            if cell.tag not in ("TD", "TH"):
+            if cell.tag.upper() not in ("TD", "TH"):
                 continue
             while (r, c) in grid:
                 c += 1
@@ -782,7 +844,7 @@ def _html_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], in
                     grid[(r + dr, c + dc)] = value if (dr, dc) == (0, 0) else ""
             c += span_c
         if (
-            all(cell.tag == "TH" for cell in tr if cell.tag in ("TD", "TH"))
+            all(cell.tag.upper() == "TH" for cell in tr if cell.tag.upper() in ("TD", "TH"))
             and r == header_rows
         ):
             header_rows += 1
