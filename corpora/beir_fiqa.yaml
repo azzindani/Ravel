@@ -1,0 +1,42 @@
+id: beir_fiqa
+title: BEIR FiQA-2018 (benchmark)
+description: >
+  BEIR FiQA-2018, test split, one Markdown file per document, written by Vera's
+  dev_tools/eval/beir/sources.py. A benchmark corpus for comparing Vera with other
+  engines, not a deployment. Local only; sources are not in git.
+
+sources:
+  root: work/beir/src/fiqa/docs
+  include: ["*.md"]
+
+provenance:
+  base_url: beir://fiqa/
+
+extract:
+  profile: generic
+  extractors: [text]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: unit
+  max_tokens: 512
+  min_tokens: 24
+
+embed:
+  kind: local
+  id: qwen3-embedding-0.6b-local
+  model: Qwen/Qwen3-Embedding-0.6B
+  revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  dim: 1024
+  pooling: last_token
+  padding_side: left
+  normalize: true
+  instruction_style: prefix
+  doc_instruction: ""
+  # Qwen3-Embedding's own instruction for this task in its MTEB evaluation.
+  query_instruction: "Given a financial question, retrieve user replies that best answer the question"
+  max_length: 8192
+  dtype: float16
+  vector_dtype: float16
+  hardware: auto
+  shard_rows: 20000
