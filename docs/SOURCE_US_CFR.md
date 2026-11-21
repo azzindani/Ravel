@@ -19,24 +19,33 @@ supported by the same extractor and fetcher, for a corpus that has to be current
 day, and its bundle says so in its provenance (`us_ecfr`).
 
 An edition is published title by title and **volume by volume**, over months. So the fetcher
-takes **the newest complete edition of each title**, never one year for all: an edition with
-fewer volumes than the one before it is held back, and the hold is reported. On 2026-11-21
-that took 2026 for 10 titles, 2025 for 34 and 2024 for 5, holding back:
+takes **the newest complete edition of each title**, never one year for all: an edition that
+lacks a volume number the edition before it had is held back, and the hold is reported. On
+2026-11-21 (`ravel sources fetch us_cfr`) that took 2026 for 9 titles, 2025 for 35 and 2024
+for 5, holding back:
 
-| title | newest | volumes | used |
+| title | held edition | missing volumes | used |
 |---|---|---|---|
-| 7 | 2026 | 12 of 14 (no 10, 11, 13) · 2025: 14 of 15 (no 7) | 2024 |
-| 12 | 2026 | 6 of 10 | 2025 |
-| 16 | 2026 | 1 of 2 | 2025 |
-| 29 | 2025 | 8 of 9 (no 6) | 2024 |
-| 33 | 2025 | 2 of 3 | 2024 |
-| 40 | 2025 | 35 of 37 (no 18, 37) | 2024 |
-| 50 | 2025 | 8 of 13 (no 3–5, 7, 8) | 2024 |
+| 7 | 2026, then 2025 | 2026: 10, 11, 13 · 2025: 7 | 2024 |
+| 12 | 2026 | 3, 4, 6, 7 | 2025 |
+| 14 | 2026 | 1 (its `vol0` is a byte-for-byte copy of `vol3`) | 2025 |
+| 16 | 2026 | 2 | 2025 |
+| 29 | 2025 | 6 | 2024 |
+| 33 | 2025 | 3 | 2024 |
+| 40 | 2025 | 18, 37 | 2024 |
+| 50 | 2025 | 3, 4, 5, 7, 8 | 2024 |
 
-The gaps are mid-sequence, so these are editions not yet fully published rather than titles
-that shrank. A title that really did lose a volume would stay held; `fetch.edition: <year>`
-pins it. Mixing volumes of two editions in one title is ✗ done: volume boundaries move
-between editions, and a mix could hold a part twice or not at all.
+! By volume **number**, not count. The first rule compared counts, and govinfo's 2026 title 14
+passed it with five files against five: `vol0` is a copy of `vol3`, and `vol1` is not there.
+The section count below found it (1,585 sections counted twice in the XML, once extracted).
+
+A title that really did lose a volume would stay held; `fetch.edition: <year>` pins it.
+Mixing volumes of two editions in one title is ✗ done: volume boundaries move between
+editions, and a mix could hold a part twice or not at all.
+
+GPO does not reprint a volume nobody amended, so a volume in a newer edition's folder can
+carry an older revision date: 41 CFR vol 2 in the 2025 folder is `Revised as of July 1, 2017`.
+A chunk's `year` and `effective_date` are its own volume's, not its folder's.
 
 ## 2. Fetch (`ravel sources fetch <corpus>`)
 
@@ -124,7 +133,28 @@ A template with a missing value yields nothing, never a partial string. One chun
 section or appendix, split into `part n of m` over the budget; a part's own text
 (authority, source) is its own chunk. Nothing in the chunker knows a CFR word.
 
-## 5. Size
+## 5. The first build (2026-11-21)
+
+`ravel extract us_cfr -w work/us_cfr/2026-11-21`, then `ravel chunk us_cfr -w ...`:
+
+| | |
+|---|---|
+| volumes | 246 fetched (1.2 GB), 246 extracted, 0 failed, 225 s |
+| sections | **231,405 in the XML, 231,405 read**; 6,658 reserved, 224,747 with text |
+| appendices | 4,178 in the XML, 4,178 read; 186 reserved |
+| headings | 0 with an undeclared unit, 0 at the wrong level |
+| chunks | 366,277 (342,470 text, 23,807 tables), 138 s; ids unique |
+| identifier | 100.0%; median 371 tokens, 185M tokens in all; 219 over 8,192 |
+
+The section count is independent of the extractor: every `SECTION` and `APPENDIX` element
+outside a table of contents, counted with `ElementTree` per volume, against the extractor's
+own count. Spot checks cite as a lawyer would: `40 CFR 52.21` (EPA, 39 parts, p. 15 of 2024
+vol 3), `21 CFR 101.9` (FDA), `26 CFR 1.61-1` (IRS), `29 CFR 1910.134` (OSHA),
+`45 CFR 164.502` (HHS), `12 CFR 1026.18` (CFPB).
+
+Not yet embedded or scored: there is no CFR question set.
+
+## 6. Size
 
 eCFR on 2026-11-19 (structure API): 227,264 sections, 7,077 reserved, 4,095 appendices,
 824 MB of XML; the largest title is 40 at 162 MB. A title-sized eCFR file is one document,

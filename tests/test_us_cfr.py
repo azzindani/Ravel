@@ -432,5 +432,28 @@ def test_a_partly_published_edition_is_held_back(tmp_path: Path) -> None:
     web.pages[f"{G}/CFR/2025/title-2/CFR-2025-title2-vol2.xml"] = BODY
     report = Fetcher(cfr_corpus(tmp_path), opener=web, sleep=lambda _: None).run()
     assert report.editions["title-2"] == "2025"
-    assert report.held == {"title-2": "2026 has 1 of 2 volumes; using 2025"}
+    assert report.held == {"title-2": "2026 lacks vol 2 (1 files, 2 before); using 2025"}
     assert report.downloaded == 3
+
+
+def test_a_stray_volume_does_not_make_an_edition_complete(tmp_path: Path) -> None:
+    """govinfo's 2026 title 14: `vol0` (a copy of vol3) and no `vol1`. Five files against
+    five, and a volume of law missing; the numbers tell, the count does not."""
+    web = FakeWeb()
+    web.pages[f"{G}/json/CFR/2026/title-2"] = listing(
+        [
+            xml("CFR-2026-title2-vol0.xml", "2026", 2, len(BODY)),
+            xml("CFR-2026-title2-vol2.xml", "2026", 2, len(BODY)),
+        ]
+    )
+    web.pages[f"{G}/json/CFR/2025/title-2"] = listing(
+        [
+            xml("CFR-2025-title2-vol1.xml", "2025", 2, len(BODY)),
+            xml("CFR-2025-title2-vol2.xml", "2025", 2, len(BODY)),
+        ]
+    )
+    for name in ("CFR-2025-title2-vol1.xml", "CFR-2025-title2-vol2.xml"):
+        web.pages[f"{G}/CFR/2025/title-2/{name}"] = BODY
+    report = Fetcher(cfr_corpus(tmp_path), opener=web, sleep=lambda _: None).run()
+    assert report.editions["title-2"] == "2025"
+    assert report.held["title-2"].startswith("2026 lacks vol 1 ")

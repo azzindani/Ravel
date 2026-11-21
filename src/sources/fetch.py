@@ -214,13 +214,16 @@ class Fetcher:
                 older = found[index + 1] if index + 1 < len(found) else None
                 # ! An edition is published volume by volume over months: in Nov 2026 the
                 # 2026 title 7 had 12 of its 14 volumes. Taking it would drop two volumes of
-                # law from a corpus that looks complete, so a newest edition with fewer
-                # volumes than the one before it is held back, and the hold is reported.
-                if older is None or len(volumes) >= len(older[1]):
+                # law from a corpus that looks complete, so a newest edition missing a volume
+                # the one before it had is held back, and the hold is reported.
+                missing = _missing_volumes(volumes, older[1]) if older else []
+                if not missing:
                     chosen = (year, volumes)
                     break
+                assert older is not None  # `missing` is empty without one
                 self.held[group] = (
-                    f"{year} has {len(volumes)} of {len(older[1])} volumes; using {older[0]}"
+                    f"{year} lacks vol {', '.join(missing)} "
+                    f"({len(volumes)} files, {len(older[1])} before); using {older[0]}"
                 )
             year, volumes = chosen
             taken[group] = year
@@ -366,6 +369,27 @@ class Fetcher:
             entry["note"] = note
         with open(self.manifest_path, "a", encoding="utf-8", newline="\n") as handle:
             handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+_VOLUME = re.compile(r"vol(\d+)\.xml$", re.IGNORECASE)
+
+
+def _missing_volumes(newer: list[dict[str, Any]], older: list[dict[str, Any]]) -> list[str]:
+    """Volume numbers the older edition has and the newer one does not.
+
+    ! By number, not by count. govinfo's 2026 title 14 lists `vol0`, a byte-for-byte copy of
+    `vol3`, and no `vol1`: five files against five, so a count passed an edition missing a
+    volume. A name without a number falls back to the count.
+    """
+
+    def numbers(files: list[dict[str, Any]]) -> set[int] | None:
+        found = [_VOLUME.search(str(f.get("name", ""))) for f in files]
+        return None if not all(found) else {int(m.group(1)) for m in found if m}
+
+    new, old = numbers(newer), numbers(older)
+    if new is None or old is None:
+        return [] if len(newer) >= len(older) else [f"{len(older) - len(newer)} unnamed"]
+    return [str(n) for n in sorted(old - new)]
 
 
 __all__ = ["FetchReport", "Fetcher", "Wanted"]
