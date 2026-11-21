@@ -57,6 +57,9 @@ def test_round_trip_preserves_every_block(doc: CanonicalDoc) -> None:
     ("btype", "text", "level"),
     [
         (BlockType.HEADING, "Pasal 9", 3),
+        # LEGI: a text, 12 section levels, then the article.
+        (BlockType.HEADING, "L233-3", 14),
+        (BlockType.HEADING, "deepest", 16),
         (BlockType.PARAGRAPH, "- bukan list, hanya teks yang diawali tanda hubung", None),
         (BlockType.LIST_ITEM, "a. huruf pertama", None),
         (BlockType.CAPTION, "Tarif", None),

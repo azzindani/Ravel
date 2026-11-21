@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from canon import Severity, validate
 from chunk import Builder, ChunkConfig, get
 from extract.structure import Structurer
 from extract.xml import XmlExtractor
@@ -136,6 +137,13 @@ def test_links_assemble_the_text_in_force(folder: Path, profile: Any) -> None:
     ]
     text = " ".join(b.text for b in doc.blocks)
     assert "Abrogée" not in text and "Vu la Constitution" not in text
+
+
+def test_the_assembled_text_is_a_valid_canonical_document(folder: Path, profile: Any) -> None:
+    # ! The extraction run validates every document; an article heading at level 14 once
+    # failed the render/parse round trip and quarantined all of LEGI.
+    _, doc = _doc(folder, profile)
+    assert [i for i in validate(doc) if i.severity is Severity.ERROR] == []
 
 
 def test_split_at_cuts_an_article_into_paragraphs(folder: Path, profile: Any) -> None:

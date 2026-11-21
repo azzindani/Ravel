@@ -24,7 +24,10 @@ _ANNOTATED = {
 
 _ANNOTATION_RE = re.compile(r"^<!--\s*ravel:(?P<kind>[a-z_]+)\s*-->\s*(?P<text>.*)$", re.S)
 _REF_RE = re.compile(r"^<!--\s*ravel:(?P<kind>table|figure)\s+(?P<ref>\S+)\s*-->$")
-_HEADING_RE = re.compile(r"^(?P<hashes>#{1,9})\s+(?P<text>.*)$", re.S)
+#: ! Up to `Block.level`'s bound (16), not markdown's 6: LEGI nests a text, 12 section
+#: levels and the article, so an article heading is `#` x 14. A narrower pattern
+#: re-parses it as a paragraph and validator rule 5 rejects the whole document.
+_HEADING_RE = re.compile(r"^(?P<hashes>#{1,16})\s+(?P<text>.*)$", re.S)
 _LIST_RE = re.compile(r"^-\s+(?P<text>.*)$", re.S)
 _FORMULA_RE = re.compile(r"^\$\$\s*(?P<text>.*?)\s*\$\$$", re.S)
 
@@ -34,7 +37,7 @@ _FORMULA_RE = re.compile(r"^\$\$\s*(?P<text>.*?)\s*\$\$$", re.S)
 #: ! This is not hypothetical tidiness. Indonesian regulations routinely open a line
 #: with "- ", and without escaping those documents round-trip as LIST_ITEM and are
 #: rejected by validator rule 5 — 8 of the first 40 real PDFs failed exactly this way.
-_AMBIGUOUS_PREFIX = re.compile(r"^(?:\\|#{1,9}\s|-\s|\$\$|<!--)")
+_AMBIGUOUS_PREFIX = re.compile(r"^(?:\\|#{1,16}\s|-\s|\$\$|<!--)")
 ESCAPE = "\\"
 
 BLOCK_SEP = "\n\n"
