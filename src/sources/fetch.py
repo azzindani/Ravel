@@ -18,6 +18,7 @@ snapshot. Old editions stay on disk, because sources are never deleted.
 
 from __future__ import annotations
 
+import fnmatch
 import gzip
 import hashlib
 import json
@@ -25,8 +26,10 @@ import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -162,6 +165,8 @@ class Fetcher:
         """Every file the snapshot needs, and the edition each group came from."""
         if self.spec.kind == "govinfo_cfr":
             return self._plan_govinfo()
+        if self.spec.kind == "github":
+            return self._plan_github()
         return self._plan_ecfr()
 
     def _relative(self, url: str) -> str:
@@ -263,6 +268,46 @@ class Fetcher:
             taken[group] = date
         return wanted, taken
 
+    def _plan_github(self) -> tuple[list[Wanted], dict[str, str]]:
+        """Every file of `paths` in the repository's tree at one commit.
+
+        ! Pinned to a commit, never to a branch: a branch moves, and a file cited at
+        `main/eng/acts/A-1.xml` would later resolve to text it was not read from. The commit
+        is the edition, its sha is the first part of every path, and an older commit's
+        files stay on disk beside the newer one's.
+        """
+        api = self.spec.listing.rstrip("/")
+        sha = self.spec.edition
+        if sha == "latest":
+            branch = self.get_json(api)["default_branch"]
+            sha = str(self.get_json(f"{api}/commits/{branch}")["sha"])
+        tree = self.get_json(f"{api}/git/trees/{sha}?recursive=1")
+        if tree.get("truncated"):
+            # A truncated listing is a partial corpus that looks complete.
+            raise ValueError(f"{api}: the tree at {sha} is truncated; list it by directory")
+        prefix = self.spec.files.rstrip("/") + "/"
+        wanted: list[Wanted] = []
+        for entry in tree.get("tree", []):
+            path = str(entry.get("path", ""))
+            if entry.get("type") != "blob" or not any(
+                fnmatch.fnmatchcase(path, glob) for glob in self.spec.paths
+            ):
+                continue
+            if ".." in Path(path).parts or path.startswith("/"):
+                raise ValueError(f"listed file {path} escapes the sources root")
+            relative = f"{sha}/{path}"
+            size = entry.get("size")
+            wanted.append(
+                Wanted(
+                    path=relative,
+                    url=prefix + urllib.parse.quote(relative, safe="/,()"),
+                    size=int(size) if size is not None else None,
+                    group="/".join(path.split("/")[:-1]),
+                )
+            )
+        groups = {w.group for w in wanted}
+        return sorted(wanted, key=lambda w: w.path), {g: sha for g in sorted(groups)}
+
     # -- the run --------------------------------------------------------------
     def run(
         self,
@@ -277,6 +322,7 @@ class Fetcher:
         report.wanted = len(wanted)
         known = self._recorded()
 
+        missing: list[Wanted] = []
         for item in wanted:
             target = self.root / item.path
             if target.is_file():
@@ -289,19 +335,31 @@ class Fetcher:
                     self._record(item, target, sha256_file(target), note="present")
                 report.present += 1
                 continue
-            if dry_run:
-                continue
+            if not dry_run:
+                missing.append(item)
+
+        def fetch_one(item: Wanted) -> tuple[str, int]:
             try:
-                digest, size = self._download(item, target)
-            except Exception as exc:  # noqa: BLE001 — one file must not end the run
-                report.failed.append((item.path, f"{type(exc).__name__}: {exc}"))
-                continue
-            self._record(item, target, digest)
-            report.downloaded += 1
-            report.bytes += size
-            if on_progress:
-                on_progress(report, item)
-            self._sleep(self.spec.delay_s)
+                return self._download(item, self.root / item.path)
+            finally:
+                self._sleep(self.spec.delay_s)
+
+        # ! Downloads run `concurrency` at a time; the manifest and the report are written
+        # here, in the order results arrive, by this thread alone.
+        with ThreadPoolExecutor(max_workers=self.spec.concurrency) as pool:
+            futures = {pool.submit(fetch_one, item): item for item in missing}
+            for future in as_completed(futures):
+                item = futures[future]
+                try:
+                    digest, size = future.result()
+                except Exception as exc:  # noqa: BLE001 — one file must not end the run
+                    report.failed.append((item.path, f"{type(exc).__name__}: {exc}"))
+                    continue
+                self._record(item, self.root / item.path, digest)
+                report.downloaded += 1
+                report.bytes += size
+                if on_progress:
+                    on_progress(report, item)
 
         # ! Written only when the snapshot is whole. A list naming files that were never
         # fetched would make the next extraction a partial corpus that looks complete.

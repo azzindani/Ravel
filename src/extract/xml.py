@@ -116,6 +116,13 @@ class _Compiled:
             return rule.values.get(element.get(rule.attr, ""))
         return None
 
+    def flat_of(self, element: ET.Element) -> str | None:
+        """The unit a flat heading opens (`<Heading level="2">`), or None."""
+        rule = self.dialect.units.flat
+        if rule is None or not _re(rule.tag).match(element.tag):
+            return None
+        return rule.values.get(element.get(rule.attr, ""))
+
     def is_page(self, element: ET.Element) -> bool:
         return self.dialect.page is not None and element.tag == self.dialect.page.tag
 
@@ -312,11 +319,12 @@ class XmlExtractor:
             state.builder.add(
                 BlockType.HEADING, heading, level=level, page=state.page, attrs=attrs
             )
-        for index, child in enumerate(children):
-            if index not in consumed:
+        rest = [c for i, c in enumerate(children) if i not in consumed]
+        flats: list[int] = []
+        for child in [*rest, *(trailing or ())]:
+            if not self._flat(child, state, flats):
                 self._child(child, state, dated)
-        for child in trailing or ():
-            self._child(child, state, dated)
+        self._close_flats(state, flats, 0)
         state.open_units.pop()
         if heading:
             state.builder.close(level)
@@ -336,21 +344,22 @@ class XmlExtractor:
         """The unit's heading text, and the indexes of the children that held it."""
         rule = state.d.dialect.heading(unit)
         children = list(element)
-        if rule.path:
-            found = element.find(rule.path)
+        paths = [rule.path] if isinstance(rule.path, str) else rule.path or []
+        for path in paths:
+            found = element.find(path)
             text = self._text(found, state.d) if found is not None else ""
             if text:
                 return text, set()
         if rule.join:
-            used: set[int] = set()
+            used: list[int] = []
             for slot in rule.join:
                 index = next(
                     (i for tag in slot for i, c in enumerate(children) if c.tag == tag), None
                 )
-                if index is not None:
-                    used.add(index)
-            parts = [self._text(children[i], state.d) for i in sorted(used)]
-            return clean(" ".join(p for p in parts if p)), used
+                if index is not None and index not in used:
+                    used.append(index)
+            parts = [self._text(children[i], state.d) for i in used]
+            return clean(" ".join(p for p in parts if p)), set(used)
         for i, child in enumerate(children):
             if child.tag in rule.first:
                 return self._text(child, state.d), {i}
@@ -363,9 +372,53 @@ class XmlExtractor:
         self, unit: str, heading: str, element: ET.Element, d: _Compiled
     ) -> dict[str, str]:
         """What the markup states about a unit: its number, its name, its marker."""
-        own = element.get(d.dialect.units.number_attr) if d.dialect.units.number_attr else None
+        units = d.dialect.units
+        stated = {
+            key: value
+            for key, sources in units.attrs.get(unit, {}).items()
+            if (value := next((v for s in sources if (v := _source(element, s, d))), None))
+        }
+        own = stated.pop("number", None)
+        if own is None and units.number_attr:
+            own = element.get(units.number_attr)
         marker, name, number = _label(heading, d.dialect.label_rule(unit), own)
-        return {"unit": unit, "number": clean(number), "name": name, "marker": marker}
+        return {
+            **{k: clean(v) for k, v in stated.items()},
+            "unit": unit,
+            "number": clean(number),
+            "name": name,
+            "marker": marker,
+        }
+
+    # -- flat headings -------------------------------------------------------------------
+    def _flat(self, child: ET.Element, state: _Walk, flats: list[int]) -> bool:
+        """Open the unit a flat heading starts, closing those it ends. False: not one."""
+        d = state.d
+        unit = d.flat_of(child)
+        if unit is None:
+            return False
+        level = d.levels[unit]
+        self._close_flats(state, flats, level)
+        heading, consumed = self._heading(child, unit, state)
+        state.units[unit] += 1
+        if heading:
+            attrs = self._attrs(unit, heading, child, d)
+            self._flush_label(state)
+            state.builder.add(
+                BlockType.HEADING, heading, level=level, page=state.page, attrs=attrs
+            )
+            state.open_units.append((unit, attrs["number"]))
+            flats.append(level)
+        for index, inner in enumerate(child):
+            if index not in consumed:
+                self._body(inner, state, kind="")
+        return True
+
+    def _close_flats(self, state: _Walk, flats: list[int], level: int) -> None:
+        """Close the flat units open at `level` or deeper (0: all of them)."""
+        while flats and flats[-1] >= level:
+            state.builder.close(flats.pop())
+            state.open_units.pop()
 
     def _is_reserved(self, element: ET.Element, unit: str, heading: str, d: _Compiled) -> bool:
         """A unit that holds nothing but its own `[Reserved]`."""
@@ -418,6 +471,15 @@ class XmlExtractor:
                     self._body(child, state, kind=kind, quoted=True)
             return
 
+        if (flat := d.flat_of(element)) is not None:
+            # Only a quote reaches here: a flat heading in quoted text is its text.
+            heading, consumed = self._heading(element, flat, state)
+            self._paragraph(heading, state, kind=kind, tag=tag)
+            for index, child in enumerate(element):
+                if index not in consumed:
+                    self._body(child, state, kind=kind, quoted=quoted)
+            return
+
         containers = d.dialect.containers
         block_children = [c for c in element if c.tag not in d.inline]
         if not (tag in d.leaves or tag in containers or tag in d.inline):
@@ -442,13 +504,15 @@ class XmlExtractor:
             state.quotes.append(_Quote(enclosing=dict(state.open_units)))
         if element.text and element.text.strip():
             self._paragraph(clean(element.text), state, kind=inner, tag=tag)
+        flats: list[int] = []
         for child in element:
             if child.tag in d.inline:
                 self._paragraph(self._text(child, d), state, kind=inner, tag=child.tag)
-            else:
+            elif quoted or not self._flat(child, state, flats):
                 self._body(child, state, kind=inner, quoted=quoted)
             if child.tail and child.tail.strip():
                 self._paragraph(clean(child.tail), state, kind=inner, tag=tag)
+        self._close_flats(state, flats, 0)
         if opens:
             state.quotes.pop()
 
@@ -546,7 +610,7 @@ class XmlExtractor:
     def _table(self, element: ET.Element, state: _Walk, *, kind: str) -> None:
         d = state.d
         layout = d.dialect.tables.elements[element.tag]
-        reader = _gpo_table if layout == "gpo" else _html_table
+        reader = {"gpo": _gpo_table, "html": _html_table, "cals": _cals_table}[layout]
         rows, header_rows, caption = reader(element, lambda e: self._text(e, d))
         if not rows:
             return
@@ -601,7 +665,10 @@ def _compiled_dialects(profile: Profile) -> tuple[_Compiled, ...]:
 
 
 def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
-    """`path` -> the element's text; `path@attr` -> the attribute."""
+    """`path` -> the element's text; `path@attr` -> the attribute; `=text` -> the text
+    itself, the last resort of a list (`['.@regulation-type', '=Act']`)."""
+    if source.startswith("="):
+        return source[1:] or None
     path, _, attr = source.partition("@")
     found = root.find(path)
     if found is None:
@@ -613,7 +680,11 @@ def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
 def _label(heading: str, rule: LabelRule, own_number: str | None) -> tuple[str, str, str]:
     """(marker, name, number) of a heading, as the dialect's label rule reads it."""
     match = _re(rule.pattern, re.DOTALL).match(heading)
-    marker, name = (match["marker"].strip(), match["name"].strip()) if match else (heading, "")
+    marker, name = (
+        ((match["marker"] or "").strip(), (match["name"] or "").strip())
+        if match
+        else (heading, "")
+    )
     if not match:
         marker = heading.strip()
     if rule.name_strip:
@@ -640,6 +711,47 @@ def _gpo_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], int
             header_rows = 1
     for entry in element.findall("ROW"):
         rows.append([text(e) for e in entry.findall("ENT")])
+    return rows, header_rows, caption
+
+
+def _cals_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], int, str]:
+    """An OASIS (CALS) table: `tgroup` columns named by `colspec`, spans by `namest` /
+    `nameend` and `morerows`. Every `tgroup` is read into one grid, header rows first."""
+    title = element.find("title")
+    caption = text(title) if title is not None else ""
+    grid: dict[tuple[int, int], str] = {}
+    header_rows = 0
+    r = 0
+    for group in element.iter("tgroup"):
+        names = {
+            spec.get("colname", ""): int(spec.get("colnum") or index + 1) - 1
+            for index, spec in enumerate(group.findall("colspec"))
+        }
+        for part in ("thead", "tbody", "tfoot"):
+            for section in group.findall(part):
+                for row in section.findall("row"):
+                    c = 0
+                    for cell in row.findall("entry"):
+                        start = names.get(cell.get("namest") or cell.get("colname") or "")
+                        c = start if start is not None and start >= c else c
+                        while (r, c) in grid:
+                            c += 1
+                        end = names.get(cell.get("nameend") or "", c)
+                        span_c = max(1, end - c + 1)
+                        span_r = 1 + int(cell.get("morerows") or 0)
+                        value = text(cell)
+                        for dr in range(span_r):
+                            for dc in range(span_c):
+                                grid[(r + dr, c + dc)] = value if (dr, dc) == (0, 0) else ""
+                        c += span_c
+                    if part == "thead" and r == header_rows:
+                        header_rows += 1
+                    r += 1
+    if not grid:
+        return [], 0, caption
+    n_rows = max(r for r, _ in grid) + 1
+    n_cols = max(c for _, c in grid) + 1
+    rows = [[grid.get((r, c), "") for c in range(n_cols)] for r in range(n_rows)]
     return rows, header_rows, caption
 
 

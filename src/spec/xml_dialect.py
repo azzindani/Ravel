@@ -53,28 +53,39 @@ class ByAttribute(_Base):
 class Units(_Base):
     tags: dict[str, str] = Field(default_factory=dict, description="element tag -> unit name")
     by_attr: ByAttribute | None = None
+    #: Headings printed as siblings of what they head (`<Heading level="2">` before the
+    #: sections of a Division): each opens its unit, which runs to the next heading of
+    #: the same or a shallower unit, or to the end of the element holding it.
+    flat: ByAttribute | None = None
     #: The attribute an element states its own number in (`<DIV8 N="170.105">`). Read
     #: before the number pattern of the unit's heading.
     number_attr: str | None = None
+    #: Unit -> attribute -> sources, relative to the unit's element and tried in order:
+    #: `path` (an element's text), `path@attr`, `.@attr` (its own attribute), `=text` (a
+    #: constant, last in a list). `number`, when stated, is the unit's number instead of
+    #: the one its heading prints.
+    attrs: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
 
     def names(self) -> set[str]:
         named = set(self.by_attr.values.values()) if self.by_attr else set()
-        return set(self.tags.values()) | named
+        flat = set(self.flat.values.values()) if self.flat else set()
+        return set(self.tags.values()) | named | flat
 
 
 class HeadingRule(_Base):
     """Where a unit's heading is printed. Tried in order: `path`, `join`, `first`.
 
-    - `path`: a descendant (`TOC/TOCHD/HD`); read in place and not consumed, since the
-      element holding it is furniture skipped anyway.
+    - `path`: a descendant (`TOC/TOCHD/HD`), or several tried in order; read in place and
+      not consumed, since the element holding it is furniture skipped anyway.
     - `join`: slots of direct children, each the first present of its tags, joined by a
-      space in document order (`[[SECTNO], [SUBJECT, RESERVED]]`). Consumed.
+      space in slot order (`[[SECTNO], [SUBJECT, RESERVED]]`; `[[Label], [MarginalNote]]`
+      reads `2 Purpose of Act` where the note is printed first). Consumed.
     - `first`: the first direct child past the `skip` tags, if its tag is one of these;
       any other child ends the search. With `anywhere`, the first child with the tag,
       wherever it sits. Consumed.
     """
 
-    path: str | None = None
+    path: str | list[str] | None = None
     join: list[list[str]] = Field(default_factory=list)
     first: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
@@ -170,9 +181,10 @@ class Label(_Base):
 
 class Tables(_Base):
     """Table elements and the grid layout each is read with. Layouts are code: they are
-    the format's mechanics (`gpo`: BOXHD/CHED/ROW/ENT, `html`: TR/TD/TH with spans)."""
+    the format's mechanics (`gpo`: BOXHD/CHED/ROW/ENT, `html`: TR/TD/TH with spans,
+    `cals`: OASIS tgroup/colspec/thead/tbody/row/entry with namest/nameend/morerows)."""
 
-    elements: dict[str, Literal["gpo", "html"]] = Field(default_factory=dict)
+    elements: dict[str, Literal["gpo", "html", "cals"]] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
     note_kind: str = "table_note"
 
@@ -231,6 +243,8 @@ class XmlDialect(_Base):
             stray = set(getattr(self, section)) - units - {"default"}
             if stray:
                 raise ValueError(f"{self.ref}: {section} for unknown units {sorted(stray)}")
+        if stray := set(self.units.attrs) - units:
+            raise ValueError(f"{self.ref}: units.attrs for unknown units {sorted(stray)}")
         for name in (*self.reserved.never, self.document.dated_unit):
             if name is not None and name not in units:
                 raise ValueError(f"{self.ref}: names unknown unit {name!r}")

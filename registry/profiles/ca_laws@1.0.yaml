@@ -1,0 +1,103 @@
+id: ca_laws
+version: "1.0"
+title: Consolidated federal Acts and regulations of Canada (Justice Laws XML)
+description: >
+  One consolidated Act or regulation per file, from the Department of Justice's
+  `laws-lois-xml` repository, read by the `xml` extractor in the `justice_ca` dialect and
+  chunked by `markup` (docs/SOURCE_CA_LAWS.md). The structure is the XML's: Parts and
+  Divisions are flat headings with a level, sections nest their own labelled provisions.
+  Identity is the instrument's: its Justice Laws number (`C-46`, `SOR/2018-108`) and the
+  section (`C-46, s. 718.2`).
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<Statute\b', '<Regulation\b', 'justice\.gc\.ca/lims']
+  min_hits: 2
+
+extract:
+  xml:
+    dialects: [justice_ca@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here. A schedule
+  # sits under the instrument and over its own headings, so headings start at 3.
+  from_markup: true
+  units:
+    - {name: instrument, level: 1, pattern: '^.'}
+    - {name: schedule, level: 2, pattern: '^.', role: article}
+    # `PART I General`: the unit a reader names after the instrument.
+    - {name: heading1, level: 3, pattern: '^.', role: chapter}
+    - {name: heading2, level: 4, pattern: '^.'}
+    - {name: heading3, level: 5, pattern: '^.'}
+    - {name: heading4, level: 6, pattern: '^.'}
+    - {name: heading5, level: 7, pattern: '^.'}
+    - {name: heading6, level: 8, pattern: '^.'}
+    - {name: section, level: 9, pattern: '^\d', role: article}
+
+identity:
+  markup:
+    scope: instrument
+    facts:
+      # `Act`, `SOR`, `C.R.C.`, `SI`.
+      regulation_type: "{instrument.type}"
+      regulation_number: "{instrument.number}"
+      about: "{instrument.name}"
+      year: "{instrument.year}"
+      # The date the consolidation is current to. ISO, so it sorts.
+      effective_date: "{instrument.date}"
+    identifier:
+      # `C-46, s. 718.2`, `SOR/2018-108, s. 5`, `C.R.C., c. 870, s. B.01.001`.
+      section: "{instrument.number}, s. {section.number}"
+      schedule: "{instrument.number}, Schedule {schedule.number}"
+      instrument: "{instrument.number}"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per section or schedule; longer ones split into `part n of m` on paragraph
+    # boundaries. ! Determined, ✗ measured: no Canadian eval set exists yet.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    #   Citation: SOR/2018-108, s. 5
+    #   Location: Safe Food for Canadians Regulations › PART 1 ... › 5 Prohibition
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      regulation_number: 0.99
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    # Enactments cited in the text, in the forms the consolidations print.
+    statute_references:
+      - {pattern: '\b(?P<ref>(?:R\.S\.C\.|S\.C\.|R\.S\.)\s*,?\s*\d{4}(?:-\d{2})?,\s*c\.\s*[\w.\-]+(?:\s*\(\d+(?:st|nd|rd|th)\s+Supp\.\))?)', format: '{ref}'}
+    regulation_references:
+      - {pattern: '\b(?P<kind>SOR|SI)/(?P<n>\d{2,4}-\d+)', format: '{kind}/{n}'}
+      - {pattern: '\bC\.R\.C\.,\s*c\.\s*(?P<n>\d+)', format: 'C.R.C., c. {n}'}
+  blocks:
+    # The Acts a regulation is made under, for every chunk of the regulation.
+    authority: {kind: authority, scope: regulation_number}
+    # A section's history: `2019, c. 18, s. 2`, `SOR/2019-12, s. 3`, one per item.
+    amendments: {kind: historical_note, scope: identifier}
+    # The instrument's latest amendments, with dates (`SOR/2025-123, 2025-06-01`).
+    recent_amendments:
+      kind: recent_amendments
+      scope: regulation_number
+      pattern: {pattern: '(?P<ref>\S.*?)\s+(?P<date>\d{4}-\d{2}-\d{2})', format: '{ref}, {date}'}
+  definitions:
+    # `access request means ...`, the term set as `DefinedTermEn` by the XML.
+    pattern: '^(?:\(\s?(?:[a-z]{1,3}|\d{1,3}|[A-Z]{1,2})\s?\)\s*)*(?P<term>[A-Za-z][^.;:]{0,80}?)\s+(?:means|has the (?:same )?meaning|includes|refers to|is defined)\b'
+    emphasised: true
+  outline:
+    # 5(1)(a)(i)(A): subsection, paragraph, subparagraph, clause.
+    marker: '^((?:\((?:[a-z]{1,3}|\d{1,3}(?:\.\d+)?|[ivxlcdm]+|[A-Z]{1,3})\)\s?)+)'
+    levels: [digit, lower, roman, upper]
+    scope: identifier

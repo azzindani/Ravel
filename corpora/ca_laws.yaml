@@ -1,0 +1,40 @@
+id: ca_laws
+title: Consolidated federal Acts and regulations of Canada (English)
+description: >
+  Every consolidated federal Act and regulation in English, as the Department of Justice
+  publishes them in its `laws-lois-xml` repository (docs/SOURCE_CA_LAWS.md): one LIMS XML
+  per instrument, updated every two weeks. Open Government Licence - Canada. Fetched by
+  `ravel sources fetch ca_laws` at one commit; sources are read-only and not in git. Build
+  each snapshot in its own workspace (-w work/ca_laws/<date>).
+
+sources:
+  root: sources/CA_LAWS
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: github
+  listing: https://api.github.com/repos/justicecanada/laws-lois-xml
+  files: https://raw.githubusercontent.com/justicecanada/laws-lois-xml/
+  edition: latest
+  paths: ["eng/acts/*.xml", "eng/regulations/*.xml"]
+  delay_s: 0.1
+  concurrency: 8
+
+provenance:
+  # ! A file's path below sources.root is `<commit>/<repository path>`, so every chunk cites
+  # the raw file at the exact commit it was read from (fetch.files must equal this).
+  base_url: https://raw.githubusercontent.com/justicecanada/laws-lois-xml/
+  note: >
+    Department of Justice Canada, laws-lois-xml (github.com/justicecanada/laws-lois-xml),
+    the consolidated Acts and regulations behind laws-lois.justice.gc.ca, at one commit.
+    Open Government Licence - Canada. Not the official version: a consolidation is official
+    only as the Legislation Revision and Consolidation Act states.
+
+extract:
+  profile: ca_laws@1.0
+  extractors: [xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup

@@ -51,18 +51,28 @@ class FetchSpec(Base):
     whose `files` is not its `provenance.base_url`.
     """
 
-    kind: Literal["govinfo_cfr", "ecfr"]
+    kind: Literal["govinfo_cfr", "ecfr", "github"]
     listing: str
-    """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`."""
+    """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
+    `github`: the repository's API URL (`https://api.github.com/repos/owner/name`)."""
     files: str
-    """URL prefix of the files; their path below it is their path below `sources.root`."""
+    """URL prefix of the files; their path below it is their path below `sources.root`.
+    `github`: `https://raw.githubusercontent.com/owner/name/`, below which each file is
+    `<commit>/<path>`: the citation names the exact commit the bytes were read at."""
     edition: str = "latest"
-    """`latest` (newest edition of each title), a year (`govinfo_cfr`) or a date (`ecfr`)."""
+    """`latest` (newest edition of each title), a year (`govinfo_cfr`) or a date (`ecfr`).
+    `github`: `latest` (the default branch's head) or a commit sha."""
+    paths: list[str] = Field(default_factory=list)
+    """`github`: the repository paths that make the corpus, as globs (`eng/acts/*.xml`)."""
     lookback: int = Field(default=3, ge=1)
     """Editions searched back from the newest for a title the newest does not hold."""
     titles: list[int] = Field(default_factory=list)
     """Empty: every title the listing has."""
     delay_s: float = Field(default=1.0, ge=0)
+    """Pause after each download, per worker."""
+    concurrency: int = Field(default=1, ge=1, le=16)
+    """Downloads at once. 1 for a publisher API that rate-limits (govinfo, the eCFR); a CDN
+    serving static files (raw.githubusercontent.com) takes more."""
     timeout_s: float = Field(default=300, gt=0)
     retries: int = Field(default=3, ge=0)
     user_agent: str = "ravel-fetch/1.0"
@@ -319,6 +329,8 @@ class CorpusSpec(Base):
         # the bytes were never read from.
         if self.fetch and not self.sources.snapshot:
             raise ValueError("a corpus with fetch: needs sources.snapshot, the list it writes")
+        if self.fetch and self.fetch.kind == "github" and not self.fetch.paths:
+            raise ValueError("fetch.kind github needs fetch.paths, the files that make it")
         if self.fetch and self.fetch.files.rstrip("/") != self.provenance.base_url.rstrip("/"):
             raise ValueError(
                 f"fetch.files {self.fetch.files!r} must equal provenance.base_url "

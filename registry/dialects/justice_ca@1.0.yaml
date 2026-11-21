@@ -1,0 +1,159 @@
+id: justice_ca
+version: "1.0"
+title: Justice Laws of Canada (consolidated Acts and regulations, LIMS XML)
+description: >
+  One file per consolidated Act (`<Statute>`) or regulation (`<Regulation>`), from the
+  Department of Justice's `laws-lois-xml` repository (docs/SOURCE_CA_LAWS.md). Headings of
+  Parts and Divisions are FLAT: `<Heading level="n">` printed beside the sections it heads.
+  Sections nest their Subsections, Paragraphs, Subparagraphs and Clauses, each with its own
+  `<Label>`. Read by the `xml` extractor; an element not named here is still read for its
+  text and named in `extraction.warnings`.
+
+document:
+  detect: {root: '^(?:Statute|Regulation)$'}
+  # The date the consolidation is current to: `lims:current-date="2025-09-29"`.
+  date: ['.@{http://justice.gc.ca/lims}current-date']
+  dated_unit: instrument
+
+units:
+  tags:
+    Statute: instrument
+    Regulation: instrument
+    Section: section
+    Schedule: schedule
+  flat:
+    tag: '^Heading$'
+    attr: level
+    values: {"1": heading1, "2": heading2, "3": heading3, "4": heading4, "5": heading5, "6": heading6}
+  attrs:
+    instrument:
+      # `C-46` for an Act (its Justice Laws number), `SOR/2018-108` or `C.R.C., c. 870`.
+      number: [Identification/Chapter/ConsolidatedNumber, Identification/InstrumentNumber]
+      # `SOR`, `C.R.C.`, `SI`; an Act states none and is `Act`.
+      type: ['.@regulation-type', '=Act']
+      in_force: ['.@in-force']
+      last_amended: ['.@{http://justice.gc.ca/lims}lastAmendedDate']
+    section:
+      in_force_from: ['.@{http://justice.gc.ca/lims}inforce-start-date']
+      last_amended: ['.@{http://justice.gc.ca/lims}lastAmendedDate']
+
+headings:
+  default: {first: [TitleText]}
+  # The short title where there is one (Acts), else the long title (regulations).
+  instrument:
+    path: [Identification/ShortTitle, Identification/LongTitle]
+  # `PART I` + `General`.
+  heading1: &flat {join: [[Label], [TitleText]]}
+  heading2: *flat
+  heading3: *flat
+  heading4: *flat
+  heading5: *flat
+  heading6: *flat
+  # `2` + `Purpose of Act`: the marginal note is printed first, the number is read first.
+  section:
+    join: [[Label], [MarginalNote]]
+  schedule:
+    path: ScheduleFormHeading
+
+labels:
+  default:
+    pattern: '^(?P<marker>(?i:(?:part|division|subdivision|chapter)\s+[\w.\-]+))?\s*(?P<name>.*)$'
+    number: '\s(?P<number>\S+)$'                # `PART II.1` -> II.1
+  instrument:
+    pattern: '^(?P<marker>)(?P<name>.*)$'      # all name; the number is stated (units.attrs)
+  section:
+    pattern: '^(?P<marker>\d[\w.\-]*)\s*(?P<name>.*)$'
+    number: '^(?P<number>.+)$'
+  schedule:
+    # `SCHEDULE I (Section 2) List of ...`, `SCHEDULE`, `ANNEX 1`.
+    pattern: '^(?P<marker>(?i:(?:schedule|annex|appendix|form)\b(?:\s+(?!\()[\w.\-]+)?))?\s*(?P<name>.*)$'
+    number: '\s(?P<number>\S+)$'
+
+reserved:
+  # A consolidation prints `[Repealed, 2019, c. 18, s. 3]` as text: kept, it is the law's state.
+  pattern: '^\[\s*reserved\s*\]$'
+  never: [instrument]
+
+skip: [InstrumentNumber, RegistrationDate, ConsolidationDate, LongTitle, ShortTitle, RunningHead,
+       BillHistory, Chapter, RegulationMakerOrder, BillNumber, Parliament, BillRefNumber,
+       ScheduleFormHeading]
+graphics: [Image]
+leaves: [Text, MarginalNote, Label, TitleText, HistoricalNoteSubItem, Caption, AlternateText,
+         LongDescription, FormulaText, FormulaConnector, FormulaTerm, Note, GroupHeading,
+         SignatureLine, SignatureName, SignatureTitle, Amendment, OriginatingRef]
+containers:
+  Body: ""
+  Identification: ""
+  # The Acts a regulation is made under: what `authority` is in the CFR.
+  EnablingAuthority: authority
+  Order: enacting_order
+  Provision: ""
+  Introduction: preamble
+  Preamble: preamble
+  Enacts: ""
+  ReaderNote: editorial_note
+  Subsection: ""
+  Paragraph: ""
+  Subparagraph: ""
+  Clause: ""
+  Subclause: ""
+  Subsubclause: ""
+  Definition: ""
+  ContinuedSectionSubsection: ""
+  ContinuedParagraph: ""
+  ContinuedSubparagraph: ""
+  ContinuedClause: ""
+  ContinuedSubclause: ""
+  ContinuedDefinition: ""
+  ContinuedFormulaParagraph: ""
+  FormulaGroup: ""
+  Formula: ""
+  FormulaDefinition: ""
+  FormulaParagraph: ""
+  # `1980-81-82-83, c. 111, Sch. I "1"`, `2019, c. 18, s. 2`: the section's amendment history.
+  HistoricalNote: historical_note
+  Footnote: footnote
+  RecentAmendments: recent_amendments
+  ImageGroup: ""
+  TableGroup: ""
+  List: ""
+  Item: ""
+  FormGroup: ""
+  BilingualGroup: ""
+  BilingualItemEn: ""
+  BilingualItemFr: ""
+  SectionPiece: ""
+  Oath: ""
+  SignatureBlock: ""
+  DocumentInternal: ""
+  Group: ""
+  # Provisions of OTHER enactments printed after the Act: related provisions, amendments not
+  # in force. Their sections carry the amending Act's numbers (`5` of 1995, c. 29) and would
+  # otherwise cite as sections of this one.
+  BillPiece: related_provisions
+  RegulationPiece: related_provisions
+  RelatedOrNotInForce: related_provisions
+  # Text an amendment puts in, or a provision is to be read as.
+  AmendedText: amended_text
+  ReadAsText: read_as_text
+  QuotedText: quoted_text
+inline: [XRefExternal, XRefInternal, DefinedTermEn, DefinedTermFr, DefinitionEnOnly, Emphasis,
+         Language, DefinitionRef, FootnoteRef, Sup, Sub, InlineFont, Repealed, Leader,
+         LeaderRightJustified, FormBlank, Keep, AmendmentCitation, AmendmentDate]
+quoted: [BillPiece, RegulationPiece, RelatedOrNotInForce, AmendedText, ReadAsText, QuotedText]
+reserved_text: [Reserved]
+
+text:
+  superscript: [Sup, FootnoteRef]
+  # Children printed as separate lines: `SCHEDULE I`, `(Section 2)`, the title.
+  breaks: [Label, TitleText, OriginatingRef, AmendmentCitation, AmendmentDate, MarginalNote]
+emphasis:
+  # `<DefinedTermEn>access request</DefinedTermEn> means`: the term the definition defines.
+  elements: {DefinedTermEn: null}
+label:
+  # `(1)`, `(a)`, `(ii)`: a provision's label opens the text that follows it.
+  tags: [Label]
+  suffix: ""
+  max_chars: 24
+tables:
+  elements: {table: cals}
