@@ -6,6 +6,7 @@ fake opener, so the suite never touches the network.
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import urllib.error
@@ -513,6 +514,25 @@ def test_scan_reads_only_the_snapshot_and_reports_a_missing_file(tmp_path: Path)
     files, report = scan(tmp_path, ["**/*.xml"], only=["a.xml", "gone.xml"])
     assert [f.path for f in files] == ["a.xml"]
     assert report.unreadable and "gone.xml" in report.unreadable[0]
+
+
+def test_a_snapshot_is_matched_by_name_not_by_walking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "t/texte/struct").mkdir(parents=True)
+    (tmp_path / "t/texte/struct/A.xml").write_text("<x/>")
+    (tmp_path / "t/article").mkdir(parents=True)
+    (tmp_path / "t/article/B.xml").write_text("<y/>")
+
+    def refuse(*_: object, **__: object) -> None:
+        raise AssertionError("a snapshot scan walked the root")
+
+    # ! By module: `sources.scan` as a dotted name is the re-exported function.
+    monkeypatch.setattr(importlib.import_module("sources.scan"), "walk", refuse)
+    listed = ["t/texte/struct/A.xml", "t/article/B.xml"]
+    files, _ = scan(tmp_path, ["**/texte/struct/*.xml"], only=listed)
+    # The list cannot widen the corpus: B.xml is listed but no pattern takes it.
+    assert [f.path for f in files] == ["t/texte/struct/A.xml"]
 
 
 def test_a_partly_published_edition_is_held_back(tmp_path: Path) -> None:

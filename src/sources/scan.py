@@ -14,7 +14,7 @@ import hashlib
 import mimetypes
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -120,13 +120,16 @@ def scan(
 
     candidates: Iterable[Path]
     if only is not None:
-        allowed = set(walk(root, patterns))
+        # ! Matched by name, ✗ by walking the root: a mirror holds far more than one
+        # snapshot lists (LEGI: 122,946 texts among 1.9M unpacked files), and walking it
+        # all to check a list costs more than the extraction's first hour.
+        globs = list(patterns)
         kept: list[Path] = []
         for relative in sorted(set(only)):
             path = root / relative
             if not path.is_file():
                 unreadable.append(f"{path}: listed but missing")
-            elif path in allowed:
+            elif any(PurePosixPath(relative).full_match(g) for g in globs):
                 kept.append(path)
         candidates = kept
     else:
