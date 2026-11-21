@@ -80,9 +80,11 @@ is built in **its own workspace** (`-w work/us_cfr/<date>`): the workspace stage
 beside its replacement. Reusing the vectors of unchanged chunks across snapshots is
 designed, ✗ built: today an update re-embeds the corpus.
 
-## 3. Extract (`cfr_xml`)
+## 3. Extract (`xml`, dialects `gpo_cfr` and `ecfr`)
 
-One extractor, two dialects, told apart by the root element:
+The `xml` extractor knows no element name. What the publisher's elements mean is declared
+in `registry/dialects/gpo_cfr@1.0.yaml` and `ecfr@1.0.yaml`, and the profile names both
+(`extract.xml.dialects`). The root element picks the dialect:
 
 | | CFR (`CFRDOC`) | eCFR (`ECFR`) |
 |---|---|---|
@@ -91,21 +93,62 @@ One extractor, two dialects, told apart by the root element:
 | section | `SECTNO` + `SUBJECT` | `HEAD` (`§ 1.100 Content of this title.`) |
 | tables | `GPOTABLE` (`BOXHD/CHED`, `ROW/ENT`) | HTML `TABLE` |
 
-Every structural element becomes a heading block whose `attrs` carry what the markup
-states: `unit`, `number`, `name`. Body elements become paragraphs; `AUTH`, `SOURCE`,
-`CITA`, `EDNOTE` and notes keep their kind in `attrs`. Tables become canonical tables.
+A dialect declares, and the code only applies:
+
+- **units**, by tag or by an attribute (`DIV5 TYPE="PART"`), and the attribute a unit
+  states its number in (`N`);
+- **headings** per unit: a descendant path (`TOC/TOCHD/HD`), joined children
+  (`SECTNO` + `SUBJECT`, or `[Reserved]`), or the first child past print furniture;
+- **labels** per unit: the regexes that split a heading into `marker`, `name`, `number`;
+- **body roles**: furniture skipped by name, graphics counted, leaves, containers and the
+  `kind` each gives (`AUTH` → `authority`, `EFFDNOTP` → `effective_date_note`), inline
+  markup, italic codes (`E T="03"`), the page element (`PRTPAGE@P`), table layouts;
+- **quoted** containers (`REVTXT`): a unit inside is text, not structure;
+- **front matter**: the outermost unit, the edition date (`FMTR//REVISED`,
+  `VOLUME@AMDDATE`), and title 3's composed heading.
+
+The loader replaces each dialect name with the file's contents before the profile is
+validated, so `structure_hash` covers every rule and a corrected dialect re-extracts. The
+loader refuses a dialect whose units the profile does not declare, an element given two
+roles, or a dialect file that is missing.
 
 - **Strict parse.** A malformed file fails the document. The notebook parsed with
   `recover=True`, which drops what it cannot read and reports success.
-- **Nothing dropped silently.** Navigation (`TOC`, `CONTENTS`, running heads, `EAR`), front
-  and back matter are skipped *by name*; any other element the extractor does not know is
-  counted in `extraction.warnings`, so a schema change is visible on the first run.
+- **Nothing dropped silently.** Elements are skipped *by name*. An element the dialect does
+  not name is still read for its text and counted in `extraction.warnings`, so a schema
+  change shows on the first run.
 - **Reserved units** (`[Reserved]`) carry no text and produce no block; they are counted.
 - **Pages.** `PRTPAGE` sets the page of every block after it, so a CFR chunk cites the
-  printed page. eCFR has none.
+  printed page. The eCFR has none.
+- **Italics are kept** (`attrs.emphasis`). The CFR sets a defined term in italics, and the
+  text alone cannot tell it apart from a paragraph heading.
 - **Appendices are content.** The notebook skipped them; there are 4,095 in the eCFR.
 - ✗ Title 3's presidential documents (`PROC`, `EXECORD` outside `TITLE`) are counted and
   not yet extracted.
+
+**Parity, and what the move found.** On 8 sample volumes (title 3, an eCFR title, and
+title 40 vol. 3 with 19,587 blocks), the dialect-driven extractor reproduced the Python one
+block for block, except where the YAML deliberately corrected it:
+
+- `EFFDNOTP` was an unknown element read with no kind. It holds **1,339** effective-date
+  notes in the snapshot, against 486 in `EFFDNOT`, so 73% of the notes had no kind.
+- `REVTXT` quotes the section an amendment will put in force. The Python extractor read
+  the quoted `SECTION` as structure, and opened a second `§ 52.220` inside the note of
+  `§ 52.41`: one chunk cited a section it was not. 342 `REVTXT` in the snapshot.
+
+**A quote left open.** GPO sometimes never closes a `REVTXT`, so it runs on to the end of
+the volume. In 40 CFR vol. 33 (2024), the quote of subpart B of part 702 holds 2,539
+sections in 13 parts. In 34 CFR vol. 3 (2025), the quote of part 656 holds parts 657 to 679.
+Read as quoted, all of them vanished into one note.
+
+A quote opens with the unit it revises, and two things end it:
+- a unit shallower than that one (a PART after a quoted SUBPART);
+- when the quote revises a unit that encloses its note, another unit of that type with
+  another number (PART 657 in the quote of part 656).
+
+From there the markup is read as structure, and `extraction.params.quotes_ended` counts
+each case. Inside a quote, nested containers keep the quote's kind (`revised_text`), so an
+`AUTH` quoted in revised text is not the part's authority.
 
 ## 4. Chunk (`markup`)
 
@@ -152,7 +195,55 @@ own count. Spot checks cite as a lawyer would: `40 CFR 52.21` (EPA, 39 parts, p.
 vol 3), `21 CFR 101.9` (FDA), `26 CFR 1.61-1` (IRS), `29 CFR 1910.134` (OSHA),
 `45 CFR 164.502` (HHS), `12 CFR 1026.18` (CFPB).
 
+**Rebuilt with us_cfr@1.1** (`xml` + `gpo_cfr@1.0`), in a fresh workspace:
+
+| | |
+|---|---|
+| volumes | 246 extracted, 0 failed, 248 s |
+| sections | 231,037 read as structure; 368 more are quoted amendment text, read in their note |
+| appendices | 4,152 read; 26 quoted |
+| quotes left open by GPO, ended at a unit they cannot hold | 5 |
+| chunks | 366,005 (342,198 text, 23,807 tables), 140 s; 100.0% with identifier |
+| signals | 194 s; coverage per column in §5b |
+
+Against the first build, every identifier it cited and this one does not was checked
+against the XML: 35 exist only in quoted text, 8 were subpart chunks made of note text the
+quote bug had stranded, and one (`48 CFR 312.202(d)`) is now `48 CFR 312.202`. The 10,170
+identifiers gained are the bare-numbered sections, now cited by number.
+
 Not yet embedded or scored: there is no CFR question set.
+
+## 5b. Signals (`ravel signals <corpus>`)
+
+Six columns read from finished chunks, declared in the profile's `signals` section and
+applied by `src/enrich/signals.py`, which knows no CFR word. The output is a sidecar
+keyed by `chunk_id`, outside the chunk cache key: a corrected pattern re-runs this CPU pass
+and touches no chunk and no vector (`ENRICHMENT.md` §2).
+
+| column | read from |
+|---|---|
+| `cfr_references`, `usc_references`, `public_laws`, `fr_references` | the body; a bare `§ 52.21` is read in the chunk's own title |
+| `authority`, `authority_usc`, `source` | the part's `AUTH` and `SOURCE`, for every chunk of the part |
+| `amendments`, `amendments_latest` | the section's `CITA`: every dated FR citation, and the latest date |
+| `effective_date_note` | the section's `EFFDNOT` / `EFFDNOTP` |
+| `defined_terms` | `X means ...`, kept only when `X` is set in italics |
+| `paragraph_first`, `paragraph_last` | the designations a chunk runs from and to, `(b)(1)` to `(b)(23)` |
+
+Coverage on the 1.1 build (366,005 chunks): `cfr_references` 42.4%, `usc_references` 13.9%,
+`public_laws` 2.1%, `fr_references` 32.4%, `authority` 99.8%, `authority_usc` 98.0%,
+`source` 97.1%, `amendments` 57.0%, `effective_date_note` 1.9%, `defined_terms` 4.3%,
+`paragraph_*` 64.5%. Of the paragraph ranges, 1,141 (0.5%) stack two roman numerals, the
+signature of a mis-nested outline. That is where a section's drafting departs from
+`(a)(1)(i)(A)`: older OSHA text sets `( a )` in italics below `(i)`.
+
+`source` is `nearest`: of the part's SOURCE notes, the one printed in the deepest unit
+that encloses the chunk, so a subpart with its own source is cited with it. Heading paths
+are compared with `(CONTINUED)` stripped (`signals.heading_strip`), so a part that runs over
+volumes still matches.
+
+The outline reads `(i)` by what is in force: it continues the innermost sequence, else
+opens a deeper level, else continues an outer one. Where `(i)` under `(h)(1)` can be either
+a numeral or the next letter, the next paragraph's marker decides.
 
 ## 6. Size
 

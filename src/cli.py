@@ -955,6 +955,95 @@ if __name__ == "__main__":
     app()
 
 
+@app.command(name="signals")
+def signals_cmd(
+    corpus_id: CorpusArg,
+    workspace: WORKSPACE = Path("."),
+    variant: Annotated[str, typer.Option("--variant")] = "default",
+) -> None:
+    """Read the profile's declared signals out of finished chunks into a sidecar.
+
+    CPU only, disposable: references, defined terms, tagged-block text over its scope and
+    paragraph designations, keyed by chunk id (`SOURCE_US_CFR.md` §5). Rerunning replaces
+    the sidecar; chunks and vectors are never touched.
+    """
+    from chunk import iter_chunk_shards
+    from enrich.signals import VERSION, compute, write
+    from extract.run import iter_canon
+    from runtime.shards import newest_generation
+
+    spec = CorpusSpec.find(corpus_id)
+    profile = default_registry().get(spec.extract.profile)
+    if profile.spec.signals is None:
+        err.print(f"[red]{profile.ref} declares no signals[/red]")
+        raise typer.Exit(1)
+    base = Path(workspace) / "chunks" / spec.id / variant
+    chunk_dir = newest_generation(base)
+    if chunk_dir is None:
+        err.print(f"[red]no chunks at {base} · run `ravel chunk` first[/red]")
+        raise typer.Exit(1)
+    out_dir = Path(workspace) / "signals" / spec.id / variant / chunk_dir.name
+    started = time.time()
+    rows = compute(
+        iter_chunk_shards(workspace, spec.id, variant, chunk_dir.name),
+        iter_canon(workspace, spec.id),
+        profile.spec.signals,
+    )
+    report = write(rows, profile.spec.signals, out_dir)
+    table = RichTable(show_header=False, box=None)
+    table.add_row("signals", f"{out_dir}  [dim]signals@{VERSION} · {profile.ref}[/dim]")
+    table.add_row("chunks", f"{report.chunks:,}")
+    for name, n in report.present.items():
+        share = n / report.chunks if report.chunks else 0.0
+        table.add_row(name, f"{n:,}  ({share:.1%})")
+    table.add_row("elapsed", f"{time.time() - started:.1f}s")
+    out.print(table)
+
+
+@app.command(name="export")
+def export_cmd(
+    corpus_id: CorpusArg,
+    out_dir: Annotated[Path, typer.Option("--out", help="Directory to write the dataset to.")],
+    workspace: WORKSPACE = Path("."),
+    variant: Annotated[str, typer.Option("--variant")] = "default",
+    split: Annotated[str, typer.Option("--split")] = "train",
+    signals: Annotated[
+        bool, typer.Option("--signals/--no-signals", help="Join the signal sidecar.")
+    ] = True,
+) -> None:
+    """Write the chunks, joined with their signals, as a text dataset (no vectors).
+
+    `data/<split>-N-of-M.parquet` plus `sources/manifest.jsonl` and the snapshot list: what a
+    dataset hub serves. The dataset card is written by hand; this writes only data.
+    """
+    from bundle.dataset import ExportError, export_dataset
+
+    spec = CorpusSpec.find(corpus_id)
+    root = Path(spec.sources.root)
+    snapshot = root / spec.sources.snapshot if spec.sources.snapshot else None
+    try:
+        report = export_dataset(
+            workspace,
+            spec.id,
+            out_dir,
+            variant=variant,
+            split=split,
+            source_root=root,
+            snapshot=snapshot,
+            with_signals=signals,
+        )
+    except ExportError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    table = RichTable(show_header=False, box=None)
+    table.add_row("dataset", str(out_dir))
+    table.add_row("rows", f"{report.rows:,} in {report.shards} shards")
+    table.add_row("columns", ", ".join(report.columns))
+    table.add_row("signals", report.signals or "[dim]none[/dim]")
+    table.add_row("sources", f"{report.sources:,}")
+    out.print(table)
+
+
 @app.command(name="sparse")
 def sparse_cmd(
     corpus_id: CorpusArg,

@@ -1,0 +1,123 @@
+id: gpo_cfr
+version: "1.0"
+title: GPO annual CFR (govinfo bulk XML, one file per printed volume)
+description: >
+  The official annual edition: CFRDOC > TITLE > SUBTITLE > CHAPTER > SUBCHAP > PART >
+  SUBPART > SUBJGRP > SECTION / APPENDIX, PRTPAGE page breaks, GPOTABLE tables
+  (docs/SOURCE_US_CFR.md §3). Read by the `xml` extractor; every rule below is what the
+  GPO markup states, and an element not named here is still read for its text and named
+  in `extraction.warnings`.
+
+document:
+  detect: {root: '^CFRDOC$'}
+  top: TITLE
+  # ! Title 3 prints its chapter after an empty TITLE, as the root's sibling: read as the
+  # title's own. Its presidential documents (PROC, EXECORD) also sit there; they are
+  # counted as skipped, not read (SOURCE_US_CFR.md §3).
+  trailing: true
+  ignore: [FMTR, BMTR, AMDDATE]
+  # Title 3 prints no title heading: composed from its title page, `Title 3` and `The President`.
+  compose: [FMTR//TITLENUM, FMTR/TITLEPG/SUBJECT]
+  number: FMTR//TITLENUM
+  date: [FMTR//REVISED]                 # `Revised as of January 1, 2026`
+  dated_unit: title
+
+units:
+  tags:
+    TITLE: title
+    SUBTITLE: subtitle
+    CHAPTER: chapter
+    SUBCHAP: subchapter
+    PART: part
+    SUBPART: subpart
+    SUBJGRP: subjgrp
+    SECTION: section
+    APPENDIX: appendix
+  number_attr: N
+
+headings:
+  default: &hd
+    first: [HD]
+    skip: [PRTPAGE, EAR, LRH, RRH]
+  title:
+    path: CFRTITLE/TITLEHD/HD
+  # The chapter's heading is printed in its own table of contents.
+  chapter: {path: TOC/TOCHD/HD, first: [HD], skip: [PRTPAGE, EAR, LRH, RRH]}
+  # A unit with no heading but `[Reserved]` is named by it.
+  subchapter: &reservable {first: [HD, RESERVED], skip: [PRTPAGE, EAR, LRH, RRH]}
+  part: *reservable
+  subpart: *reservable
+  appendix: *reservable
+  # `§ 170.105` + `Applicability.`; a reserved section prints `[Reserved]` for its subject.
+  section:
+    join: [[SECTNO], [SUBJECT, RESERVED]]
+
+labels:
+  default:
+    pattern: '^(?P<marker>.*?)\s*[—–]\s*(?P<name>.*)$'
+    number: '\s(?P<number>\S+)$'          # `PART 170` -> 170, `Title 2` -> 2
+    # A chapter that runs over volumes repeats its heading as `... (CONTINUED)`: the
+    # heading keeps it, as printed; the name is the agency's.
+    name_strip: '\s*\(continued\)\s*$'
+  title:
+    pattern: '^(?P<marker>.*?)\s*[—–]\s*(?P<name>.*)$'
+    number: '(?:^|\s)(?P<number>\S+)$'
+  appendix:
+    pattern: '^(?P<marker>.*?)\s*[—–]\s*(?P<name>.*)$'
+    number: '^\S+\s+(?P<number>\S+)'       # `Appendix A to Part 170` -> A
+    name_strip: '\s*\(continued\)\s*$'
+  section:
+    # ! 11,623 sections print a bare number (`86.1860-17`, all of title 48): the `§` is
+    # optional. `Sec. 1-1` and `Section 01` (14 CFR part 241) keep their word, as printed.
+    pattern: '^(?P<marker>(?:§§?\s*|Secs?\.\s*|Sections?\s+)?\d[\w.\-–—]*)\s*(?P<name>.*)$'
+    number: '^(?:§§?\s*)?(?P<number>.*)$'
+
+reserved:
+  pattern: '\[\s*reserved\s*\]'
+  tag: RESERVED
+  ignore: [PRTPAGE, EAR, HD, HEAD, SECTNO, SUBJECT, RESERVED]
+  never: [title, subtitle, chapter]
+
+page: {tag: PRTPAGE, attr: P}
+
+skip: [TOC, CONTENTS, LRH, RRH, EAR, SECHD, PTHD, PGHD, CHAPTI, TOCHD, FMTR, BMTR, AMDDATE,
+       CFRTOC, CFRTITLE, STARS]
+graphics: [GPH, GID, MATH, MID]
+leaves: [P, FP, FP-1, FP-2, FP-DASH, FL-2, PSPACE, CITA, TNOTE, TDESC, HD, HD1, HD2, HD3, HED,
+         SIG, FRDOC, DATE, NAME, POSITION, SCOL2]
+containers:
+  EXTRACT: extract
+  NOTE: note
+  EDNOTE: editorial_note
+  AUTH: authority
+  SOURCE: source
+  SECAUTH: section_authority
+  EXAMPLE: example
+  EFFDNOT: effective_date_note
+  # ! The annual edition prints most effective-date notes in EFFDNOTP (1,339 in the 2026-11-21
+  # snapshot, against 486 EFFDNOT).
+  EFFDNOTP: effective_date_note
+  # The text an amendment will put in force, quoted inside its note.
+  REVTXT: revised_text
+  APPRO: approval
+  FTNT: footnote
+  CROSSREF: cross_reference
+  DIV: ""
+inline: [E, B, SU, FR, AC, FTREF, XREF, LI, SUB, SUP]
+# A section quoted in REVTXT is text, not a second § 52.220 inside the note of § 52.41.
+quoted: [REVTXT]
+reserved_text: [RESERVED]
+
+text:
+  superscript: [SU]
+  breaks: [LI]
+emphasis:
+  elements: {E: ["03"]}                    # `<E T="03">Dealer</E> means`: a defined term
+  attr: T
+label:
+  tags: [HD, HED]
+  suffix: ":"
+  max_chars: 40
+tables:
+  elements: {GPOTABLE: gpo}
+  notes: [TNOTE]

@@ -22,8 +22,8 @@ provenance:
   note: eCFR versioner API, full title XML on the date in the path.
 
 extract:
-  profile: us_cfr@1.0
-  extractors: [cfr_xml]
+  profile: us_cfr@1.1
+  extractors: [xml]
   failure_tolerance: 0.0
 
 chunk:

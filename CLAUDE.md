@@ -167,8 +167,9 @@ stack and version policy in `docs/STACK.md`.
 11. **MCP is authoring-time only.** It writes configs; the CLI consumes them. A build
     must never depend on an MCP server being alive. (`docs/INTERFACES.md` §2)
 12. **Corpus knowledge is data, never code.** Patterns, vocabularies, document types
-    and structure markers live in `registry/profiles/*.yaml`. A regex specific to one
-    corpus inside a `.py` file is the ID_Legal defect reappearing.
+    and structure markers live in `registry/profiles/*.yaml`; what a publisher's XML
+    elements mean lives in `registry/dialects/*.yaml`. A regex or an element name specific
+    to one corpus inside a `.py` file is the ID_Legal defect reappearing.
     (`docs/PROFILES.md`, `docs/ABSORPTION.md` §4)
 13. **An extractor reports what is on the page; a structurer decides what it means.**
     Heading assignment is a separate, profile-driven pass over canonical blocks — never

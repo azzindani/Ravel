@@ -19,11 +19,15 @@ from datetime import UTC, datetime
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from canon import BlockType, CanonicalDoc, Extraction, Source
 from extract.base import BlockBuilder, ExtractionFailed, Probe, registry
 from extract.quality import Thresholds, score_text
 from sources import guess_mime, sha256_file
+
+if TYPE_CHECKING:
+    from spec.models import Profile
 
 #: Tags whose content never belongs in a corpus.
 DROP_TAGS = frozenset({"script", "style", "noscript", "template", "svg", "head"})
@@ -189,7 +193,9 @@ class TextExtractor:
     def supports(self, path: Path, probe: Probe) -> bool:
         return probe.mime in self.SUPPORTED
 
-    def extract(self, path: Path, *, title: str, url: str | None = None) -> CanonicalDoc:
+    def extract(
+        self, path: Path, *, title: str, url: str | None = None, profile: Profile | None = None
+    ) -> CanonicalDoc:
         mime = guess_mime(path)
         parse = self.SUPPORTED.get(mime)
         if parse is None:

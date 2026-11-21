@@ -144,7 +144,9 @@ level down.
 The exception proves the rule. Where the source's **markup** states the structure (the CFR's
 XML, `SOURCE_US_CFR.md` §3), there is nothing to infer: `structure.from_markup` keeps the
 extractor's headings, which name their unit and close where their element closes, and the
-structurer only checks that each names a declared unit at its declared level.
+structurer only checks that each names a declared unit at its declared level. The extractor
+that reads it is generic: `xml` takes every element name from a declared dialect
+(`registry/dialects/`), so a second publisher's XML is a YAML file, not a new extractor.
 
 ---
 

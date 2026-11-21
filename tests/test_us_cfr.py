@@ -1,4 +1,4 @@
-"""The US CFR pipeline: fetch, the `cfr_xml` extractor, and the `markup` chunker.
+"""The US CFR pipeline: fetch, the `xml` extractor and its dialects, `markup`, signals.
 
 `docs/SOURCE_US_CFR.md`. Hermetic: the XML is written here and the publisher's listing is a
 fake opener, so the suite never touches the network.
@@ -17,12 +17,15 @@ from pydantic import ValidationError
 
 from canon import BlockType, Severity, validate
 from chunk import Builder, ChunkConfig, embed_text, get
-from extract.cfr import LEVELS, CfrXmlExtractor
+from enrich import signals
 from extract.structure import Structurer
+from extract.xml import XmlExtractor
 from sources import scan
 from sources.fetch import Fetcher
-from spec import CorpusSpec, default_registry
+from spec import CorpusSpec, Registry, RegistryError, default_registry
+from spec.loader import load_spec
 from spec.models import MarkupIdentity
+from spec.xml_dialect import XmlDialect
 
 CFR = """<?xml version="1.0" encoding="UTF-8"?>
 <CFRDOC>
@@ -55,6 +58,10 @@ CFR = """<?xml version="1.0" encoding="UTF-8"?>
                 <P>(a) <E T="03">Act</E> means the Animal Welfare Act.</P>
                 <PRTPAGE P="8"/>
                 <P>(b) <E T="03">Dealer</E> means any person who sells animals.</P>
+                <P>(c)(1) Fees: § 1.2 and 7 CFR 2.17; see 7 U.S.C. 2132, Pub. L. 89-544.</P>
+                <P>(2) A second paragraph.</P>
+                <P>(i) Under (c)(2).</P>
+                <P>(ii) Also under (c)(2).</P>
                 <WEIRD>An element nobody declared.</WEIRD>
               </SECTION>
             </SUBJGRP>
@@ -64,7 +71,13 @@ CFR = """<?xml version="1.0" encoding="UTF-8"?>
               <GPOTABLE COLS="2"><TTITLE>Table 1 to § 1.2</TTITLE>
                 <BOXHD><CHED H="1">Class</CHED><CHED H="1">Fee</CHED></BOXHD>
                 <ROW><ENT>A</ENT><ENT>$10</ENT></ROW></GPOTABLE>
-              <CITA>[54 FR 36119, Aug. 31, 1989]</CITA>
+              <CITA>[54 FR 36119, Aug. 31, 1989, as amended at 60 FR 13893, Mar. 15, 1995]
+              </CITA>
+              <EFFDNOTP><HD SOURCE="HED">Effective Date Note:</HD>
+                <P>At 90 FR 1000, Jan. 2, 2025, § 1.2 was revised, effective Mar. 3, 2025.</P>
+                <REVTXT><SECTION><SECTNO>§ 1.2</SECTNO><SUBJECT>Applicability.</SUBJECT>
+                  <P>This part applies to dealers and exhibitors.</P></SECTION></REVTXT>
+              </EFFDNOTP>
             </SECTION>
             <SECTION><SECTNO>§ 1.3</SECTNO><RESERVED>[Reserved]</RESERVED></SECTION>
             <APPENDIX><EAR>Pt. 1, App. A</EAR>
@@ -109,11 +122,13 @@ def cfr_file(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def profile():  # type: ignore[no-untyped-def]
-    return default_registry().get("us_cfr@1.0")
+    return default_registry().get("us_cfr@1.1")
 
 
 def extracted(path: Path, profile: Any):  # type: ignore[no-untyped-def]
-    doc = CfrXmlExtractor().extract(path, title=path.stem, url="https://example.test/x.xml")
+    doc = XmlExtractor().extract(
+        path, title=path.stem, url="https://example.test/x.xml", profile=profile
+    )
     return Structurer(profile).apply(doc)
 
 
@@ -135,7 +150,7 @@ def test_headings_carry_what_the_markup_states(cfr_file: Path, profile: Any) -> 
     }.items() <= section.attrs.items()
     appendix = heads["Appendix A to Part 1—Forms"]
     assert appendix.attrs["marker"] == "Appendix A to Part 1"
-    assert section.level == LEVELS["section"]
+    assert section.level == 8  # the profile's `structure.units`, not the code's
 
 
 def test_a_closed_unit_leaves_the_path(cfr_file: Path, profile: Any) -> None:
@@ -148,7 +163,7 @@ def test_a_closed_unit_leaves_the_path(cfr_file: Path, profile: Any) -> None:
 
 
 def test_closing_early_is_only_valid_for_markup(cfr_file: Path, profile: Any) -> None:
-    raw = CfrXmlExtractor().extract(cfr_file, title="x", url="https://example.test/x.xml")
+    raw = XmlExtractor().extract(cfr_file, title="x", url="x", profile=profile)
     # Without the structurer's `structure: markup`, the same paths are a defect.
     assert any(i.rule == "heading_path" for i in validate(raw))
 
@@ -175,13 +190,38 @@ def test_pages_and_tables(cfr_file: Path, profile: Any) -> None:
     assert [c.text for c in table.cells] == ["Class", "Fee", "A", "$10"]
 
 
-def test_malformed_xml_fails_the_document(tmp_path: Path) -> None:
+def test_malformed_xml_fails_the_document(tmp_path: Path, profile: Any) -> None:
     from extract.base import ExtractionFailed
 
     path = tmp_path / "bad.xml"
     path.write_text(CFR.replace("</SECTION>", "", 1), encoding="utf-8")
     with pytest.raises(ExtractionFailed, match="well-formed"):
-        CfrXmlExtractor().extract(path, title="x")
+        XmlExtractor().extract(path, title="x", profile=profile)
+
+
+def test_a_root_no_dialect_reads_fails_the_document(tmp_path: Path, profile: Any) -> None:
+    from extract.base import ExtractionFailed
+
+    path = tmp_path / "fr.xml"
+    path.write_text("<FEDREG><P>text</P></FEDREG>", encoding="utf-8")
+    with pytest.raises(ExtractionFailed, match="no dialect"):
+        XmlExtractor().extract(path, title="x", profile=profile)
+    with pytest.raises(ExtractionFailed, match="dialect"):
+        XmlExtractor().extract(path, title="x")
+
+
+def test_notes_keep_their_kind_and_quoted_sections_stay_text(
+    cfr_file: Path, profile: Any
+) -> None:
+    doc = extracted(cfr_file, profile)
+    note = next(b for b in doc.blocks if b.text.startswith("Effective Date Note:"))
+    assert note.attrs["kind"] == "effective_date_note"
+    # The section an amendment will put in force is quoted text, never a second § 1.2.
+    sections = [b.text for b in doc.blocks if b.attrs.get("unit") == "section"]
+    assert sections.count("§ 1.2 Applicability.") == 1
+    quoted = next(b for b in doc.blocks if b.text.endswith("dealers and exhibitors."))
+    assert quoted.attrs["kind"] == "revised_text"
+    assert doc.extraction.params["dialect"] == "gpo_cfr@1.0"
 
 
 def test_ecfr_reads_to_the_same_identity(tmp_path: Path, profile: Any) -> None:
@@ -197,8 +237,64 @@ def test_ecfr_reads_to_the_same_identity(tmp_path: Path, profile: Any) -> None:
     assert not [i for i in validate(doc) if i.severity is Severity.ERROR]
 
 
-def test_profile_levels_match_the_extractor(profile: Any) -> None:
-    assert {u.name: u.level for u in profile.units} == LEVELS
+# ---------------------------------------------------------------------------
+# Dialects: the element knowledge is the registry's
+# ---------------------------------------------------------------------------
+def test_the_profile_embeds_its_dialects(profile: Any) -> None:
+    dialects = profile.extract_options("xml")["dialects"]
+    assert [d["id"] for d in dialects] == ["gpo_cfr", "ecfr"]
+    assert dialects[0]["units"]["tags"]["SECTION"] == "section"
+
+
+def _registry_copy(tmp_path: Path) -> Path:
+    import shutil
+
+    root = Path(__file__).resolve().parents[1] / "registry"
+    shutil.copytree(root / "dialects", tmp_path / "dialects")
+    (tmp_path / "profiles").mkdir()
+    shutil.copy(root / "profiles" / "us_cfr@1.1.yaml", tmp_path / "profiles")
+    return tmp_path
+
+
+def test_a_corrected_dialect_re_extracts(tmp_path: Path) -> None:
+    """The hash covers the dialect's rules, not its name."""
+    root = _registry_copy(tmp_path)
+    before = Registry.load(root).get("us_cfr@1.1").structure_hash
+    path = root / "dialects" / "gpo_cfr@1.0.yaml"
+    path.write_text(path.read_text(encoding="utf-8").replace("CHAPTI, ", ""), encoding="utf-8")
+    assert Registry.load(root).get("us_cfr@1.1").structure_hash != before
+
+
+def test_a_dialect_unit_the_profile_does_not_declare_is_refused(tmp_path: Path) -> None:
+    root = _registry_copy(tmp_path)
+    path = root / "dialects" / "ecfr@1.0.yaml"
+    text = path.read_text(encoding="utf-8").replace("SUBJGRP: subjgrp", "SUBJGRP: annex")
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(RegistryError, match="annex"):
+        load_spec(root / "profiles" / "us_cfr@1.1.yaml")
+
+
+def test_a_missing_dialect_is_named(tmp_path: Path) -> None:
+    root = _registry_copy(tmp_path)
+    (root / "dialects" / "ecfr@1.0.yaml").unlink()
+    with pytest.raises(RegistryError, match="no dialect ecfr@1.0"):
+        load_spec(root / "profiles" / "us_cfr@1.1.yaml")
+
+
+def test_an_element_in_two_roles_is_refused() -> None:
+    base: dict[str, Any] = {
+        "id": "x",
+        "version": "1.0",
+        "title": "x",
+        "document": {"detect": {"root": "^X$"}},
+        "units": {"tags": {"S": "section"}},
+        "headings": {"default": {"first": ["HD"]}},
+    }
+    XmlDialect.model_validate(base)
+    with pytest.raises(ValidationError, match="both"):
+        XmlDialect.model_validate({**base, "skip": ["P"], "leaves": ["P"]})
+    with pytest.raises(ValidationError, match="default"):
+        XmlDialect.model_validate({**base, "headings": {"section": {"first": ["HD"]}}})
 
 
 # ---------------------------------------------------------------------------
@@ -457,3 +553,209 @@ def test_a_stray_volume_does_not_make_an_edition_complete(tmp_path: Path) -> Non
     report = Fetcher(cfr_corpus(tmp_path), opener=web, sleep=lambda _: None).run()
     assert report.editions["title-2"] == "2025"
     assert report.held["title-2"].startswith("2026 lacks vol 1 ")
+
+
+# ---------------------------------------------------------------------------
+# Signals
+# ---------------------------------------------------------------------------
+def signal_rows(path: Path, profile: Any) -> dict[str, dict[str, Any]]:
+    doc = extracted(path, profile)
+    entry = get("markup")
+    builder = Builder(
+        doc=doc,
+        chunker=entry.id,
+        version=entry.version,
+        config=ChunkConfig(max_tokens=1024, min_tokens=0),
+        profile=profile,
+    )
+    chunks = list(entry.fn(doc, builder))
+    rows = signals.compute(chunks, [doc], profile.spec.signals)
+    return {
+        c.identifier: row
+        for c, row in zip(chunks, rows, strict=True)
+        if not c.attrs.get("kind")
+    }
+
+
+def test_signals_references(cfr_file: Path, profile: Any) -> None:
+    row = signal_rows(cfr_file, profile)["9 CFR 1.1"]
+    # A bare `§ 1.2` is read in the chunk's own title.
+    assert sorted(row["cfr_references"]) == ["7 CFR 2.17", "9 CFR 1.2"]
+    assert row["usc_references"] == ["7 U.S.C. 2132"]
+    assert row["public_laws"] == ["Pub. L. 89-544"]
+
+
+def test_signals_a_parts_authority_holds_for_each_section(cfr_file: Path, profile: Any) -> None:
+    rows = signal_rows(cfr_file, profile)
+    for cited in ("9 CFR 1.1", "9 CFR 1.2", "9 CFR Appendix A to Part 1"):
+        assert rows[cited]["authority_usc"] == ["7 U.S.C. 2131-2159"]
+        assert rows[cited]["source"] == "Source: 54 FR 36119, Aug. 31, 1989."
+    # Another part, another authority: none stated.
+    assert rows["9 CFR 201.1"]["authority_usc"] == []
+
+
+def test_signals_amendment_history(cfr_file: Path, profile: Any) -> None:
+    row = signal_rows(cfr_file, profile)["9 CFR 1.2"]
+    assert row["amendments"] == ["54 FR 36119, Aug. 31, 1989", "60 FR 13893, Mar. 15, 1995"]
+    assert row["amendments_latest"] == "1995-03-15"
+    assert row["effective_date_note"].startswith("Effective Date Note: At 90 FR 1000")
+
+
+def test_signals_defined_terms_must_be_italic(cfr_file: Path, profile: Any) -> None:
+    row = signal_rows(cfr_file, profile)["9 CFR 1.1"]
+    assert row["defined_terms"] == ["Act", "Dealer"]
+
+
+def test_signals_paragraph_range(cfr_file: Path, profile: Any) -> None:
+    row = signal_rows(cfr_file, profile)["9 CFR 1.1"]
+    assert (row["paragraph_first"], row["paragraph_last"]) == ("(a)", "(c)(2)(ii)")
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        # `(i)` after `(h)` continues the letters; after `(1)` it opens the numerals.
+        (["(g) x", "(h) x", "(i) x"], "(i)"),
+        (["(h) x", "(1) x", "(i) x"], "(h)(1)(i)"),
+        (["(h) x", "(1) x", "(i) x", "(ii) x", "(2) x"], "(h)(2)"),
+        # GPO sets the fifth level's numbers in italics: `( 1 )` once whitespace is read.
+        (["(a)(1)(i) x", "(A) x", "( 1 ) italic"], "(a)(1)(i)(A)(1)"),
+        (["(z) x", "(aa) x"], "(aa)"),
+        (["(u) x", "(v) x"], "(v)"),
+    ],
+)
+def test_outline_reads_a_marker_by_what_is_in_force(
+    profile: Any, lines: list[str], expected: str
+) -> None:
+    outline = signals.Outline(profile.spec.signals.outline)
+    found = [outline.read(line) for line in lines]
+    assert found[-1] == expected
+
+
+def test_outline_lets_the_next_marker_break_a_tie(profile: Any) -> None:
+    """`(i)` under `(h)(1)`: a numeral when `(ii)` follows, the next letter when `(j)` does."""
+    spec = profile.spec.signals.outline
+    as_numeral, as_letter = signals.Outline(spec), signals.Outline(spec)
+    for outline, after in ((as_numeral, "(ii) x"), (as_letter, "(j) x")):
+        outline.read("(h) x")
+        outline.read("(1) x")
+        outline.read("(i) x", after)
+    assert "".join(f"({m})" for _, m in as_numeral.stack) == "(h)(1)(i)"
+    assert "".join(f"({m})" for _, m in as_letter.stack) == "(i)"
+
+
+RUNAWAY = """<?xml version="1.0" encoding="UTF-8"?>
+<CFRDOC>
+  <FMTR><TITLEPG><TITLENUM>Title 9</TITLENUM></TITLEPG></FMTR>
+  <TITLE><CFRTITLE><TITLEHD><HD SOURCE="HED">Title 9—Animals</HD></TITLEHD></CFRTITLE>
+    <CHAPTER><TOC><TOCHD><HD SOURCE="HED">CHAPTER I—SERVICE</HD></TOCHD></TOC>
+      <PART><HD SOURCE="HED">PART 5—FIRST</HD>
+        <SUBPART><HD SOURCE="HED">Subpart B—Procedures</HD>
+          <SECTION><SECTNO>§ 5.1</SECTNO><SUBJECT>Old.</SUBJECT><P>Old text.</P>
+            <EFFDNOTP><HD SOURCE="HED">Effective Date Note:</HD><P>{note} was revised.</P>
+              <REVTXT>
+                {quoted}
+                <SUBPART><HD SOURCE="HED">Subpart C—Next</HD>
+                  <SECTION><SECTNO>§ 5.20</SECTNO><SUBJECT>Real.</SUBJECT>
+                    <P>Real C.</P></SECTION>
+                </SUBPART>
+                <PART><HD SOURCE="HED">PART 6—SECOND</HD>
+                  <SECTION><SECTNO>§ 6.1</SECTNO><SUBJECT>Real.</SUBJECT>
+                    <P>Real six.</P></SECTION>
+                </PART>
+              </REVTXT></EFFDNOTP></SECTION></SUBPART></PART></CHAPTER></TITLE>
+</CFRDOC>
+"""
+
+
+@pytest.mark.parametrize(
+    ("quoted", "real"),
+    [
+        # The quote revises subpart B, its own: subpart C cannot be part of it.
+        (
+            '<SUBPART><HD SOURCE="HED">Subpart B—Procedures</HD><SECTION><SECTNO>§ 5.1'
+            "</SECTNO><SUBJECT>New.</SUBJECT><P>New text.</P></SECTION></SUBPART>",
+            ["§ 5.1 Old.", "§ 5.20 Real.", "§ 6.1 Real."],
+        ),
+        # The quote revises one section: the subpart after it is shallower, and ends it.
+        (
+            "<SECTION><SECTNO>§ 5.1</SECTNO><SUBJECT>New.</SUBJECT><P>New text.</P></SECTION>",
+            ["§ 5.1 Old.", "§ 5.20 Real.", "§ 6.1 Real."],
+        ),
+    ],
+)
+def test_a_quote_left_open_ends_at_a_unit_it_cannot_hold(
+    tmp_path: Path, profile: Any, quoted: str, real: list[str]
+) -> None:
+    """GPO leaves a REVTXT open to the end of a volume (40 CFR vol. 33, 34 CFR vol. 3)."""
+    path = tmp_path / "CFR-2025-title9-vol9.xml"
+    path.write_text(RUNAWAY.format(note="Subpart B", quoted=quoted), encoding="utf-8")
+    doc = extracted(path, profile)
+    sections = [b.text for b in doc.blocks if b.attrs.get("unit") == "section"]
+    assert sections == real
+    assert "§ 5.1 New." in [b.text for b in doc.blocks if b.attrs.get("kind") == "revised_text"]
+    assert doc.extraction.params["quotes_ended"] == 1
+    assert not [i for i in validate(doc) if i.severity is Severity.ERROR]
+
+
+SOURCES = """<?xml version="1.0" encoding="UTF-8"?>
+<CFRDOC>
+  <FMTR><TITLEPG><TITLENUM>Title 9</TITLENUM></TITLEPG></FMTR>
+  <TITLE><CFRTITLE><TITLEHD><HD SOURCE="HED">Title 9—Animals</HD></TITLEHD></CFRTITLE>
+    <CHAPTER><TOC><TOCHD><HD SOURCE="HED">CHAPTER I—SERVICE</HD></TOCHD></TOC>
+      <PART><HD SOURCE="HED">PART 5—FIRST</HD>
+        <SOURCE><HD SOURCE="HED">Source:</HD><P>10 FR 100, Jan. 1, 1945.</P></SOURCE>
+        <SUBPART><HD SOURCE="HED">Subpart A—Old</HD>
+          <SECTION><SECTNO>§ 5.1</SECTNO><SUBJECT>One.</SUBJECT><P>Text.</P></SECTION>
+        </SUBPART>
+        <SUBPART><HD SOURCE="HED">Subpart B—New</HD>
+          <SOURCE><HD SOURCE="HED">Source:</HD><P>80 FR 800, Jan. 1, 2015.</P></SOURCE>
+          <SECTION><SECTNO>§ 5.20</SECTNO><SUBJECT>Two.</SUBJECT><P>Text.</P></SECTION>
+        </SUBPART></PART></CHAPTER></TITLE>
+</CFRDOC>
+"""
+
+
+def test_signals_a_subparts_own_source_is_the_nearest(tmp_path: Path, profile: Any) -> None:
+    path = tmp_path / "CFR-2025-title9-vol8.xml"
+    path.write_text(SOURCES, encoding="utf-8")
+    rows = signal_rows(path, profile)
+    assert rows["9 CFR 5.1"]["source"] == "Source: 10 FR 100, Jan. 1, 1945."
+    assert rows["9 CFR 5.20"]["source"] == "Source: 80 FR 800, Jan. 1, 2015."
+
+
+@pytest.mark.parametrize(
+    ("heading", "marker", "number"),
+    [
+        ("§ 52.21 Prevention.", "§ 52.21", "52.21"),
+        # 11,623 sections print a bare number: title 48 throughout, 40 CFR part 86.
+        ("86.1860-17 How to comply.", "86.1860-17", "86.1860-17"),
+        ("52.223-13—52.223-18 [Reserved]", "52.223-13—52.223-18", "52.223-13—52.223-18"),
+        ("§§ 1.1-1.3 [Reserved]", "§§ 1.1-1.3", "1.1-1.3"),
+        # 14 CFR part 241 numbers its sections in words; kept as printed.
+        ("Sec. 1-1 Purpose.", "Sec. 1-1", "Sec. 1-1"),
+    ],
+)
+def test_section_labels(profile: Any, heading: str, marker: str, number: str) -> None:
+    from extract.xml import _label
+    from spec.xml_dialect import XmlOptions
+
+    dialect = XmlOptions.model_validate(profile.extract_options("xml")).dialects[0]
+    found = _label(heading, dialect.label_rule("section"), None)
+    assert (found[0], found[2]) == (marker, number)
+
+
+def test_outline_reads_a_marker_printed_after_a_heading(profile: Any) -> None:
+    outline = signals.Outline(profile.spec.signals.outline)
+    lines = ["(f) Delays.", "(g) Invoice. (1) The Contractor shall.", "(i) Name;", "(iv) Date;"]
+    assert [outline.read(line) for line in lines][-1] == "(g)(1)(iv)"
+    outline = signals.Outline(profile.spec.signals.outline)
+    lines = ["(a) Std.", "(5) Prohibited (Source: 1 CFR 2.3) —(i) Use of data.", "(A) Except"]
+    assert [outline.read(line) for line in lines][-1] == "(a)(5)(i)(A)"
+
+
+def test_outline_a_section_that_opens_below_the_first_level(profile: Any) -> None:
+    """A section whose paragraphs start at `(1)`: `(i)` under it is a numeral, not a letter."""
+    outline = signals.Outline(profile.spec.signals.outline)
+    found = [outline.read(line) for line in ["(1) x", "(i) x", "(ii) x", "(iii) x", "(2) x"]]
+    assert found == ["(1)", "(1)(i)", "(1)(ii)", "(1)(iii)", "(2)"]

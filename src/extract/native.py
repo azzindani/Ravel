@@ -17,12 +17,15 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from canon import BlockType, CanonicalDoc, Extraction, Source
 from extract.base import BlockBuilder, ExtractionFailed, Probe, registry
 from extract.quality import Thresholds, score_text
 from sources import guess_mime, sha256_file
+
+if TYPE_CHECKING:
+    from spec.models import Profile
 
 # A line must exceed the body size by this factor to be a heading on size alone.
 HEADING_SIZE_RATIO = 1.12
@@ -118,7 +121,9 @@ class NativeExtractor:
     def supports(self, path: Path, probe: Probe) -> bool:
         return probe.mime == "application/pdf" and probe.text_ratio >= 0.9
 
-    def extract(self, path: Path, *, title: str, url: str | None = None) -> CanonicalDoc:
+    def extract(
+        self, path: Path, *, title: str, url: str | None = None, profile: Profile | None = None
+    ) -> CanonicalDoc:
         import pymupdf
 
         try:

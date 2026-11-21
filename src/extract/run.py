@@ -19,11 +19,11 @@ from pathlib import Path
 
 from canon import CANON_VERSION, CanonicalDoc, Severity, validate
 from extract.base import ExtractionFailed, Extractor, Probe
-from extract.cfr import CfrXmlExtractor
 from extract.native import NativeExtractor
 from extract.native import probe as probe_pdf
 from extract.structure import Structurer
 from extract.text import TextExtractor, probe_text
+from extract.xml import XmlExtractor
 from runtime.ledger import Ledger, Status
 from runtime.shards import (
     SealedShard,
@@ -180,7 +180,7 @@ class Extraction:
         self.extractors: dict[str, Extractor] = {
             "native": NativeExtractor(),
             "text": TextExtractor(),
-            "cfr_xml": CfrXmlExtractor(),
+            "xml": XmlExtractor(),
         }
         self._structurers: dict[str, Structurer] = {}
 
@@ -280,6 +280,7 @@ class Extraction:
                 path,
                 title=path.stem,
                 url=self.corpus.provenance.url_for(source.path),
+                profile=profile,
             )
         except ExtractionFailed as exc:
             return DocResult(key=key, path=source.path, quarantine=True, error=str(exc))

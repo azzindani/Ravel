@@ -1,0 +1,86 @@
+id: ecfr
+version: "1.0"
+title: eCFR (versioner API XML, one file per title)
+description: >
+  The daily eCFR: ECFR > DIV1..DIV9, each naming its unit in TYPE and its number in N, the
+  heading in HEAD, HTML tables, `I` for italics (docs/SOURCE_US_CFR.md §3). An editorial
+  compilation, not an official edition. Read by the `xml` extractor.
+
+document:
+  detect: {root: '^(ECFR|DIV\d+)$'}
+  ignore: [AMDDATE, VOLUME]
+  date: [VOLUME@AMDDATE, AMDDATE]          # `2022-12-29`, then `Dec. 29, 2022`
+  dated_unit: title
+
+units:
+  by_attr:
+    tag: '^DIV\d+$'
+    attr: TYPE
+    values:
+      TITLE: title
+      SUBTITLE: subtitle
+      CHAPTER: chapter
+      SUBCHAP: subchapter
+      PART: part
+      SUBPART: subpart
+      SUBJGRP: subjgrp
+      SECTION: section
+      APPENDIX: appendix
+  number_attr: N
+
+headings:
+  default: {first: [HEAD], anywhere: true}
+
+labels:
+  default:
+    pattern: '^(?P<marker>.*?)\s*[—–]\s*(?P<name>.*)$'
+    number: '\s(?P<number>\S+)$'
+    name_strip: '\s*\(continued\)\s*$'
+  appendix:
+    pattern: '^(?P<marker>.*?)\s*[—–]\s*(?P<name>.*)$'
+    number: '^\S+\s+(?P<number>\S+)'
+    name_strip: '\s*\(continued\)\s*$'
+  section:
+    # ! In the annual edition 11,623 sections print a bare number (`86.1860-17`): the `§` is
+    # optional. `Sec. 1-1` and `Section 01` (14 CFR part 241) keep their word, as printed.
+    pattern: '^(?P<marker>(?:§§?\s*|Secs?\.\s*|Sections?\s+)?\d[\w.\-–—]*)\s*(?P<name>.*)$'
+    number: '^(?:§§?\s*)?(?P<number>.*)$'
+
+reserved:
+  pattern: '\[\s*reserved\s*\]'
+  tag: RESERVED
+  ignore: [PRTPAGE, EAR, HD, HEAD, SECTNO, SUBJECT, RESERVED]
+  never: [title, subtitle, chapter]
+
+skip: [TOC, CONTENTS, LRH, RRH, EAR, SECHD, PTHD, PGHD, CHAPTI, TOCHD, AMDDATE, VOLUME, CFRTOC,
+       STARS, img, br]
+graphics: [GPH, GID, MATH, MID]
+leaves: [P, FP, FP-1, FP-2, FP-DASH, FL-2, PSPACE, CITA, TNOTE, TDESC, HD, HD1, HD2, HD3, HED,
+         HEAD, SIG, FRDOC, DATE, NAME, POSITION, FRP]
+containers:
+  EXTRACT: extract
+  NOTE: note
+  EDNOTE: editorial_note
+  AUTH: authority
+  SOURCE: source
+  SECAUTH: section_authority
+  EXAMPLE: example
+  EFFDNOT: effective_date_note
+  APPRO: approval
+  FTNT: footnote
+  CROSSREF: cross_reference
+  DIV: ""
+inline: [E, I, B, SU, FR, AC, FTREF, XREF, LI, SUB, SUP, a, span, em]
+reserved_text: [RESERVED]
+
+text:
+  superscript: [SU]
+  breaks: [br, LI]
+  drop: [img]
+emphasis:
+  elements: {I: null, E: ["03"]}
+label:
+  tags: [HD, HED]
+tables:
+  elements: {TABLE: html}
+  notes: [TNOTE]

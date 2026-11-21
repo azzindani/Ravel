@@ -14,10 +14,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from canon import Block, BlockType, CanonicalDoc
 from extract.quality import TextLayer, TextQuality
+
+if TYPE_CHECKING:
+    from spec.models import Profile
 
 
 class ExtractionFailed(RuntimeError):
@@ -65,7 +68,9 @@ class Extractor(Protocol):
 
     def supports(self, path: Path, probe: Probe) -> bool: ...
 
-    def extract(self, path: Path, *, title: str, url: str | None = None) -> CanonicalDoc: ...
+    def extract(
+        self, path: Path, *, title: str, url: str | None = None, profile: Profile | None = None
+    ) -> CanonicalDoc: ...
 
 
 @dataclass

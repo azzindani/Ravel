@@ -15,13 +15,16 @@ import os
 from collections.abc import Iterator
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from spec.models import Profile, ProfileSpec
+from spec.xml_dialect import XmlDialect
 
 ENV_VAR = "RAVEL_REGISTRY"
 PROFILES_DIR = "profiles"
+DIALECTS_DIR = "dialects"
 
 
 class RegistryError(RuntimeError):
@@ -66,6 +69,7 @@ def load_spec(path: Path) -> ProfileSpec:
         raise RegistryError(f"{path.name}: invalid YAML · {exc}") from exc
     if not isinstance(raw, dict):
         raise RegistryError(f"{path.name}: expected a mapping at the top level")
+    raw = _resolve_dialects(raw, path.parent.parent / DIALECTS_DIR, path.name)
 
     try:
         spec = ProfileSpec.model_validate(raw)
@@ -78,6 +82,42 @@ def load_spec(path: Path) -> ProfileSpec:
             f"{path.name}: contents declare {spec.ref}, so the file must be {expected}"
         )
     return spec
+
+
+def load_dialect(directory: Path, ref: str) -> dict[str, Any]:
+    """One dialect file by `id@version`, validated, as the mapping a profile embeds."""
+    path = directory / f"{ref}.yaml"
+    if not path.is_file():
+        known = sorted(p.stem for p in directory.glob("*.yaml")) if directory.is_dir() else []
+        raise RegistryError(f"no dialect {ref} at {directory} · known: {known}")
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        dialect = XmlDialect.model_validate(raw)
+    except Exception as exc:
+        raise RegistryError(f"{path.name}: {exc}") from exc
+    if dialect.ref != ref:
+        raise RegistryError(f"{path.name}: contents declare {dialect.ref}")
+    return dialect.model_dump(mode="json")
+
+
+def _resolve_dialects(raw: dict[str, Any], directory: Path, name: str) -> dict[str, Any]:
+    """`extract.xml.dialects: [gpo_cfr@1.0]` -> the dialects' contents.
+
+    ! Resolved before validation, so the profile's `structure_hash` hashes the rules and
+    not their names: a dialect corrected in place re-extracts every document it reads.
+    """
+    xml = (raw.get("extract") or {}).get("xml")
+    if not isinstance(xml, dict) or not isinstance(xml.get("dialects"), list):
+        return raw
+    resolved = []
+    for item in xml["dialects"]:
+        if isinstance(item, str):
+            try:
+                item = load_dialect(directory, item)
+            except RegistryError as exc:
+                raise RegistryError(f"{name}: {exc}") from exc
+        resolved.append(item)
+    return {**raw, "extract": {**raw["extract"], "xml": {**xml, "dialects": resolved}}}
 
 
 def iter_specs(root: Path | str | None = None) -> Iterator[ProfileSpec]:

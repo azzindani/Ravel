@@ -1,0 +1,136 @@
+id: us_cfr
+version: "1.1"
+title: US Code of Federal Regulations (CFR and eCFR XML)
+description: >
+  The annual CFR (govinfo bulk, one XML per printed volume) and the eCFR (versioner API, one
+  XML per title), read by the `xml` extractor in the dialects below and chunked by `markup`
+  (docs/SOURCE_US_CFR.md). The structure is the XML's: every heading names its unit, so the
+  patterns below are label rules and never promote text. Identity is read per part from the
+  headings in force, because one volume holds many parts from several agencies.
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<CFRDOC\b', '<ECFR\b', 'TYPE="PART"']
+  min_hits: 1
+
+extract:
+  # Every element name, heading location and marker rule is the dialect's, not the code's.
+  # Resolved by the loader, so `structure_hash` covers them and a corrected rule re-extracts.
+  xml:
+    dialects: [gpo_cfr@1.0, ecfr@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here; the structurer
+  # counts any heading whose unit or level disagrees, and the tests pin that count at zero.
+  from_markup: true
+  units:
+    - {name: title, level: 1, pattern: '^Title\s+\d+'}
+    - {name: subtitle, level: 2, pattern: '^Subtitle\s+\w+'}
+    - {name: chapter, level: 3, pattern: '^CHAPTER\s+[IVXLCDM\d]+'}
+    - {name: subchapter, level: 4, pattern: '^SUBCHAPTER\s+\w+'}
+    # The part is what the `chapter` column holds: the unit a reader names after the title.
+    - {name: part, level: 5, pattern: '^PARTS?\s+\d+', role: chapter}
+    - {name: subpart, level: 6, pattern: '^Subpart\s+\w+'}
+    - {name: subjgrp, level: 7, pattern: '^.'}
+    - {name: section, level: 8, pattern: '^§', role: article}
+    - {name: appendix, level: 8, pattern: '^Appendix', role: article}
+
+identity:
+  markup:
+    scope: part
+    facts:
+      regulation_type: "CFR"
+      regulation_number: "{title.number} CFR Part {part.number}"
+      # The chapter is the issuing agency (`CHAPTER I—ENVIRONMENTAL PROTECTION AGENCY`);
+      # a part directly under a subtitle has none, and the field stays empty.
+      enacting_body: "{chapter.name}"
+      about: "{part.name}"
+      year: "{title.year}"
+      # The edition's date: `Revised as of January 1, 2026` for the CFR, the last amendment
+      # for the eCFR. ISO, so it sorts.
+      effective_date: "{title.date}"
+    identifier:
+      section: "{title.number} CFR {section.number}"
+      appendix: "{title.number} CFR {appendix.marker}"
+      part: "{title.number} CFR Part {part.number}"
+      subpart: "{title.number} CFR Part {part.number} Subpart {subpart.number}"
+      subjgrp: "{title.number} CFR Part {part.number}"
+      title: "{title.number} CFR"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per section or appendix; longer ones split into `part n of m` on paragraph
+    # boundaries. ! Determined, ✗ measured: no CFR eval set exists yet.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    # What the embedder sees before the body:
+    #
+    #   Citation: 2 CFR 170.105
+    #   Agency: OFFICE OF MANAGEMENT AND BUDGET GOVERNMENT-WIDE GUIDANCE ...
+    #   Location: Title 2—Federal Financial Assistance › ... › § 170.105 Applicability.
+    #
+    # ✗ the edition date: it changes every year while the text may not.
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Agency: {enacting_body}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      regulation_number: 0.95
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+# 1.1 against 1.0: `signals`, read from finished chunks by `ravel signals` (docs/SOURCE_US_CFR.md
+# §5). Excluded from the chunk cache key: nothing above changed, and no chunk changes with it.
+signals:
+  context:
+    # The title a bare `§ 52.21` belongs to: the chunk's own.
+    regulation_number: '^(?P<title>\d+) CFR'
+  lists:
+    cfr_references:
+      - {pattern: '\b(?P<title>\d{1,2})\s+CFR\s+(?P<ref>\d+\.\d+[a-z]?(?:-\d+[a-z]?)?)', format: '{title} CFR {ref}'}
+      - {pattern: '\b(?P<title>\d{1,2})\s+CFR\s+[Pp]arts?\s+(?P<ref>\d+)', format: '{title} CFR Part {ref}'}
+      - {pattern: '§§?\s*(?P<ref>\d+\.\d+[a-z]?(?:-\d+[a-z]?)?)', format: '{ctx_title} CFR {ref}'}
+    usc_references:
+      - {pattern: '\b(?P<title>\d{1,2})\s+U\.\s?S\.\s?C\.\s+(?:§+\s*)?(?P<sec>\d+[a-z]*(?:-\d+[a-z]?)?)', format: '{title} U.S.C. {sec}'}
+    public_laws:
+      - {pattern: '\bPub(?:lic|\.)?\s*L(?:aw|\.)?\s*(?:No\.\s*)?(?P<n>\d{2,3}-\d{1,4})', format: 'Pub. L. {n}'}
+    fr_references:
+      - {pattern: '\b(?P<vol>\d{1,3})\s+FR\s+(?P<page>\d{1,6})\b', format: '{vol} FR {page}'}
+  blocks:
+    # A part's `Authority:` and `Source:` hold for every chunk of the part.
+    authority: {kind: authority, scope: regulation_number}
+    authority_usc:
+      kind: authority
+      scope: regulation_number
+      pattern: {pattern: '\b(?P<title>\d{1,2})\s+U\.\s?S\.\s?C\.\s+(?P<sec>\d+[a-z]*(?:-\d+[a-z]?)?)', format: '{title} U.S.C. {sec}'}
+    # A subpart may state its own source; the part's holds where it does not.
+    source: {kind: source, scope: regulation_number, nearest: true}
+    # A section's `[54 FR 36119, Aug. 31, 1989, as amended at ...]`: every dated FR citation,
+    # and the latest date, which is when the section last changed.
+    amendments:
+      tag: CITA
+      scope: identifier
+      pattern: {pattern: '(?P<vol>\d{1,3})\s+FR\s+(?P<page>\d{1,6}),\s+(?P<date>[A-Z][a-z]{2,8}\.?\s+\d{1,2},\s+\d{4})', format: '{vol} FR {page}, {date}'}
+    effective_date_note: {kind: effective_date_note, scope: identifier}
+  # A chapter or part that runs over volumes repeats its heading as `... (CONTINUED)`.
+  heading_strip: '\s*\(continued\)\s*$'
+  definitions:
+    # `(b) Dealer means ...`, the term set in italics by the XML.
+    pattern: '^(?:\(\s?(?:[a-z]{1,3}|\d{1,3}|[A-Z]{1,2})\s?\)\s*)*(?P<term>[A-Za-z][^.;:]{0,80}?)\s+(?:means|has the (?:same )?meaning|includes|refers to|is defined)\b'
+    emphasised: true
+  outline:
+    # 1 CFR 21.11: (a), (1), (i), (A), then italic (1) and (i).
+    # GPO sets the fifth level's numbers in italics, read as `( 1 )`: space inside is allowed.
+    marker: '^((?:\(\s?(?:[a-z]{1,3}|\d{1,3}|[ivxlcdm]+|[A-Z]{1,3})\s?\)\s?)+)'
+    levels: [lower, digit, roman, upper, digit, roman]
+    # `(g) Invoice. (1) The Contractor ...`, `(5) Prohibited uses —(i) Use ...`: a paragraph
+    # heading, then the first subparagraph's marker on the same line.
+    inline: '^(?:\(\s?[^()\s]{1,5}\s?\)\s?)+(?:[^()]|\([^()]{6,}\))+?(?:\.|—)\s*((?:\(\s?(?:[a-z]{1,3}|\d{1,3}|[ivxlcdm]+|[A-Z]{1,3})\s?\)\s?)+)'
+    scope: identifier

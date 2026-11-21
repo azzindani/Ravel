@@ -765,6 +765,110 @@ class QualitySpec(Base):
         return self
 
 
+class SignalPattern(Base):
+    """One way a value is written: a pattern, and how its named groups are cited."""
+
+    pattern: str
+    format: str
+    """`{group}`: a named group of `pattern`; `{ctx_<group>}`: one of `signals.context`."""
+    ignorecase: bool = False
+
+
+class BlockSignal(Base):
+    """The text of the blocks the extractor tagged, gathered over a scope."""
+
+    kind: str | None = None
+    """`attrs.kind` of the blocks (`authority`, `effective_date_note`)."""
+    tag: str | None = None
+    """`attrs.tag` of the blocks (`CITA`)."""
+    scope: str = "chunk"
+    """`chunk`, or a chunk field whose equal values share the result (`regulation_number`:
+    a part's authority is every one of its chunks' authority)."""
+    pattern: SignalPattern | None = None
+    """Read values out of the text instead of keeping it whole."""
+    nearest: bool = False
+    """Of the blocks gathered over the scope, only those printed in the deepest unit that
+    encloses the chunk: a subpart's own `Source:` instead of every source in the part."""
+
+    @model_validator(mode="after")
+    def _selects(self) -> Self:
+        if self.nearest and self.scope == "chunk":
+            raise ValueError("`nearest` chooses among a scope's blocks; it needs a scope")
+        if not (self.kind or self.tag):
+            raise ValueError("a block signal names the blocks by `kind` or `tag`")
+        if self.scope != "chunk" and self.scope not in CHUNK_FIELDS:
+            raise ValueError(f"signal scope {self.scope!r} is not a chunk field")
+        return self
+
+
+class DefinitionSignal(Base):
+    """A paragraph that defines a term: the term is a named group `term`."""
+
+    pattern: str
+    emphasised: bool = True
+    """Keep a term only if the extractor recorded it in italics (`attrs.emphasis`)."""
+
+
+class OutlineSignal(Base):
+    """An outline of paragraph markers, `(a)(1)(i)(A)`, resolved to full designations.
+
+    `levels` names each depth's numbering, outermost first: `lower` (a, b), `digit`
+    (1, 2), `roman` (i, ii), `upper` (A, B). A marker that fits two levels (`(i)` is a
+    letter after `(h)` and a numeral after `(1)`) is read as the one that continues.
+    """
+
+    marker: str
+    """Matches the run of markers opening a paragraph; group 1 is the run."""
+    levels: list[Literal["lower", "digit", "roman", "upper"]]
+    scope: str = "identifier"
+    """Chunk field over whose chunks the outline continues (a split section)."""
+    inline: str | None = None
+    """Matches a run of markers printed after a paragraph's own heading, `(g) Invoice. (1)
+    The Contractor ...`; group 1 is the run. Read as deeper than the leading markers."""
+
+
+class SignalsSpec(Base):
+    """What the `signals` enricher reads out of finished chunks (`SOURCE_US_CFR.md` §5).
+
+    Read after chunking and excluded from the chunk cache key, like `relations`: a pattern
+    corrected here re-runs a CPU pass and touches no chunk or vector.
+    """
+
+    context: dict[str, str] = Field(default_factory=dict)
+    """Chunk field -> pattern whose named groups are `{ctx_<group>}` in a format."""
+    lists: dict[str, list[SignalPattern]] = Field(default_factory=dict)
+    """Column -> the ways its values are written in a chunk's body. Distinct, in order."""
+    blocks: dict[str, BlockSignal] = Field(default_factory=dict)
+    definitions: DefinitionSignal | None = None
+    outline: OutlineSignal | None = None
+    heading_strip: str | None = None
+    """Removed from each heading before `nearest` compares heading paths: a unit that runs
+    over volumes repeats its heading with a suffix (`(CONTINUED)`) that is not its name."""
+
+    @model_validator(mode="after")
+    def _compiles(self) -> Self:
+        patterns = [*self.context.values()]
+        if self.heading_strip:
+            patterns.append(self.heading_strip)
+        patterns += [p.pattern for ps in self.lists.values() for p in ps]
+        patterns += [b.pattern.pattern for b in self.blocks.values() if b.pattern]
+        if self.definitions:
+            patterns.append(self.definitions.pattern)
+        if self.outline:
+            patterns.append(self.outline.marker)
+            if self.outline.inline:
+                patterns.append(self.outline.inline)
+        for pattern in patterns:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"signals pattern {pattern!r}: {exc}") from exc
+        unknown = set(self.context) - CHUNK_FIELDS
+        if unknown:
+            raise ValueError(f"signals.context names unknown chunk fields {sorted(unknown)}")
+        return self
+
+
 class ProfileSpec(Base):
     """The whole file. Validated from YAML; hashed into every downstream cache key."""
 
@@ -781,6 +885,7 @@ class ProfileSpec(Base):
     relations: RelationsSpec = Field(default_factory=RelationsSpec)
     quality: QualitySpec = Field(default_factory=QualitySpec)
     extract: dict[str, Any] = Field(default_factory=dict)
+    signals: SignalsSpec | None = None
 
     @model_validator(mode="after")
     def _markup_units_declared(self) -> Self:
@@ -791,6 +896,24 @@ class ProfileSpec(Base):
         unknown = markup.units_named() - declared
         if unknown:
             raise ValueError(f"identity.markup names undeclared units: {sorted(unknown)}")
+        return self
+
+    @model_validator(mode="after")
+    def _xml_dialects_valid(self) -> Self:
+        """`extract.xml`: every dialect valid, and every unit it emits declared at a level."""
+        if "xml" not in self.extract:
+            return self
+        from spec.xml_dialect import XmlOptions
+
+        options = XmlOptions.model_validate(self.extract["xml"])
+        declared = {u.name for u in self.structure.units}
+        for dialect in options.dialects:
+            missing = dialect.units.names() - declared
+            if missing:
+                raise ValueError(
+                    f"dialect {dialect.ref} emits units the profile does not declare in "
+                    f"structure.units: {sorted(missing)}"
+                )
         return self
 
     @property
@@ -814,7 +937,10 @@ class ProfileSpec(Base):
         # ! `relations` is read from finished chunks and changes none of them, so a rule
         # corrected there must not invalidate a million chunks. It has its own hash. `quality`
         # is the same: it judges finished chunks and changes none of them.
-        return _digest(self.model_dump(mode="json", exclude={"relations", "quality"}))
+        # `signals` is the same again: read from finished chunks by the signals enricher.
+        return _digest(
+            self.model_dump(mode="json", exclude={"relations", "quality", "signals"})
+        )
 
     @property
     def relations_hash(self) -> str:
