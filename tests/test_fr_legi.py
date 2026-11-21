@@ -280,3 +280,16 @@ def test_the_corpus_loads() -> None:
     corpus = CorpusSpec.find("fr_legi")
     assert corpus.extract.profile == "fr_legi@1.0"
     assert corpus.provenance.url_for("a.tar.gz") == f"{corpus.provenance.base_url}a.tar.gz"
+
+
+def test_archive_index_refuses_a_glob_matching_nothing(tmp_path: Path) -> None:
+    dump = _tar({"legi/global/code_et_TNC_en_vigueur/a.xml": b"<x/>"})
+    index = b'<a href="Freemium_legi_global_20261108-140000.tar.gz">new</a>'
+
+    def opener(url: str, headers: dict[str, str], timeout: float) -> io.BytesIO:
+        return io.BytesIO(dump if url.endswith(".tar.gz") else index)
+
+    # The corpus's glob expects an edition folder first; the full dump has none.
+    with pytest.raises(ValueError, match="no member matches"):
+        Fetcher(_legi_corpus(tmp_path), opener=opener, sleep=lambda _: None).run()
+    assert not (tmp_path / "current.txt").exists()

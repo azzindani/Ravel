@@ -388,6 +388,10 @@ class Fetcher:
                 }
                 manifest.write(json.dumps(entry, ensure_ascii=False) + "\n")
                 members.append(relative)
+        if not members:
+            # ! An archive whose members the globs never match is a corpus of nothing, and
+            # a wrong glob, not an empty edition.
+            raise ValueError(f"{item.path}: no member matches fetch.paths {self.spec.paths}")
         members.sort()
         done.write_text("".join(m + "\n" for m in members), encoding="utf-8", newline="\n")
         return members

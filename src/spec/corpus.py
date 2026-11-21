@@ -67,7 +67,7 @@ class FetchSpec(Base):
     paths: list[str] = Field(default_factory=list)
     """`github`: the repository paths that make the corpus, as globs (`eng/acts/*.xml`).
     `archive_index`: the archive members unpacked, as globs
-    (`*/legi/global/code_et_TNC_en_vigueur/*`)."""
+    (`legi/global/code_et_TNC_en_vigueur/*`)."""
     archive: str | None = None
     """`archive_index`: the archive's file name, as a regex whose `edition` group dates it
     (`^Freemium_legi_global_(?P<edition>\\d{8}-\\d{6})\\.tar\\.gz$`). `edition: latest` takes

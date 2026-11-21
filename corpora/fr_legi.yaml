@@ -19,8 +19,9 @@ fetch:
   edition: latest
   # The full dump. The daily increments after it are not applied: a corpus is one dump.
   archive: '^Freemium_legi_global_(?P<edition>\d{8}-\d{6})\.tar\.gz$'
-  # The texts in force only; `code_et_TNC_non_vigueur` holds the repealed ones.
-  paths: ["*/legi/global/code_et_TNC_en_vigueur/*"]
+  # The texts in force only; `code_et_TNC_non_vigueur` holds the repealed ones. ! The full
+  # dump's members start at `legi/`; an increment's start at its own date (`20261120-222218/`).
+  paths: ["legi/global/code_et_TNC_en_vigueur/*"]
   # A text's documents are its tables of contents; its articles and sections are read
   # through the struct's links.
   documents: ["texte/struct/*.xml"]
