@@ -84,9 +84,15 @@ signals:
       - {pattern: '\bC\.R\.C\.,\s*c\.\s*(?P<n>\d+)', format: 'C.R.C., c. {n}'}
   blocks:
     # The Acts a regulation is made under, for every chunk of the regulation.
-    authority: {kind: authority, scope: regulation_number}
+    authority:
+      kind: authority
+      scope: regulation_number
+      pattern: {pattern: '^(?P<act>\S.*\S)$', format: '{act}'}
     # A section's history: `2019, c. 18, s. 2`, `SOR/2019-12, s. 3`, one per item.
-    amendments: {kind: historical_note, scope: identifier}
+    amendments:
+      kind: historical_note
+      scope: identifier
+      pattern: {pattern: '(?P<ref>[^;\s][^;]*[^;\s])', format: '{ref}'}
     # The instrument's latest amendments, with dates (`SOR/2025-123, 2025-06-01`).
     recent_amendments:
       kind: recent_amendments

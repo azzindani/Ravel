@@ -86,8 +86,8 @@ second section 5. They are read as text of kind `related_provisions` instead. `A
 |---|---|
 | `statute_references` | `R.S.C., 1985, c. A-1`, `S.C. 2019, c. 18` in the body |
 | `regulation_references` | `SOR/2016-12`, `SI/2004-48`, `C.R.C., c. 870` in the body |
-| `authority` | `EnablingAuthority`: the Acts a regulation is made under, for each of its chunks |
-| `amendments` | the section's `HistoricalNote`: `R.S., 1985, c. A-1, s. 2; 2019, c. 18, s. 2` |
+| `authority` | `EnablingAuthority`: the Acts a regulation is made under, one value each (`items`: they are printed with nothing between them), for each of its chunks |
+| `amendments` | the section's `HistoricalNote`, one value per citation: `R.S., 1985, c. A-1, s. 2`, `2019, c. 18, s. 2` |
 | `recent_amendments`, `recent_amendments_latest` | the instrument's `RecentAmendments`, with dates |
 | `defined_terms` | `X means ...` where `X` is a `DefinedTermEn` |
 | `paragraph_first`, `paragraph_last` | `(1)` to `(2)(a)(i)`: subsection, paragraph, subparagraph, clause |
@@ -131,6 +131,10 @@ ravel signals ca_laws -w $W                         # 39 s
 
 One repeated section number remains, and it is the text's: N-16.62 enacts two sections
 `15.1`.
+
+**Published** as the public dataset
+[`Azzindani/CA_LAWS_2611`](https://huggingface.co/datasets/Azzindani/CA_LAWS_2611)
+(commit `0bc3e81`): 166,569 rows, 37 columns, with `sources/manifest.jsonl` and the snapshot.
 
 | signal | coverage | why |
 |---|---|---|

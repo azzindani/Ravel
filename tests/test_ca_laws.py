@@ -27,7 +27,8 @@ REGULATION = f"""<?xml version="1.0" encoding="utf-8"?>
   <Identification>
     <InstrumentNumber>SOR/2018-108</InstrumentNumber>
     <EnablingAuthority>
-      <XRefExternal reference-type="act" link="F-27">FOOD AND DRUGS ACT</XRefExternal>
+      <XRefExternal reference-type="act" link="F-27">FOOD AND DRUGS ACT</XRefExternal><XRefExternal
+        reference-type="act" link="S-1.1">SAFE FOOD FOR CANADIANS ACT</XRefExternal>
     </EnablingAuthority>
     <LongTitle>Safe Food for Canadians Regulations</LongTitle>
   </Identification>
@@ -46,6 +47,7 @@ REGULATION = f"""<?xml version="1.0" encoding="utf-8"?>
         </Paragraph>
       </Subsection>
       <HistoricalNote>
+        <HistoricalNoteSubItem>SOR/2017-4, s. 1; SOR/2018-9, s. 2</HistoricalNoteSubItem>
         <HistoricalNoteSubItem>SOR/2019-12, s. 3</HistoricalNoteSubItem>
       </HistoricalNote>
     </Section>
@@ -216,10 +218,16 @@ def test_signals(tmp_path: Path, profile: Any) -> None:
         if not c.attrs.get("kind")
     }
     row = rows["SOR/2018-108, s. 1"]
-    assert row["authority"] == "FOOD AND DRUGS ACT"
-    assert row["amendments"] == "SOR/2019-12, s. 3"
+    # Two Acts printed with nothing between them: two values, not one glued name.
+    assert row["authority"] == ["FOOD AND DRUGS ACT", "SAFE FOOD FOR CANADIANS ACT"]
+    assert row["amendments"] == ["SOR/2017-4, s. 1", "SOR/2018-9, s. 2", "SOR/2019-12, s. 3"]
     assert row["defined_terms"] == ["food"]
-    assert row["regulation_references"] == ["SOR/2016-12", "SOR/2019-12"]
+    assert row["regulation_references"] == [
+        "SOR/2016-12",
+        "SOR/2017-4",
+        "SOR/2018-9",
+        "SOR/2019-12",
+    ]
     assert (row["paragraph_first"], row["paragraph_last"]) == ("(1)", "(2)(a)(i)")
     assert row["recent_amendments"] == ["SOR/2025-242, 2026-10-01", "SOR/2024-7, 2024-02-01"]
     assert row["recent_amendments_latest"] == "2026-10-01"

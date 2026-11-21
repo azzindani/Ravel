@@ -157,6 +157,8 @@ quoted: [BillPiece, RegulationPiece, RelatedOrNotInForce, AmendedText, ReadAsTex
 # ! Justice Canada closes every quote: a related provision that quotes a whole amending
 # schedule (N-3.4, SOR-2002-227) is still quoted, and its sections are not this Act's.
 quotes_run_on: false
+# One `XRefExternal` per enabling Act, printed with nothing between them.
+items: [EnablingAuthority]
 reserved_text: [Reserved]
 
 text:

@@ -228,6 +228,10 @@ class XmlDialect(_Base):
     #: quote then ends at a unit that cannot be part of it. A publisher whose quotes always
     #: close says false, and a quoted amendment holding a whole schedule stays quoted.
     quotes_run_on: bool = True
+    #: Containers whose children are items, each read as its own paragraph even when they
+    #: are inline markup: `<EnablingAuthority>` lists one `<XRefExternal>` per Act, printed
+    #: with nothing between them.
+    items: list[str] = Field(default_factory=list)
     #: An element that stands for `[Reserved]` text in a body: counted, not read.
     reserved_text: list[str] = Field(default_factory=list)
     text: Text = Field(default_factory=Text)
@@ -255,6 +259,8 @@ class XmlDialect(_Base):
                 raise ValueError(f"{self.ref}: names unknown unit {name!r}")
         if self.document.top and self.document.top not in self.units.tags:
             raise ValueError(f"{self.ref}: document.top {self.document.top} is not a unit tag")
+        if stray := set(self.items) - set(self.containers):
+            raise ValueError(f"{self.ref}: item lists must be containers: {sorted(stray)}")
         if stray := set(self.quoted) - set(self.containers):
             raise ValueError(f"{self.ref}: quoted elements must be containers: {sorted(stray)}")
         roles = {

@@ -243,4 +243,5 @@ says so: "determined, ✗ measured".
 | Canada | the GPO runaway-quote rule ended well-formed quotes holding a schedule | `quotes_run_on: false` for a publisher whose quotes close |
 | Canada | coordinate schedules became 245,616-token table chunks | `markup` 1.1 splits a table by rows under `max_tokens` |
 | Canada | `2026-10-01` was no date to the signals | ISO dates are read as well as `Oct. 1, 2026` |
+| Canada | enabling Acts printed as adjacent inline links read as one name, `FOOD AND DRUGS ACTSEEDS ACT` | `items`: each child its own paragraph; read the signal values before publishing |
 | HF | an upload sent every byte and stalled before its commit | verify the commit on the Hub, never the exit code |

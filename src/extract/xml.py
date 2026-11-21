@@ -482,6 +482,12 @@ class XmlExtractor:
             return
 
         containers = d.dialect.containers
+        if tag in d.dialect.items and not quoted:
+            for child in element:
+                self._paragraph(
+                    self._text(child, d), state, kind=containers.get(tag) or kind, tag=child.tag
+                )
+            return
         block_children = [c for c in element if c.tag not in d.inline]
         if not (tag in d.leaves or tag in containers or tag in d.inline):
             state.unknown[tag] += 1
