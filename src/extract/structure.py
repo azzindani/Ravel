@@ -69,6 +69,8 @@ class Structurer:
         return bool(self.profile.option("trust_typography", False))
 
     def apply(self, doc: CanonicalDoc) -> CanonicalDoc:
+        if self.profile.spec.structure.from_markup:
+            return self._from_markup(doc)
         builder = BlockBuilder()
         promoted = demoted = 0
 
@@ -112,6 +114,36 @@ class Structurer:
                 "blocks": builder.blocks,
                 "extraction": doc.extraction.model_copy(update={"params": params}),
             }
+        )
+
+    def _from_markup(self, doc: CanonicalDoc) -> CanonicalDoc:
+        """Keep the extractor's headings: the markup stated them (`from_markup`).
+
+        ! Nothing is re-guessed from text. A CFR paragraph opening `Subpart B of this part`
+        is prose, and a pattern pass would promote it. What is checked is the contract: a
+        heading names a declared unit at the declared level. A disagreement is counted, not
+        repaired -- relevelling here would leave every `heading_path` built at the old
+        levels, and the counts are what a test pins at zero.
+        """
+        levels = {u.name: u.level for u in self.profile.units}
+        undeclared = mismatched = 0
+        for block in doc.blocks:
+            if block.type is not BlockType.HEADING:
+                continue
+            unit = str(block.attrs.get("unit", ""))
+            if unit not in levels:
+                undeclared += 1
+            elif levels[unit] != block.level:
+                mismatched += 1
+        params = dict(doc.extraction.params) | {
+            "profile": self.profile.ref,
+            "profile_hash": self.profile.config_hash,
+            "structure": "markup",
+            "headings_undeclared": undeclared,
+            "headings_level_mismatch": mismatched,
+        }
+        return doc.model_copy(
+            update={"extraction": doc.extraction.model_copy(update={"params": params})}
         )
 
     def _unit_for(self, block: Block) -> Unit | None:

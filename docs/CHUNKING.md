@@ -31,6 +31,7 @@ Chunkers shipped / planned:
 |---|---|---|---|
 | `unit` | the profile's deepest units, then its sub-units | regulations, contracts, anything with citable structure | **built** |
 | `heading` | heading levels, configurable depth | general structured documents | **built** |
+| `markup` | every heading the markup states; identity per scope from heading attributes | XML sources holding many documents (the CFR, `SOURCE_US_CFR.md` §4) | **built** |
 | `token` | flat token budget with overlap | the baseline to beat | **built** |
 | `table` | one chunk per table (plus caption + heading) | tabular corpora | folded into `Builder.tables()` |
 | `semantic` | embedding-similarity boundaries | experimental arm | planned |

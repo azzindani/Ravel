@@ -1,0 +1,30 @@
+id: us_ecfr
+title: US Electronic Code of Federal Regulations (eCFR, daily)
+description: >
+  The eCFR from the versioner API, one XML per title pinned to the title's own
+  up-to-date date (docs/SOURCE_US_CFR.md). Current to the day, but an editorial compilation
+  and not an official legal edition of the CFR: build us_cfr where a citation must hold.
+
+sources:
+  root: sources/US_ECFR
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: ecfr
+  listing: https://www.ecfr.gov/api/versioner/v1/titles.json
+  files: https://www.ecfr.gov/api/versioner/v1/full/
+  edition: latest
+  delay_s: 1.0
+
+provenance:
+  base_url: https://www.ecfr.gov/api/versioner/v1/full/
+  note: eCFR versioner API, full title XML on the date in the path.
+
+extract:
+  profile: us_cfr@1.0
+  extractors: [cfr_xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup

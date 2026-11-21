@@ -128,13 +128,23 @@ def _heading_path(doc: CanonicalDoc) -> list[Issue]:
     """
     issues: list[Issue] = []
     stack: list[tuple[int, str]] = []
+    # ! A source whose markup states where a unit ends (`structure: markup`, XML) may close
+    # a heading before the next one opens: a section after a subject group in the same
+    # subpart is not in the group. There, and only there, a path may be a *prefix* of the
+    # level stack. It still may not be longer, reordered or invented, so the sibling-nesting
+    # defect above is caught exactly as before.
+    closes = doc.extraction.params.get("structure") == "markup"
 
     for block in doc.ordered():
         if block.type is BlockType.HEADING:
             level = block.level or 1
+            if closes and _is_prefix(block.heading_path[:-1], stack):
+                del stack[len(block.heading_path) - 1 :]
             while stack and stack[-1][0] >= level:
                 stack.pop()
             stack.append((level, block.text))
+        elif closes and _is_prefix(block.heading_path, stack):
+            del stack[len(block.heading_path) :]
         expected = [t for _, t in stack]
         if block.heading_path != expected:
             issues.append(
@@ -146,6 +156,10 @@ def _heading_path(doc: CanonicalDoc) -> list[Issue]:
                 )
             )
     return issues
+
+
+def _is_prefix(path: list[str], stack: list[tuple[int, str]]) -> bool:
+    return len(path) <= len(stack) and [t for _, t in stack[: len(path)]] == path
 
 
 # -- rule 5 ------------------------------------------------------------------

@@ -165,8 +165,10 @@ right early.
 
 ## 6. Where Ravel does not go
 
-- **Collection.** No crawling, no downloading, no site-specific scrapers. Sources arrive
-  as files. `Krawl` owns that.
+- **Collection.** No crawling, no site-specific scrapers. Sources arrive as files. `Krawl`
+  owns that. The exception is a declared publisher bulk listing (`fetch:` in a corpus):
+  the exact files it names, to the publisher's paths, so provenance is exact by
+  construction (`SOURCE_US_CFR.md` §2).
 - **Serving.** No query path, no API, no MCP surface. Vera owns that.
 - **Generation.** Ravel may call an LLM as an *enricher* (summaries, QA pairs, entity
   extraction), and that output is a disposable signal — never a substitute for the

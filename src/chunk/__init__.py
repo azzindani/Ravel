@@ -9,6 +9,7 @@ cheapest stage to re-run — which is exactly why the Phase A boundary exists.
 # on a machine where nothing else happened to import the module. Order is irrelevant
 # — these pull in `chunk.base`, which does not import this package back.
 from chunk import heading as _heading  # noqa: E402, F401  (registration)
+from chunk import markup as _markup  # noqa: E402, F401  (registration)
 from chunk import unit as _unit  # noqa: E402, F401  (registration)
 from chunk.base import (
     BODY_TYPES,

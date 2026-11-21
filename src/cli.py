@@ -207,6 +207,57 @@ def sources_scan(
         out.print(f"[bold]{written:,}[/bold] entries -> {manifest}")
 
 
+@sources_app.command("fetch")
+def sources_fetch(
+    corpus_id: CorpusArg,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="List what would be fetched; download nothing.")
+    ] = False,
+) -> None:
+    """Fetch a corpus's declared bulk listing into its sources root (`SOURCE_US_CFR.md` §2).
+
+    Recurrent: rerun it to take what was published since. Never overwrites a file; writes
+    the snapshot list only when every wanted file is present.
+    """
+    from sources.fetch import Fetcher
+
+    spec = CorpusSpec.find(corpus_id)
+    fetcher = Fetcher(spec)
+
+    def progress(report: Any, item: Any) -> None:
+        err.print(
+            f"[dim]{report.downloaded:,}/{report.wanted:,}[/dim] {item.path} "
+            f"[dim]{report.bytes / 1e6:,.1f} MB[/dim]"
+        )
+
+    report = fetcher.run(dry_run=dry_run, on_progress=progress)
+    summary = RichTable(show_header=False, box=None)
+    summary.add_row("corpus", spec.id)
+    summary.add_row("root", spec.sources.root)
+    summary.add_row("wanted", f"{report.wanted:,}")
+    summary.add_row("present", f"{report.present:,}")
+    summary.add_row(
+        "downloaded", f"[bold]{report.downloaded:,}[/bold]  ({report.bytes / 1e6:,.1f} MB)"
+    )
+    summary.add_row("conflicts", f"{len(report.conflicts):,}")
+    summary.add_row("failed", f"{len(report.failed):,}")
+    editions: dict[str, int] = {}
+    for edition in report.editions.values():
+        editions[edition] = editions.get(edition, 0) + 1
+    summary.add_row("editions", "  ".join(f"{k} x{v}" for k, v in sorted(editions.items())))
+    summary.add_row("snapshot", report.snapshot or "[yellow]not written[/yellow]")
+    summary.add_row("elapsed", f"{report.seconds:.1f}s")
+    out.print(summary)
+    for group, why in sorted(report.held.items()):
+        err.print(f"[yellow]held[/yellow] {group}: {why}")
+    for problem in report.conflicts[:10]:
+        err.print(f"[yellow]conflict[/yellow] {problem}")
+    for path, reason in report.failed[:10]:
+        err.print(f"[red]failed[/red] {path} {reason}")
+    if report.failed:
+        raise typer.Exit(1)
+
+
 REMOTE = Annotated[
     str,
     typer.Option(

@@ -157,6 +157,11 @@ class StructureSpec(Base):
     """`article` label for what precedes the first marker: the title block of a regulation
     is its `Pembukaan`, and a chunk with no label at all cannot be cited."""
     explanation: ExplanationSpec | None = None
+    from_markup: bool = False
+    """The source's markup states its structure (XML: `SOURCE_US_CFR.md` §3). Headings are
+    the extractor's, each naming its unit in `attrs.unit`; the structurer keeps them as they
+    are and never promotes a line of text to a heading. A pattern is then a label rule
+    only. The units must be declared at the levels the extractor gives them."""
 
     @model_validator(mode="after")
     def _names_unique(self) -> Self:
@@ -165,6 +170,57 @@ class StructureSpec(Base):
         if duplicates:
             raise ValueError(f"duplicate structural unit names: {sorted(duplicates)}")
         return self
+
+
+_TEMPLATE_FIELD = re.compile(r"\{(\w+)\.(\w+)\}")
+_FACT_FIELDS = frozenset(
+    {"regulation_type", "enacting_body", "regulation_number", "year", "about", "effective_date"}
+)
+
+
+class MarkupIdentity(Base):
+    """Identity read from the headings in force, for a document that holds many
+    (`SOURCE_US_CFR.md` §4). A CFR volume carries dozens of parts from several agencies;
+    one reading of its opening text would stamp them all with the first one's.
+
+    Templates name `{unit.attr}`: an attribute the extractor stated on the heading of that
+    unit currently in force (`{part.number}`, `{chapter.name}`). ! A template with any value
+    missing yields None, never a partial string: `2 CFR Part ` is a citation that resolves
+    to nothing, and a NULL can be counted.
+    """
+
+    scope: str
+    """The unit at which the facts are re-read: every chunk under one `part` shares them."""
+    facts: dict[str, str] = Field(default_factory=dict)
+    """`Facts` field -> template. A template with no `{...}` is a constant."""
+    identifier: dict[str, str] = Field(default_factory=dict)
+    """Unit -> the citation of a chunk whose deepest unit in force is that one."""
+
+    @model_validator(mode="after")
+    def _known_fields(self) -> Self:
+        unknown = set(self.facts) - _FACT_FIELDS
+        if unknown:
+            raise ValueError(f"identity.markup.facts: unknown fields {sorted(unknown)}")
+        return self
+
+    @staticmethod
+    def render(template: str, in_force: dict[str, dict[str, Any]]) -> str | None:
+        missing = False
+
+        def value(match: re.Match[str]) -> str:
+            nonlocal missing
+            found = str(in_force.get(match.group(1), {}).get(match.group(2)) or "").strip()
+            missing = missing or not found
+            return found
+
+        out = _TEMPLATE_FIELD.sub(value, template)
+        return None if missing else (re.sub(r"\s+", " ", out).strip() or None)
+
+    def units_named(self) -> set[str]:
+        names = {self.scope, *self.identifier}
+        for template in (*self.facts.values(), *self.identifier.values()):
+            names.update(unit for unit, _ in _TEMPLATE_FIELD.findall(template))
+        return names
 
 
 class IdentitySpec(Base):
@@ -229,6 +285,9 @@ class IdentitySpec(Base):
     """Other spellings of a month -> the name in `months` (`Pebruari` -> `Februari`)."""
 
     flags: list[str] = Field(default_factory=list)
+
+    markup: MarkupIdentity | None = None
+    """Identity from heading attributes instead of patterns; read by the `markup` chunker."""
 
     @model_validator(mode="after")
     def _known_flags(self) -> Self:
@@ -722,6 +781,17 @@ class ProfileSpec(Base):
     relations: RelationsSpec = Field(default_factory=RelationsSpec)
     quality: QualitySpec = Field(default_factory=QualitySpec)
     extract: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _markup_units_declared(self) -> Self:
+        markup = self.identity.markup
+        if markup is None:
+            return self
+        declared = {u.name for u in (*self.structure.units, *self.structure.sections)}
+        unknown = markup.units_named() - declared
+        if unknown:
+            raise ValueError(f"identity.markup names undeclared units: {sorted(unknown)}")
+        return self
 
     @property
     def ref(self) -> str:

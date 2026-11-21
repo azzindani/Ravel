@@ -153,6 +153,16 @@ class BlockBuilder:
         self._blocks.append(block)
         return block
 
+    def close(self, level: int) -> None:
+        """End the open heading at `level` and everything under it.
+
+        For sources whose markup says where a unit ends (XML). Without it the stack only
+        pops when the next heading arrives, so a section that follows a subject group in
+        the same subpart would carry the group in its path.
+        """
+        while self._stack and self._stack[-1][0] >= level:
+            self._stack.pop()
+
     @property
     def blocks(self) -> list[Block]:
         return self._blocks

@@ -1,0 +1,34 @@
+id: us_cfr
+title: US Code of Federal Regulations (official annual edition)
+description: >
+  The CFR as published by GPO on govinfo: the newest annual edition of every title, one XML
+  per printed volume (docs/SOURCE_US_CFR.md). Official: prima facie evidence of the original
+  documents (44 U.S.C. 1510). Fetched by `ravel sources fetch us_cfr`; sources are read-only
+  and not in git. Build each snapshot in its own workspace (-w work/us_cfr/<date>).
+
+sources:
+  root: sources/US_CFR
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: govinfo_cfr
+  listing: https://www.govinfo.gov/bulkdata/json/CFR
+  files: https://www.govinfo.gov/bulkdata/CFR/
+  edition: latest
+  lookback: 3
+  delay_s: 1.0
+
+provenance:
+  # ! The path of a file below sources.root is its path below this, by construction
+  # (fetch.files must equal it): every chunk cites the exact govinfo file it was read from.
+  base_url: https://www.govinfo.gov/bulkdata/CFR/
+  note: GPO govinfo CFR bulk data, annual edition XML per volume.
+
+extract:
+  profile: us_cfr@1.0
+  extractors: [cfr_xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup

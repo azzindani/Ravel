@@ -19,6 +19,7 @@ from pathlib import Path
 
 from canon import CANON_VERSION, CanonicalDoc, Severity, validate
 from extract.base import ExtractionFailed, Extractor, Probe
+from extract.cfr import CfrXmlExtractor
 from extract.native import NativeExtractor
 from extract.native import probe as probe_pdf
 from extract.structure import Structurer
@@ -31,7 +32,7 @@ from runtime.shards import (
     generation_of,
     newest_generation,
 )
-from sources import SourceFile, guess_mime, scan
+from sources import SourceFile, guess_mime, read_list, scan
 from spec import Profile, Registry, default_registry
 from spec.corpus import CorpusSpec
 
@@ -179,6 +180,7 @@ class Extraction:
         self.extractors: dict[str, Extractor] = {
             "native": NativeExtractor(),
             "text": TextExtractor(),
+            "cfr_xml": CfrXmlExtractor(),
         }
         self._structurers: dict[str, Structurer] = {}
 
@@ -311,11 +313,18 @@ class Extraction:
         report = RunReport(corpus=self.corpus.id)
         started = time.time()
 
-        files, _ = scan(
+        listed = self.corpus.sources.snapshot
+        files, scanned = scan(
             root,
             self.corpus.sources.include,
             skip_hidden=self.corpus.sources.skip_hidden,
+            only=read_list(root, listed) if listed else None,
         )
+        # ! A snapshot that names a file it does not have is a partial corpus. Counted as
+        # failures, so the tolerance check sees them.
+        for problem in scanned.unreadable:
+            report.failed += 1
+            report.errors.append((problem, "unreadable source"))
         if limit:
             files = files[:limit]
         report.considered = len(files)

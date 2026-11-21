@@ -242,7 +242,9 @@ parsing as a stateless service.
    full config hash.
 8. **Never hardcode the embedding dimension, chunk size, cluster count or batch size.**
    Read from corpus/variant config.
-9. **Never scrape.** Sources are files. Collection belongs to `Krawl`.
+9. **Never scrape.** Sources are files. Collection belongs to `Krawl`. The one exception
+   is a corpus's declared `fetch:` block: a publisher's bulk listing, downloaded file for
+   file to the publisher's own paths, never overwritten (`docs/SOURCE_US_CFR.md` §2).
 10. **Never mutate a published bundle.** A change produces a new bundle version.
 
 ---

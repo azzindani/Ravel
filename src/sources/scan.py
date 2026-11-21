@@ -83,17 +83,32 @@ def walk(root: Path, patterns: Iterable[str] = ("**/*",)) -> Iterator[Path]:
                 yield path
 
 
+def read_list(root: Path, name: str) -> list[str]:
+    """The relative paths a snapshot list names, one per line, `#` for comments.
+
+    ! A listed file that is missing is reported by `scan` as unreadable, never skipped:
+    a snapshot that silently lost a volume is a partial corpus that looks whole.
+    """
+    path = root / name
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
 def scan(
     root: Path,
     patterns: Iterable[str] = ("**/*",),
     *,
     skip_hidden: bool = True,
+    only: Iterable[str] | None = None,
 ) -> tuple[list[SourceFile], ScanReport]:
     """Discover and hash every source file under `root`.
 
     Duplicate content is reported, not dropped: two paths with one hash is a fact
     about the corpus the operator should see, and deciding what it means is not
     this function's job.
+
+    `only` restricts the scan to the relative paths of a snapshot (`read_list`), in
+    their sorted order; `patterns` still apply, so a list cannot widen a corpus.
     """
     now = datetime.now(UTC)
     found: list[SourceFile] = []
@@ -103,7 +118,21 @@ def scan(
     duplicates = 0
     total_bytes = 0
 
-    for path in walk(root, patterns):
+    candidates: Iterable[Path]
+    if only is not None:
+        allowed = set(walk(root, patterns))
+        kept: list[Path] = []
+        for relative in sorted(set(only)):
+            path = root / relative
+            if not path.is_file():
+                unreadable.append(f"{path}: listed but missing")
+            elif path in allowed:
+                kept.append(path)
+        candidates = kept
+    else:
+        candidates = walk(root, patterns)
+
+    for path in candidates:
         if skip_hidden and any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
         try:
@@ -173,6 +202,7 @@ __all__ = [
     "SourceFile",
     "guess_mime",
     "human_bytes",
+    "read_list",
     "read_manifest",
     "scan",
     "sha256_file",

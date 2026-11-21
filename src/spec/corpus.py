@@ -35,6 +35,37 @@ class SourcesSpec(Base):
     root: str
     include: list[str] = Field(default_factory=lambda: ["**/*"])
     skip_hidden: bool = True
+    snapshot: str | None = None
+    """A snapshot list under `root` (relative paths, one per line) that the scan reads
+    instead of walking: `current.txt`, written by `ravel sources fetch`. A fetched mirror
+    keeps every edition it ever downloaded, and a corpus is built from one of them."""
+
+
+class FetchSpec(Base):
+    """A publisher's bulk listing, and which of its files make the corpus
+    (`SOURCE_US_CFR.md` §2).
+
+    ! Not a crawler. `listing` is a machine-readable index the publisher maintains, and
+    every file fetched is one it names, saved under the publisher's own path below
+    `files`. That is what makes `files` the provenance root: the loader refuses a corpus
+    whose `files` is not its `provenance.base_url`.
+    """
+
+    kind: Literal["govinfo_cfr", "ecfr"]
+    listing: str
+    """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`."""
+    files: str
+    """URL prefix of the files; their path below it is their path below `sources.root`."""
+    edition: str = "latest"
+    """`latest` (newest edition of each title), a year (`govinfo_cfr`) or a date (`ecfr`)."""
+    lookback: int = Field(default=3, ge=1)
+    """Editions searched back from the newest for a title the newest does not hold."""
+    titles: list[int] = Field(default_factory=list)
+    """Empty: every title the listing has."""
+    delay_s: float = Field(default=1.0, ge=0)
+    timeout_s: float = Field(default=300, gt=0)
+    retries: int = Field(default=3, ge=0)
+    user_agent: str = "ravel-fetch/1.0"
 
 
 class ProvenanceSpec(Base):
@@ -275,10 +306,25 @@ class CorpusSpec(Base):
     description: str = ""
     sources: SourcesSpec
     provenance: ProvenanceSpec
+    fetch: FetchSpec | None = None
     extract: ExtractSpec = Field(default_factory=ExtractSpec)
     chunk: ChunkSpec = Field(default_factory=ChunkSpec)
     embed: EmbedSpec | None = None
     gate: GateSpec = Field(default_factory=GateSpec)
+
+    @model_validator(mode="after")
+    def _fetch_is_provenance(self) -> Self:
+        # ! A fetched file's path below `files` is its path below `sources.root`, so
+        # `files` IS where the bytes came from. Any other base_url would cite a location
+        # the bytes were never read from.
+        if self.fetch and not self.sources.snapshot:
+            raise ValueError("a corpus with fetch: needs sources.snapshot, the list it writes")
+        if self.fetch and self.fetch.files.rstrip("/") != self.provenance.base_url.rstrip("/"):
+            raise ValueError(
+                f"fetch.files {self.fetch.files!r} must equal provenance.base_url "
+                f"{self.provenance.base_url!r}"
+            )
+        return self
 
     @property
     def config_hash(self) -> str:
