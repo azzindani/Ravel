@@ -101,6 +101,35 @@ Measured on the 1.7M-chunk corpus (12.3 GB):
   tar from its own disk is the second case, not the first.
 * the engine started on the attached data with the bundle-reference canary at cosine 1.00000.
 
+## 4a. A corpus from nothing
+
+```
+docker compose -f docker/compose.vllm.yml up -d          # the embedding server, pinned by digest
+EMBED_API_KEY=local ravel build <corpus> -w work/<corpus>/<date> --out <bundle>     --base-url http://localhost:8000/v1 [--dsn ...]
+```
+
+`build` runs every stage from the publisher to a sealed bundle: fetch, extract, chunk,
+signals, sparse, `verify-backend` (with `--base-url`, before anything is embedded through
+it), embed, bundle, and `load --replace` with `--dsn`. Nothing it needs lives outside git:
+the corpus file says where the publisher is, the profile and dialect how to read it, the
+`embed:` block the vector space, the compose file the server. Each stage keeps a ledger in
+the workspace, so a build that stopped resumes by running the same command.
+
+! A rebuild fetches **today's** edition. It reproduces an earlier snapshot only where the
+publisher keeps it and the corpus pins it with `edition:`:
+
+| corpus | the edition | an earlier one again |
+|---|---|---|
+| `ca_laws` | a commit of `justicecanada/laws-lois-xml` | yes: `edition: <sha>`, git keeps every commit |
+| `us_cfr` | the newest annual edition of each title | yes: govinfo keeps every year |
+| `fr_legi` | a `Freemium_legi_global_<date>` dump | while DILA still serves that dump |
+| `jp_egov` | the day it was fetched | ✗ the archive is replaced in place |
+| `de_gii` | the day it was fetched | ✗ each `xml.zip` is replaced in place |
+
+For the last two, the snapshot itself is the only copy of that day's law: keep the sources,
+or the published dataset (`ravel export --vectors`), wherever the corpus must be rebuilt as
+it was and not as it is now.
+
 ## 4b. Updates: add, update, remove
 
 ```

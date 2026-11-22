@@ -1237,6 +1237,76 @@ def update_cmd(
         db_apply(delta_dir, dsn=dsn)
 
 
+@app.command(name="build")
+def build_cmd(
+    corpus_id: CorpusArg,
+    bundle_dir: Annotated[Path, typer.Option("--out", help="The bundle, to create.")],
+    workspace: WORKSPACE = Path("."),
+    fetch: Annotated[
+        bool, typer.Option("--fetch/--no-fetch", help="Fetch the newest edition first.")
+    ] = True,
+    base_url: Annotated[
+        str, typer.Option("--base-url", help="Embed through this endpoint (vLLM, TEI).")
+    ] = "",
+    concurrency: Annotated[int, typer.Option("--concurrency")] = 0,
+    batch_items: Annotated[int, typer.Option("--batch-items")] = 0,
+    batch_bytes: Annotated[int, typer.Option("--batch-bytes")] = 0,
+    dsn: Annotated[
+        str,
+        typer.Option("--dsn", help="Load the bundle into this database, replacing the corpus."),
+    ] = "",
+) -> None:
+    """A corpus from nothing: every stage, from the publisher to a sealed bundle.
+
+        fetch -> extract -> chunk -> signals -> sparse -> (verify-backend) -> embed
+              -> bundle build -> (load, with --dsn)
+
+    Everything it needs is in git: the corpus's `fetch:` block says where the publisher
+    is, its profile and dialect how to read it, its `embed:` block the vector space. A
+    stage already done in the workspace is skipped by its own ledger, so a build that
+    stopped is resumed by running it again. ! What it fetches is the newest edition, so a
+    rebuild is today's law; only a pinned `edition:` reproduces an earlier snapshot. With
+    `--base-url`, the endpoint is checked against the reference model before anything is
+    embedded through it. A corpus that already has a bundle is updated with `ravel update`.
+    """
+    spec = CorpusSpec.find(corpus_id)
+    if Path(bundle_dir).exists():
+        err.print(f"[red]{bundle_dir} exists · a bundle is sealed once, give a new --out[/red]")
+        raise typer.Exit(2)
+
+    def step(name: str) -> None:
+        err.print(f"[bold]build {spec.id}[/bold] · {name}")
+
+    if fetch:
+        step("fetch")
+        sources_fetch(corpus_id)
+    step("extract")
+    extract(corpus_id, workspace=workspace)
+    step("chunk")
+    chunk_cmd(corpus_id, workspace=workspace)
+    step("signals")
+    signals_cmd(corpus_id, workspace=workspace)
+    step("sparse")
+    sparse_cmd(corpus_id, workspace=workspace)
+    if base_url:
+        step("verify the endpoint")
+        verify_backend_cmd(corpus_id, workspace=workspace, base_url=base_url)
+    step("embed")
+    embed_cmd(
+        corpus_id,
+        workspace=workspace,
+        base_url=base_url,
+        concurrency=concurrency,
+        batch_items=batch_items,
+        batch_bytes=batch_bytes,
+    )
+    step("bundle")
+    bundle_build(corpus_id, bundle_dir, workspace=workspace)
+    if dsn:
+        step("load")
+        load_cmd(bundle_dir, dsn=dsn, replace=True)
+
+
 @app.command(name="load")
 def load_cmd(
     bundle: BundleArg,
