@@ -26,6 +26,7 @@ the first run instead of as missing text.
 from __future__ import annotations
 
 import functools
+import hashlib
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -43,7 +44,9 @@ from spec.xml_dialect import LabelRule, XmlDialect, XmlOptions
 if TYPE_CHECKING:
     from spec.models import Profile
 
-VERSION = "1.0"
+#: 1.1: a document assembled from linked files is identified by every file it read
+#: (`_assembly_digest`), ✗ by the file that links them alone.
+VERSION = "1.1"
 
 _SPACE = re.compile(r"\s+")
 #: Where `split_at` cuts a leaf: a character no text holds.
@@ -191,7 +194,8 @@ class XmlExtractor:
                 f"{path.name}: no dialect of {profile.ref} reads a <{root.tag}> document"
             )
         dialect = compiled.dialect
-        assembled = _assemble(root, path, dialect) if dialect.links else None
+        members: list[Path] = []
+        assembled = _assemble(root, path, dialect, members) if dialect.links else None
         state = _Walk(compiled)
         self._document(root, state)
 
@@ -219,6 +223,10 @@ class XmlExtractor:
                 "part of the quote was read as structure"
             )
         digest = sha256_file(path)
+        size = path.stat().st_size
+        if members:
+            assert dialect.links is not None
+            digest, size = _assembly_digest(path, digest, members, dialect.links.base)
         return CanonicalDoc(
             doc_id=f"sha256:{digest}",
             source=Source(
@@ -226,7 +234,7 @@ class XmlExtractor:
                 url=url,
                 title=title,
                 mime=guess_mime(path),
-                bytes=path.stat().st_size,
+                bytes=size,
                 sha256=digest,
             ),
             extraction=Extraction(
@@ -673,8 +681,11 @@ class XmlExtractor:
                 )
 
 
-def _assemble(root: ET.Element, path: Path, dialect: XmlDialect) -> dict[str, int]:
+def _assemble(
+    root: ET.Element, path: Path, dialect: XmlDialect, members: list[Path]
+) -> dict[str, int]:
     """Put every followed link's file inside its link element, in place, depth first.
+    Each file read is appended to `members`, in the order it was read.
 
     ! A link whose file is missing keeps its own text and is counted, never guessed at: an
     article the dump does not hold is a gap that shows, not an empty article.
@@ -717,9 +728,30 @@ def _assemble(root: ET.Element, path: Path, dialect: XmlDialect) -> dict[str, in
                 raise ExtractionFailed(f"{target.name}: not well-formed XML: {exc}") from exc
             child.text = None
             child.append(linked)
+            members.append(target)
             counts["followed"] += 1
             pending.append(linked)
     return counts
+
+
+def _assembly_digest(path: Path, own: str, members: list[Path], base: str) -> tuple[str, int]:
+    """The identity of a document stored as many files: the linking file's digest, then
+    each file read, by its path inside the document's folder and its own digest.
+
+    ! The linking file alone is not the document. LEGI amends an article in the article's
+    own file; a text whose `struct` file did not change would keep its id, and an update
+    would see nothing to replace. Every file read is in the digest, so any change to any of
+    them is a new document, and `bundle delta` replaces it. The path is in it too: the same
+    bytes linked from another folder are another text.
+    """
+    folder = (path.parent / base).resolve()
+    digest = hashlib.sha256(f"assembly:1 {own}\n".encode())
+    size = path.stat().st_size
+    for member in members:
+        name = member.relative_to(folder).as_posix()
+        digest.update(f"{name} {sha256_file(member)}\n".encode())
+        size += member.stat().st_size
+    return digest.hexdigest(), size
 
 
 def _dialect_for(profile: Profile, root_tag: str) -> _Compiled | None:

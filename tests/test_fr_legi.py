@@ -328,3 +328,45 @@ def test_a_text_whose_kept_articles_are_missing_still_fails(
     with pytest.raises(ExtractionFailed, match="produced no text") as caught:
         XmlExtractor().extract(root / f"texte/struct/{TEXT}.xml", title=TEXT, profile=profile)
     assert not isinstance(caught.value, ExtractionEmpty)
+
+
+def test_an_edited_article_is_a_new_document(folder: Path, profile: Any) -> None:
+    # ! LEGI amends an article in the article's own file. The text's `struct` file is
+    # unchanged, so an id taken from it alone would hide the edit from `bundle delta`.
+    path = folder / f"texte/struct/{TEXT}.xml"
+    before = XmlExtractor().extract(path, title=TEXT, url="u", profile=profile)
+    _write(
+        _article_path(folder, "LEGIARTI000006219000"),
+        _article("LEGIARTI000006219000", "L1", "<p>Premier article, modifié.</p>"),
+    )
+    after = XmlExtractor().extract(path, title=TEXT, url="u", profile=profile)
+    assert before.source.sha256 != after.source.sha256
+    assert before.doc_id != after.doc_id
+    assert before.source.bytes > path.stat().st_size
+
+
+def test_an_unchanged_text_keeps_its_id(folder: Path, profile: Any) -> None:
+    path = folder / f"texte/struct/{TEXT}.xml"
+    first = XmlExtractor().extract(path, title=TEXT, url="u", profile=profile)
+    again = XmlExtractor().extract(path, title=TEXT, url="u", profile=profile)
+    assert first.doc_id == again.doc_id
+
+
+def test_the_same_struct_in_two_folders_is_two_documents(
+    folder: Path, tmp_path: Path, profile: Any
+) -> None:
+    import shutil
+
+    other = tmp_path / "JORFTEXT000000000002"
+    shutil.copytree(folder, other)
+    _write(
+        _article_path(other, "LEGIARTI000006219000"),
+        _article("LEGIARTI000006219000", "L1", "<p>Un autre texte.</p>"),
+    )
+    a = XmlExtractor().extract(
+        folder / f"texte/struct/{TEXT}.xml", title=TEXT, url="u", profile=profile
+    )
+    b = XmlExtractor().extract(
+        other / f"texte/struct/{TEXT}.xml", title=TEXT, url="u", profile=profile
+    )
+    assert a.doc_id != b.doc_id

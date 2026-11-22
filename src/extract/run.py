@@ -296,6 +296,18 @@ class Extraction:
         except Exception as exc:  # noqa: BLE001 — transient; retryable, not quarantined
             return DocResult(key=key, path=source.path, error=f"{type(exc).__name__}: {exc}")
 
+        if doc.source.sha256 != source.sha256:
+            # ! A document assembled from linked files is identified by all of them
+            # (`xml._assembly_digest`), so its key is too: two folders whose linking files
+            # hold the same bytes are two texts, ✗ one duplicate.
+            key = stage_key(
+                source.model_copy(update={"sha256": doc.source.sha256}),
+                extractor=extractor.id,
+                version=extractor.version,
+                profile=profile,
+                corpus_hash=corpus_hash,
+            )
+
         doc = self.structurer_for(profile).apply(doc)
 
         errors = [i for i in validate(doc) if i.severity is Severity.ERROR]

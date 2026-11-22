@@ -55,6 +55,17 @@ separate them is a format in the middle that is:
 the source; its identity is the source's identity plus the extraction config (which is
 recorded, and forms the cache key — see `EXECUTION.md` §3).
 
+! **A source stored as many files is all of them.** A dialect with `links` (LEGI: a text's
+`struct` file links one file per article) assembles the document from every file it
+follows. `source.sha256` is then the digest of that **assembly**: the linking file's own
+digest, followed by each file read, in reading order, as its path within the text's folder
+and its digest (`xml._assembly_digest`, extractor `xml@1.1`). `source.bytes` is their sum, and
+`source.path` remains the linking file.
+
+The linking file alone is not the document. An article amended in its own file would keep
+the text's id, and `bundle delta`, which compares documents by id, would replace nothing.
+A source read from one file keeps that file's digest, so CFR and Canada ids do not move.
+
 **Storage:** the JSON above is the *logical* shape — the schema, the validator and the
 MCP `inspect_document` view all speak it. On disk it is stored as **parquet, one row per
 document**, with `blocks` and `tables` as nested columns. Never one file per document:
