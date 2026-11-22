@@ -79,8 +79,9 @@ listing (JSON)  ->  wanted files  ->  missing or incomplete?  ->  download to .p
 `sources.list: current.txt` makes extraction read the snapshot and nothing else. A snapshot
 is built in **its own workspace** (`-w work/us_cfr/<date>`): the workspace stages
 (canonical, chunks, vectors) append, so a superseded edition left in one would be indexed
-beside its replacement. Reusing the vectors of unchanged chunks across snapshots is
-designed, ✗ built: today an update re-embeds the corpus.
+beside its replacement. The vectors of unchanged text are taken from the previous snapshot
+(`ravel embed us_cfr -w <new> --reuse <old>`, `embed/reuse.py`), so an update embeds only
+what changed.
 
 ## 3. Extract (`xml`, dialects `gpo_cfr` and `ecfr`)
 

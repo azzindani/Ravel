@@ -491,6 +491,15 @@ def embed_cmd(
         typer.Option("--batch-bytes", help="Payload bytes per request to a serving endpoint."),
     ] = 0,
     remote: REMOTE = "",
+    reuse: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--reuse",
+            help="An earlier snapshot's workspace: a chunk whose embed text it already "
+            "embedded, in the same vector space, takes that vector instead of a new one. "
+            "Repeatable.",
+        ),
+    ] = None,
 ) -> None:
     """Phase B: chunks into vectors, by the embedder the corpus names.
 
@@ -578,8 +587,16 @@ def embed_cmd(
             raise typer.Exit(2) from None
     embedder = build_embedder(cfg)
     run = Embedding(
-        spec, workspace=workspace, embedder=embedder, config=cfg, variant=variant, worker=share
+        spec,
+        workspace=workspace,
+        embedder=embedder,
+        config=cfg,
+        variant=variant,
+        worker=share,
+        reuse=reuse or (),
     )
+    if run.reuse is not None:
+        err.print(f"[dim]reuse: {len(run.reuse):,} earlier vectors indexed by embed text[/dim]")
 
     with _mirrored(
         Path(workspace),
@@ -609,6 +626,12 @@ def embed_cmd(
         "windows", f"{report.windows:,}  [dim]({report.skipped_done:,} already done)[/dim]"
     )
     summary.add_row("vectors", f"[bold]{report.vectors:,}[/bold]")
+    if run.reuse is not None:
+        summary.add_row(
+            "reused",
+            f"{report.reused:,}  [dim](reproduced at cosine "
+            f">= {report.reuse_cosine:.5f})[/dim]",
+        )
     summary.add_row("shards", f"{report.shards:,}  ({report.bytes_written / 1e6:.1f} MB)")
     summary.add_row("speed", f"{report.per_second:,.0f} vectors/s")
     summary.add_row("output", str(run.vector_dir))

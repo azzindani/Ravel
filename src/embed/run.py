@@ -30,7 +30,7 @@ import hashlib
 import json
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +42,7 @@ import pyarrow.parquet as pq
 from chunk.derive import embed_text
 from chunk.store import iter_chunk_range
 from embed.progress import Progress, Tracker
+from embed.reuse import MIN_COSINE, SAMPLE, ReuseError, VectorReuse, check_reproduced
 from embed.spec import Embedder
 from runtime.batching import batched, batched_by_tokens
 from runtime.ledger import Ledger, Status
@@ -134,8 +135,12 @@ def locate_vectors(
     variant: str = "default",
     chunk_generation: str | None = None,
     registry: Registry | None = None,
+    fingerprint: str | None = None,
 ) -> tuple[Path, Path]:
     """`(chunk directory, vector directory)` for a corpus, without loading a model.
+
+    `fingerprint` is the embedder's when it is not the corpus's own (`--reuse` passes the
+    running embedder's, so an earlier run is looked for in this run's space and no other).
 
     The bundle builder needs to find what `Embedding` wrote, and the directory name is a hash
     of the embedder, the template and the chunk generation; computing it here from the config
@@ -156,7 +161,9 @@ def locate_vectors(
     except KeyError:
         profile = None
     generation = generation_of(
-        found.name, spec_of(corpus.embed).fingerprint(), template_hash_of(profile)
+        found.name,
+        fingerprint or spec_of(corpus.embed).fingerprint(),
+        template_hash_of(profile),
     )
     return found, Path(workspace) / "vectors" / corpus.id / variant / generation
 
@@ -168,6 +175,10 @@ class EmbedReport:
     windows: int = 0
     skipped_done: int = 0
     vectors: int = 0
+    #: Of `vectors`, taken from an earlier snapshot (`embed.reuse`), not embedded.
+    reused: int = 0
+    #: The lowest cosine of the reproduction check on reused vectors (1.0 when none ran).
+    reuse_cosine: float = 1.0
     shards: int = 0
     bytes_written: int = 0
     characters: int = 0
@@ -194,6 +205,7 @@ class Embedding:
         chunk_generation: str | None = None,
         registry: Registry | None = None,
         worker: tuple[int, int] | None = None,
+        reuse: Sequence[Path | str] = (),
     ) -> None:
         if worker is not None:
             index, of = worker
@@ -222,6 +234,25 @@ class Embedding:
             raise ValueError(
                 f"{spec.id}: the embedder declares {spec.dim} dimensions, the corpus "
                 f"config {cfg.dim}"
+            )
+        self.reuse: VectorReuse | None = None
+        if reuse:
+            sources = [
+                locate_vectors(
+                    corpus,
+                    workspace=w,
+                    variant=variant,
+                    registry=self.registry,
+                    fingerprint=spec.fingerprint(),
+                )
+                for w in reuse
+            ]
+            self.reuse = VectorReuse(
+                sources,
+                profile=self.profile,
+                fingerprint=spec.fingerprint(),
+                template_hash=self.template_hash,
+                dim=spec.dim,
             )
 
     def _pinned(self) -> Profile | None:
@@ -448,7 +479,7 @@ class Embedding:
                     chunks = list(iter_chunk_range(str(shard), begin, end))
                 with tracker.phase("prepare"):
                     texts = [embed_text(c, self.profile) for c in chunks]
-                matrix = self.embed_texts(texts, on_batch=tracker.advance)
+                matrix = self._vectors(texts, tracker, report)
                 with tracker.phase("write"):
                     check_vectors(
                         matrix, dim=spec.dim, rows=len(chunks), normalized=spec.normalize
@@ -511,6 +542,40 @@ class Embedding:
         report.seconds = time.time() - started
         tracker.finish("done")
         return report
+
+    def _vectors(
+        self, texts: list[str], tracker: Tracker, report: EmbedReport
+    ) -> np.ndarray[Any, Any]:
+        """The window's vectors: reused where an earlier run embedded the same text, the
+        rest embedded now."""
+        if self.reuse is None:
+            return self.embed_texts(texts, on_batch=tracker.advance)
+        with tracker.phase("reuse"):
+            positions, stored = self.reuse.find(texts)
+        if positions and not self.reuse.verified:
+            # ! Before the first reused vector is written: the embedder must reproduce them.
+            sample = positions[:SAMPLE]
+            fresh = self.embed_texts([texts[i] for i in sample])
+            cosine = check_reproduced(stored[: len(sample)], fresh)
+            report.reuse_cosine = cosine
+            if cosine < MIN_COSINE:
+                raise ReuseError(
+                    f"this embedder reproduces the earlier vectors at cosine {cosine:.5f}, "
+                    f"below {MIN_COSINE} · they are not this run's vectors"
+                )
+            self.reuse.verified = True
+        out = np.empty((len(texts), self.embedder.spec.dim), dtype=np.float32)
+        if positions:
+            out[positions] = stored
+            tracker.advance(len(positions))  # done, but not timed: no model ran
+            report.reused += len(positions)
+        taken = set(positions)
+        missing = [i for i in range(len(texts)) if i not in taken]
+        if missing:
+            out[missing] = self.embed_texts(
+                [texts[i] for i in missing], on_batch=tracker.advance
+            )
+        return out
 
     def _write_manifest(self, report: EmbedReport) -> None:
         """What these vectors are, next to the vectors (`BUNDLE.md` §3 reads it back)."""

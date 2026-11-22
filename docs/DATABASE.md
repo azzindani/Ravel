@@ -108,10 +108,14 @@ ravel bundle delta <old bundle> <new bundle> --out delta/
 ravel db apply delta/ --dsn ...
 ```
 
-Documents are content-addressed (`doc_id` is the sha256 of the source bytes), so a changed source
-is a new document and the old one is gone. A delta is the difference of two sealed bundles'
-document sets; the new bundle comes from the ordinary pipeline, where extraction and embeddings
-are cached by content hash and only new documents cost anything.
+Documents are content-addressed (`doc_id` is the sha256 of the source bytes, or of every file
+a linked document read: `CANONICAL_FORMAT.md` §2), so a changed source is a new document and
+the old one is gone. A delta is the difference of two sealed bundles' document sets. The new
+bundle comes from the ordinary pipeline in a workspace of its own. Extraction there is a full
+pass over the snapshot. Embedding takes every vector whose text the previous snapshot already
+embedded (`ravel embed --reuse <old workspace>`): matched by the sha256 of the embed text, in
+the same vector space only, and checked by re-embedding a sample at cosine >= 0.999 before the
+first reused vector is written. Only changed text costs model time.
 
 * **Derived rows are compared, not assumed.** A relation row of an *unchanged* document changes
   when a document it cites arrives or leaves, and a status derived from relations changes with
