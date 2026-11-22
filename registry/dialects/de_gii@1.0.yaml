@@ -16,6 +16,9 @@ document:
   detect: {root: '^dokumente$'}
   date: ['norm/metadaten/ausfertigung-datum']
   dated_unit: law
+  # A law whose every norm has a bare `<textdaten/>` states it holds no text: a notice of
+  # an article coming into force, an amending law whose text is now in the law it amended.
+  empty_when_bare: ['norm/textdaten']
 
 units:
   tags:

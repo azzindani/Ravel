@@ -80,3 +80,25 @@ def test_a_sealed_bundle_is_never_built_over(
     with pytest.raises(typer.Exit):
         cli.build_cmd("ca_laws", tmp_path / "bundle", workspace=tmp_path / "ws")
     assert ran == []
+
+
+def test_publish_takes_its_card_from_git_and_stages_it_beside_the_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    exported: list[Path] = []
+
+    def export(corpus_id: str, out_dir: Path, **kwargs: Any) -> None:
+        (out_dir / "data").mkdir(parents=True)
+        exported.append(out_dir)
+
+    monkeypatch.setattr(cli, "export_cmd", export)
+    card = tmp_path / "X_2611.md"
+    card.write_text("# X", encoding="utf-8")
+    cli.publish_cmd("ca_laws", "Owner/X_2611", workspace=tmp_path, card=card, dry_run=True)
+    assert exported == [tmp_path / "publish" / "X_2611"]
+    assert (exported[0] / "README.md").read_text(encoding="utf-8") == "# X"
+
+
+def test_publish_without_a_card_in_git_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(typer.Exit):
+        cli.publish_cmd("ca_laws", "Owner/NO_CARD_2611", workspace=tmp_path, dry_run=True)

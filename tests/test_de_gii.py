@@ -163,3 +163,30 @@ def test_each_law_is_fetched_unpacked_and_cited_as_its_archive(tmp_path: Path) -
     assert corpus.url_for(member) == f"{BASE}bgb/xml.zip#BJNR001950896.xml"
     # Only the wanted members are unpacked: a law's images are not sources.
     assert not (tmp_path / "20261122/bgb/xml/pic.jpg").exists()
+
+
+def test_a_law_that_states_no_text_is_empty_not_failed(tmp_path: Path) -> None:
+    import pytest
+
+    from extract.base import ExtractionEmpty
+
+    # ! A notice whose one norm has a bare `<textdaten/>`: nothing to read, nothing lost.
+    path = tmp_path / "BJNR053400010.xml"
+    path.write_text(
+        '<dokumente doknr="BJNR053400010"><norm><metadaten><jurabk>WBGArt13InkrBek</jurabk>'
+        "<langue>Bekanntmachung über das Inkrafttreten</langue></metadaten><textdaten/></norm>"
+        "</dokumente>",
+        encoding="utf-8",
+    )
+    profile = default_registry().get("de_gii@1.0")
+    with pytest.raises(ExtractionEmpty, match="states no text"):
+        XmlExtractor().extract(path, title="x", url="u", profile=profile)
+    # The same, printed as an empty text element.
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "<textdaten/>", '<textdaten><text format="decorated"/></textdaten>'
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ExtractionEmpty, match="states no text"):
+        XmlExtractor().extract(path, title="x", url="u", profile=profile)

@@ -20,3 +20,8 @@ published:
     files:
       registry/profiles/id_regulation_md@1.4.yaml: 2ee5ca397cfc9728581d2c54ebc7dba9346c7e816faaf345081f545e5c8d9bb4
       registry/lexicons/id_regulation_md@1.txt: 38802aed20494670403ad8fbd371d6677db1a170d0a7dddb0ccdf8b5687ac569
+  - dataset: Azzindani/US_CFR_2611
+    commit: 378d697
+    files:
+      registry/profiles/us_cfr@1.1.yaml: d8a7a368e2f3cca7043e1bf3762288cf4a2920a41a98b7655e8c7d399c86ef40
+      registry/dialects/gpo_cfr@1.0.yaml: bea9713bebb77107f6a54c70ae631c9be62e7269c59c6a9ed59d4ec7796b04cb

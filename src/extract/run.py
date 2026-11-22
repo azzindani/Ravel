@@ -85,9 +85,15 @@ class RunReport:
 
     @property
     def failure_rate(self) -> float:
-        """! Deferred documents are excluded: they are a missing stage, not a fault.
-        They are reported separately and block bundling on their own terms."""
-        return self.failed / self.attempted if self.attempted else 0.0
+        """Failed, as a share of the corpus this run read or found already read.
+
+        ! Deferred documents are excluded: they are a missing stage, not a fault. They are
+        reported separately and block bundling on their own terms. Documents done in an
+        earlier run are counted: a rerun retries only the failures, and a rate over those
+        alone would be 100% for a corpus within its tolerance.
+        """
+        total = self.attempted + self.skipped_done
+        return self.failed / total if total else 0.0
 
     @property
     def coverage(self) -> float:

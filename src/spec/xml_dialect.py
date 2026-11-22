@@ -193,6 +193,12 @@ class Document(_Base):
     number: str | None = None
     date: list[str] = Field(default_factory=list)
     dated_unit: str | None = None
+    #: Paths, relative to the root, of the elements that hold a document's text. When
+    #: every one of them is bare (no text anywhere inside, no picture, no table), the file
+    #: states it holds none (Germany's `<textdaten/>` and `<text format="decorated"/>`: a
+    #: notice whose text is the law it names): counted as empty, ✗ as a failure. A file with
+    #: text there that still reads as nothing fails.
+    empty_when_bare: list[str] = Field(default_factory=list)
 
 
 class Text(_Base):

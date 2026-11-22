@@ -75,8 +75,28 @@ nothing nests:
 | `gazette_references` | `BGBl. I S. 1004`, `BGBl. I 2002, 2420`, `BGBl. 2023 I Nr. 411` |
 | `law_references` | `§ 77 Absatz 3 SGB IX`, `§ 41 AO`: a provision of a law named by its abbreviation |
 
-## 6. The first build
+## 6. The first build (2026-11-22)
 
-✗ Not built yet: the fetch of 2026-11-22 is running. Seven laws extracted by hand (BGB,
-ÄApprO 2002, ÜAnlG, ÜblG 1, 1-DM-GoldmünzG, AARKZustAnO, a SGB IX notice) gave no
-unknown element and the citations above; BGB is 2,515 chunks.
+```bash
+ravel sources fetch de_gii                         # 6,150 laws, 324 MB, 3,001 s, 0 failed
+W=work/de_gii/20261122
+ravel extract de_gii -w $W                         # 6,146 extracted, 4 empty, 0 failed
+ravel chunk   de_gii -w $W --enforce               # 136,308 chunks, 100% with an identifier
+ravel signals de_gii -w $W
+```
+
+| | |
+|---|---|
+| laws | 6,146 with text; BGB alone is 2,515 chunks |
+| chunks | 136,308; median 159 tokens; 100% with an identifier and a locator |
+| `gazette_references` | 11,220 chunks (8.2%) |
+| `law_references` | 3,443 chunks (2.5%) |
+
+**Four laws state no text**, and are counted as empty, ✗ failed: a notice of an article
+coming into force (WBGArt13InkrBek), a notice to § 4 of the trade mark act (WZG§4EdlMetBek),
+and two amending laws whose text is now in the law they amended (HoheSeeEinbrGÄndG 1,
+WoBauÄndG 1965). Each prints its law and an empty `<textdaten/>` or `<text
+format="decorated"/>`, which the dialect declares (`document.empty_when_bare`). The first
+extract counted them as failures and stopped at the corpus's tolerance of 0.
+
+✗ Not embedded yet. Published as `Azzindani/DE_LAWS_2611` once it is.

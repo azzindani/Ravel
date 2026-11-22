@@ -1093,6 +1093,65 @@ def export_cmd(
     out.print(table)
 
 
+@app.command(name="publish")
+def publish_cmd(
+    corpus_id: CorpusArg,
+    repo: Annotated[str, typer.Option("--repo", help="The dataset repository, owner/name.")],
+    workspace: WORKSPACE = Path("."),
+    card: Annotated[
+        Path | None,
+        typer.Option("--card", help="The dataset card. Default: datasets/<name>.md."),
+    ] = None,
+    out_dir: Annotated[
+        Path | None,
+        typer.Option("--out", help="Staging directory. Default: <workspace>/publish."),
+    ] = None,
+    vectors: Annotated[
+        bool, typer.Option("--vectors/--no-vectors", help="Include the embedding column.")
+    ] = True,
+    message: Annotated[str, typer.Option("--message", help="The commit message.")] = "",
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Stage the dataset; upload nothing.")
+    ] = False,
+) -> None:
+    """Export a corpus and publish it as a dataset: the data, the sources, and its card.
+
+    The card is a file in git (`datasets/<name>.md`), never written at publish time: it
+    states what was measured, and a dataset whose card lives only where it was uploaded
+    from cannot be published again. The upload replaces `data/` and `sources/` whole, so a
+    shard the new export does not write is not left behind. Needs a Hugging Face token
+    (`HF_TOKEN` or `huggingface-cli login`). Add the registry files it was built with to
+    `registry/published.yaml` (`PROFILES.md` §7).
+    """
+    import shutil
+
+    name = repo.rsplit("/", 1)[-1]
+    card_path = card or Path("datasets") / f"{name}.md"
+    if not card_path.is_file():
+        err.print(f"[red]{card_path}: no dataset card · write it in datasets/ first[/red]")
+        raise typer.Exit(1)
+    staged = out_dir or Path(workspace) / "publish" / name
+    if staged.exists():
+        shutil.rmtree(staged)
+    export_cmd(corpus_id, staged, workspace=workspace, vectors=vectors)
+    shutil.copyfile(card_path, staged / "README.md")
+    if dry_run:
+        out.print(f"staged {staged} · nothing uploaded")
+        return
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    api.create_repo(repo, repo_type="dataset", exist_ok=True)
+    info = api.upload_folder(
+        repo_id=repo,
+        repo_type="dataset",
+        folder_path=str(staged),
+        delete_patterns=["data/*.parquet", "sources/*"],
+        commit_message=message or f"{corpus_id}: {name}",
+    )
+    out.print(f"published {repo} · {info}")
+
+
 @app.command(name="sparse")
 def sparse_cmd(
     corpus_id: CorpusArg,

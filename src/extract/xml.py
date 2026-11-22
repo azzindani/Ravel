@@ -219,6 +219,14 @@ class XmlExtractor:
                 and assembled["kept"] == 0
             ):
                 raise ExtractionEmpty(f"{path.name}: nothing in force ({dialect.ref} dialect)")
+            holders = [e for p in dialect.document.empty_when_bare for e in root.iterfind(p)]
+            pictures = set(dialect.graphics) | set(dialect.tables.elements)
+            if holders and all(
+                not "".join(e.itertext()).strip()
+                and not any(d.tag in pictures for d in e.iter())
+                for e in holders
+            ):
+                raise ExtractionEmpty(f"{path.name}: states no text ({dialect.ref} dialect)")
             raise ExtractionFailed(f"{path.name}: produced no text ({dialect.ref} dialect)")
 
         warnings = [

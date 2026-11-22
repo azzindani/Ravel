@@ -41,6 +41,8 @@ provenance:
 extract:
   profile: de_gii@1.0
   extractors: [xml]
+  # 4 of 6,150 on 2026-11-22 state no text (`<textdaten/>`): counted as empty, ✗ failed
+  # (dialect `document.empty_when_bare`).
   failure_tolerance: 0.0
 
 chunk:
