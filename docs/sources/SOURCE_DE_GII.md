@@ -52,6 +52,15 @@ nothing nests:
   generic rule. When a unit states its marker and the heading opens with it, the rest is
   the name. `enbez` takes 75 shapes on those laws, `Anhang 1 zu Nummer 3` and `(XXXX) Art 5
   bis 7` among them, and no pattern can tell where one ends and its caption begins.
+- **A norm that states its number is a provision**, even when it also names the outline it
+  is in (`units.flat.unless: [metadaten/enbez]`). EGBGB's `Art 229` holds `§ 1`, `§ 2` …,
+  each a norm with `enbez` and `gliederungseinheit` `Art 229`: 1,401 such norms in 99 laws
+  (EGBGB 252, EGInsO 69, EGAO 68). In 29 of them the §§ start from 1 in every article, so the
+  provision states that article as `outline` (`gliederungsbez~[^\s-]`: the bare `-` some laws
+  print for an unlabelled outline is not one) and cites within it, `Art 229 § 6 BGBEG`. Read
+  as headings, the first build cited their text as the law alone.
+- **An outline that prints its article's text** (EGBGB's `Art 1` … `Art 4`: an outline norm
+  with text and no `enbez`) cites as that outline, `Art 2 BGBEG`, ✗ the law.
 - `(XXXX)` marks a provision with no number. `(XXXX)` alone (a notice's one text) has no
   number and cites as the law; `(XXXX) §§ 16a bis 16c` is `§§ 16a bis 16c`.
 - A provision titled `(weggefallen)` with no text is repealed: counted in `reserved`, not
@@ -63,7 +72,7 @@ nothing nests:
 
 | field | value |
 |---|---|
-| `identifier` | `§ 7 BGB` · `Art 3 GG` · `Anlage 2 BKleingG` · `Eingangsformel ÄApprO 2002` · `BGB` |
+| `identifier` | `§ 7 BGB` · `Art 3 GG` · `Art 229 § 6 BGBEG` · `Art 2 BGBEG` · `Anlage 2 ÄApprO 2002` · `Eingangsformel ÄApprO 2002` · `BGB` |
 | `regulation_number` | the abbreviation, `amtabk` else `jurabk` |
 | `about` | `langue`, the full title |
 | `year` | of the `Ausfertigungsdatum`, the day it was signed, ✗ the day it came into force |
@@ -88,7 +97,8 @@ ravel signals de_gii -w $W
 | | |
 |---|---|
 | laws | 6,146 with text; BGB alone is 2,515 chunks |
-| chunks | 136,308; median 159 tokens; 100% with an identifier and a locator |
+| chunks | 136,284; median 159 tokens; 100% with an identifier and a locator |
+| citing only the law | 7,884: each law's own text (6,148) and the provisions with no number, `(XXXX)` (1,736) |
 | `gazette_references` | 11,220 chunks (8.2%) |
 | `law_references` | 3,443 chunks (2.5%) |
 
@@ -98,5 +108,10 @@ and two amending laws whose text is now in the law they amended (HoheSeeEinbrGÄ
 WoBauÄndG 1965). Each prints its law and an empty `<textdaten/>` or `<text
 format="decorated"/>`, which the dialect declares (`document.empty_when_bare`). The first
 extract counted them as failures and stopped at the corpus's tolerance of 0.
+
+**Rebuilt the same day** after the rule above: 136,308 chunks became 136,284, and the chunks
+citing only the law fell from 10,129 to 7,884; 1,138 now cite `Art … § …`. On EGAO, EGBGB,
+BGB and GG they fell from 7, 194, 8 and 1 to 1, 1, 2 and 1 (commit 20c477a says "1 each":
+BGB keeps 2, its own text split in two parts).
 
 ✗ Not embedded yet. Published as `Azzindani/DE_LAWS_2611` once it is.
