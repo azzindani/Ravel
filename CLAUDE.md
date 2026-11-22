@@ -101,6 +101,9 @@ CI. What is built and what is not: `PROGRESS.md`.
 19. **Everything a rebuild needs is in git.** A source is rebuilt by `ravel build`, a
     dataset republished by `ravel publish` from its card in `datasets/`. A step that lives
     only in a shell history or a scratch file is not done. (`DATABASE.md` §4a)
+20. **Measure, then claim.** Every number in `docs/` and `datasets/` names the command
+    that produced it, and anything designed but not built says so. Vera holds the same
+    rule (Vera `CLAUDE.md` §5.8).
 
 ## 6. The lifecycle of a corpus
 
