@@ -104,9 +104,38 @@ Measured on the 1.7M-chunk corpus (12.3 GB):
 ## 4b. Updates: add, update, remove
 
 ```
+ravel update <corpus> -w <new workspace> --from <old workspace> --from-bundle <old bundle> \
+    --out <new bundle> --delta <delta dir> [--base-url ...] [--dsn ...]
+```
+
+One command for any corpus: fetch, extract, chunk, signals, `sparse --vocab <old>`,
+`embed --reuse <old>`, `bundle build`, then `bundle delta`, and `db apply` when `--dsn` is
+given. The steps underneath are the ordinary ones, so each can also be run alone:
+
+```
 ravel bundle delta <old bundle> <new bundle> --out delta/
 ravel db apply delta/ --dsn ...
 ```
+
+What "the newest edition" means is each corpus's `fetch:` block, so the command is the same
+for every source:
+
+| corpus | fetch | an update is |
+|---|---|---|
+| `us_cfr` | govinfo bulk, the newest complete edition of each title | the titles republished since |
+| `ca_laws` | `justicecanada/laws-lois-xml`, the head commit | the files changed since, about every two weeks |
+| `fr_legi` | DILA, the newest `Freemium_legi_global` dump | the texts whose files changed (every file a text reads is in its id) |
+
+Measured on 2026-11-22: `ca_laws` updated from its own edition (commit `855cdfc`), which is
+the case where nothing changed. It took about 14 minutes on this machine: extract 265 s,
+chunk 57 s, signals 50 s, and embed 55 s. All 166,569 vectors were reused and reproduced at
+cosine 1.00000, at 2,993 vectors/s; the first embed ran at about 50/s through vLLM. The
+rebuilt bundle had the same manifest (`1edd523df431af0a`) as the one the database holds, and
+the delta said "nothing to apply". A rebuild of an unchanged edition is byte-identical.
+
+! Not yet measured on an edition that changed. Extraction is still a full pass over the
+snapshot. LEGI also publishes daily increments, which the fetcher does not read yet, so a
+France update re-reads the whole dump (about 2.5 h) while embedding only what changed.
 
 Documents are content-addressed (`doc_id` is the sha256 of the source bytes, or of every file
 a linked document read: `CANONICAL_FORMAT.md` §2), so a changed source is a new document and
