@@ -32,7 +32,12 @@ from spec import Facts, Profile
 #: dominate keyword statistics for the whole corpus.
 BODY_TYPES = frozenset({BlockType.PARAGRAPH, BlockType.LIST_ITEM, BlockType.FORMULA})
 
-_WORD = re.compile(r"\w+|[^\w\s]")
+#: ! A CJK character is a piece of its own. Japanese and Chinese are written without spaces,
+#: and `\w+` matches a whole run of kanji and kana as one word: Japan's articles came out at a
+#: median of 17 "tokens" (2026-11-22), so none would ever split. One per character runs high
+#: against Qwen3's tokenizer, the safe direction. Text with no CJK is counted as before.
+_CJK = "぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ"
+_WORD = re.compile(rf"[{_CJK}]|[^\W{_CJK}]+|[^\w\s]")
 
 #: Tokens per whitespace-delimited piece, for the default estimator. Measured against
 #: Qwen3's tokenizer on Indonesian legal prose, which is sub-word heavy: `menyelenggarakan`

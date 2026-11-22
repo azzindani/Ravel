@@ -185,3 +185,11 @@ def test_articles_cite_as_japanese_practice_does(tmp_path: Path) -> None:
     # The ruby reading is dropped; the table of contents is not read.
     assert "物館の発達" in first.body and "はく" not in first.body
     assert "ArticleRange" not in str(raw.extraction.params) and "目次" not in first.body
+
+
+def test_japanese_is_counted_by_character_and_other_text_as_before() -> None:
+    from chunk.base import estimate_tokens
+
+    # ! `\w+` read a run of kanji and kana as one word: articles never split.
+    assert estimate_tokens("この法律は、社会教育法の精神に基づき") >= 18
+    assert estimate_tokens("Wajib Pajak wajib menyelenggarakan pembukuan.") == 8
