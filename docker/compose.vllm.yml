@@ -8,6 +8,11 @@
 #
 # ! Never build a corpus on an engine before `verify-backend` agrees (cosine >= 0.999 against the
 # reference implementation). The image is pinned by digest: a new vLLM is a new implementation.
+#
+# ! VLLM_GPU_MEMORY is the share of the card vLLM takes (default 0.70). On a card the desktop also
+# draws on, a share that leaves no headroom lets Windows page GPU memory to system RAM: on the 8 GB
+# laptop at 0.80, with a browser decoding video, prompt throughput fell from ~20,000 to ~1,600
+# tokens/s at 100% GPU and the Japan embed stalled at 1 text/s. It changes no vector.
 services:
   vllm:
     image: vllm/vllm-openai@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
@@ -15,7 +20,7 @@ services:
       Qwen/Qwen3-Embedding-0.6B
       --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
       --runner pooling --dtype float16 --max-model-len 8192
-      --gpu-memory-utilization 0.80 --max-num-seqs 256 --max-num-batched-tokens 16384
+      --gpu-memory-utilization ${VLLM_GPU_MEMORY:-0.70} --max-num-seqs 256 --max-num-batched-tokens 16384
       --served-model-name Qwen/Qwen3-Embedding-0.6B qwen3-embedding-0.6b
       --port 8000
     ports: ["127.0.0.1:8000:8000"]
