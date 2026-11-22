@@ -36,7 +36,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import IO, Any, BinaryIO
 
 from sources.scan import sha256_file
 from spec.corpus import CorpusSpec, FetchSpec
@@ -365,20 +365,22 @@ class Fetcher:
         name = f"{self.spec.archive}_{edition}{suffix}"
         return [Wanted(path=name, url=self.spec.listing, group="archive")], {"archive": edition}
 
-    def _members(self, path: Path) -> Iterator[tuple[str, int, Callable[[], BinaryIO]]]:
-        """`(name, size, open)` of every regular file in a tar or zip archive."""
+    def _members(self, path: Path) -> Iterator[tuple[str, int, IO[bytes]]]:
+        """`(name, size, stream)` of every regular file in a tar or zip archive. A stream
+        is valid until the next member is asked for."""
         if zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as zipped:
                 for info in zipped.infolist():
                     if not info.is_dir():
-                        yield info.filename, info.file_size, lambda i=info: zipped.open(i)
+                        with zipped.open(info) as stream:
+                            yield info.filename, info.file_size, stream
             return
         with tarfile.open(path, "r:*") as tarred:
             for member in tarred:
                 if member.isfile():
                     source = tarred.extractfile(member)
                     assert source is not None  # a regular file
-                    yield member.name, member.size, lambda s=source: s
+                    yield member.name, member.size, source
 
     def _indexed(self, folder: str, members: list[str]) -> list[str]:
         """The documents the publisher's index keeps; their URLs go to the url map.
@@ -438,7 +440,7 @@ class Fetcher:
             return done.read_text(encoding="utf-8").split("\n")[:-1]
         members: list[str] = []
         with open(self.manifest_path, "a", encoding="utf-8", newline=NL) as manifest:
-            for raw, size, open_member in self._members(self.root / item.path):
+            for raw, size, source in self._members(self.root / item.path):
                 name = raw.lstrip("./")
                 if not any(fnmatch.fnmatchcase(name, glob) for glob in self.spec.paths):
                     continue
@@ -447,7 +449,6 @@ class Fetcher:
                 relative = f"{folder}/{name}"
                 target = self.root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
-                source = open_member()
                 digest = hashlib.sha256()
                 with open(target, "wb") as handle:
                     while block := source.read(READ_BLOCK):
