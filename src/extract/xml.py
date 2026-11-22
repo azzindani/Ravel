@@ -204,19 +204,22 @@ class XmlExtractor:
             )
         dialect = compiled.dialect
         members: list[Path] = []
-        assembled = _assemble(root, path, dialect, members) if dialect.links else None
+        assembled, lost = (
+            _assemble(root, path, dialect, members) if dialect.links else (None, 0)
+        )
         state = _Walk(compiled)
         self._document(root, state)
 
         if not any(b.type is not BlockType.HEADING for b in state.builder.blocks):
-            # ! Empty by its own statement only when no link passed `keep`: a text whose
-            # articles are all out of force. One that kept links and still has no text lost
+            # ! Empty by its own statement only when every link it kept was found: a text whose
+            # articles are all out of force, at any depth (a section still in force can hold
+            # only articles that are not). One with a kept link whose file is missing lost
             # files, and that is a failure.
             if (
                 assembled is not None
                 and dialect.links
                 and dialect.links.empty_when_nothing_kept
-                and assembled["kept"] == 0
+                and lost == 0
             ):
                 raise ExtractionEmpty(f"{path.name}: nothing in force ({dialect.ref} dialect)")
             holders = [e for p in dialect.document.empty_when_bare for e in root.iterfind(p)]
@@ -712,9 +715,11 @@ class XmlExtractor:
 
 def _assemble(
     root: ET.Element, path: Path, dialect: XmlDialect, members: list[Path]
-) -> dict[str, int]:
+) -> tuple[dict[str, int], int]:
     """Put every followed link's file inside its link element, in place, depth first.
-    Each file read is appended to `members`, in the order it was read.
+    Each file read is appended to `members`, in the order it was read. Returns the counts
+    and how many links that passed a `keep` filter had no file: content lost, ✗ a page the
+    dump never holds (LEGI's `JORFTEXT` title page).
 
     ! A link whose file is missing keeps its own text and is counted, never guessed at: an
     article the dump does not hold is a gap that shows, not an empty article.
@@ -724,6 +729,7 @@ def _assemble(
     base = (path.parent / links.base).resolve()
     rules = {rule.element: rule for rule in links.rules}
     counts = {"followed": 0, "dropped": 0, "missing": 0, "kept": 0}
+    lost = 0
     pending = [root]
     while pending:
         node = pending.pop()
@@ -742,11 +748,13 @@ def _assemble(
             match = _re(rule.pattern).fullmatch(value) if rule.pattern else None
             if rule.pattern and match is None:
                 counts["missing"] += 1
+                lost += bool(rule.keep)
                 continue
             groups = match.groupdict() if match else {}
             target = (base / rule.file.format(value=value, **groups).lstrip("/")).resolve()
             if not target.is_relative_to(base) or not target.is_file():
                 counts["missing"] += 1
+                lost += bool(rule.keep)
                 continue
             if counts["followed"] >= links.max_files:
                 limit = f"{links.max_files:,}"
@@ -760,7 +768,7 @@ def _assemble(
             members.append(target)
             counts["followed"] += 1
             pending.append(linked)
-    return counts
+    return counts, lost
 
 
 def _assembly_digest(path: Path, own: str, members: list[Path], base: str) -> tuple[str, int]:

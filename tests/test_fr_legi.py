@@ -318,6 +318,28 @@ def test_a_text_with_nothing_in_force_is_empty_not_failed(tmp_path: Path, profil
         XmlExtractor().extract(root / f"texte/struct/{TEXT}.xml", title=TEXT, profile=profile)
 
 
+def test_a_section_in_force_holding_nothing_in_force_is_empty(
+    tmp_path: Path, profile: Any
+) -> None:
+    # ! The shape of a law moved into a code (loi 83-629): a title still in force, every
+    # article under it superseded. Kept, found, and holding nothing: empty, ✗ a failure.
+    # Its JORF version's title page is linked and absent from the dump: never content.
+    root = tmp_path / "t"
+    struct = STRUCT.replace(
+        'etat="VIGUEUR" fin="2999-01-01" id="LEGIARTI',
+        'etat="MODIFIE" fin="2003-03-19" id="LEGIARTI',
+    ).replace(
+        "<VERSIONS>",
+        '<VERSIONS><VERSION etat=""><LIEN_TXT id="JORFTEXT000000320194" num=""/></VERSION>',
+    )
+    _write(root / f"texte/struct/{TEXT}.xml", struct)
+    _write(root / f"texte/version/{TEXT}.xml", VERSION)
+    superseded = SECTION.replace('etat="VIGUEUR"', 'etat="MODIFIE"')
+    _write(root / "section_ta/LEGI/SCTA/00/00/06/08/32/LEGISCTA000006083281.xml", superseded)
+    with pytest.raises(ExtractionEmpty, match="nothing in force"):
+        XmlExtractor().extract(root / f"texte/struct/{TEXT}.xml", title=TEXT, profile=profile)
+
+
 def test_a_text_whose_kept_articles_are_missing_still_fails(
     tmp_path: Path, profile: Any
 ) -> None:
