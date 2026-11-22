@@ -29,6 +29,11 @@ units:
   flat:
     tag: '^norm$'
     path: metadaten/gliederungseinheit/gliederungskennzahl
+    # ! A norm that states its number is a provision, even when it also names the outline it
+    # is in: EGBGB's `Art 229` holds `§ 1`, `§ 2` ..., each a norm with `enbez` `§ 6` and
+    # `gliederungseinheit` `Art 229`. Read as a heading, its text cited only the law. 1,401
+    # such norms in 99 laws on 2026-11-22.
+    unless: [metadaten/enbez]
     match: regex
     values:
       '^\S{3}$': division1
@@ -46,8 +51,13 @@ units:
     # then `<titel>`. No pattern could find where the one ends.
     article:
       marker: ['metadaten/enbez']
+      # The outline a provision names as its own (`Art 229` above `§ 6`), so the § is cited
+      # within it: those laws number their §§ from 1 again in every article. `-` is the label
+      # of an outline that has none, and is not one.
+      outline: ['metadaten/gliederungseinheit/gliederungsbez~[^\s-]']
     division1: &division
-      marker: ['metadaten/gliederungseinheit/gliederungsbez']
+      # `-` labels an outline that has no label: it is no marker, and nothing cites it.
+      marker: ['metadaten/gliederungseinheit/gliederungsbez~[^\s-]']
     division2: *division
     division3: *division
     division4: *division

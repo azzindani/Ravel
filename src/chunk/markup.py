@@ -171,9 +171,9 @@ def _identifier(
     is a wider citation than the section's, and still true of the text.
     """
     for heading in reversed(stack):
-        template = markup.identifier.get(str(heading.attrs.get("unit")))
-        if template and (cited := MarkupIdentity.render(template, in_force)):
-            return cited
+        for template in markup.templates(str(heading.attrs.get("unit"))):
+            if cited := MarkupIdentity.render(template, in_force):
+                return cited
     return None
 
 

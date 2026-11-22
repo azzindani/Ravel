@@ -44,7 +44,17 @@ identity:
     identifier:
       # Written as German practice cites them: `§ 7 BGB`, `Art 3 GG`, `Anlage 2 BKleingG`.
       # A provision with no number (`Eingangsformel` aside) cites as the law.
-      article: "{article.number} {law.number}"
+      # A provision inside an article that numbers its §§ again cites the article first,
+      # `Art 229 § 6 EGBGB`; one that names no article cites as `§ 7 BGB`.
+      article: ["{article.outline} {article.number} {law.number}", "{article.number} {law.number}"]
+      # Text an outline holds itself: EGBGB prints `Art 3` as an outline norm with the
+      # article's text and no `§`, so it cites `Art 3 BGBEG`, ✗ the law.
+      division1: "{division1.marker} {law.number}"
+      division2: "{division2.marker} {law.number}"
+      division3: "{division3.marker} {law.number}"
+      division4: "{division4.marker} {law.number}"
+      division5: "{division5.marker} {law.number}"
+      division6: "{division6.marker} {law.number}"
       law: "{law.number}"
 
 pipeline:

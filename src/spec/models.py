@@ -193,8 +193,10 @@ class MarkupIdentity(Base):
     """The unit at which the facts are re-read: every chunk under one `part` shares them."""
     facts: dict[str, str] = Field(default_factory=dict)
     """`Facts` field -> template. A template with no `{...}` is a constant."""
-    identifier: dict[str, str] = Field(default_factory=dict)
-    """Unit -> the citation of a chunk whose deepest unit in force is that one."""
+    identifier: dict[str, str | list[str]] = Field(default_factory=dict)
+    """Unit -> the citation of a chunk whose deepest unit in force is that one. A list is
+    tried in order and the first template that fills is the citation: `Art 97 § 1 AOEG 1977`
+    where the provision states the article it is inside, `§ 7 BGB` where it does not."""
 
     @model_validator(mode="after")
     def _known_fields(self) -> Self:
@@ -216,9 +218,15 @@ class MarkupIdentity(Base):
         out = _TEMPLATE_FIELD.sub(value, template)
         return None if missing else (re.sub(r"\s+", " ", out).strip() or None)
 
+    def templates(self, unit: str) -> list[str]:
+        """The identifier templates of `unit`, in the order they are tried."""
+        found = self.identifier.get(unit)
+        return [] if found is None else [found] if isinstance(found, str) else list(found)
+
     def units_named(self) -> set[str]:
         names = {self.scope, *self.identifier}
-        for template in (*self.facts.values(), *self.identifier.values()):
+        cited = [t for unit in self.identifier for t in self.templates(unit)]
+        for template in (*self.facts.values(), *cited):
             names.update(unit for unit, _ in _TEMPLATE_FIELD.findall(template))
         return names
 

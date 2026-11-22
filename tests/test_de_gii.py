@@ -190,3 +190,50 @@ def test_a_law_that_states_no_text_is_empty_not_failed(tmp_path: Path) -> None:
     )
     with pytest.raises(ExtractionEmpty, match="states no text"):
         XmlExtractor().extract(path, title="x", url="u", profile=profile)
+
+
+INTRODUCTORY = """<?xml version="1.0" encoding="UTF-8"?>
+<dokumente builddate="20260831" doknr="BJNR006049896">
+<norm doknr="BJNR006049896"><metadaten><jurabk>BGBEG</jurabk>
+<ausfertigung-datum manuell="ja">1896-08-18</ausfertigung-datum>
+<langue>Einführungsgesetz zum Bürgerlichen Gesetzbuche</langue></metadaten><textdaten/></norm>
+<norm><metadaten><jurabk>BGBEG</jurabk><gliederungseinheit><gliederungskennzahl>010</gliederungskennzahl>
+<gliederungsbez>Erster Teil</gliederungsbez><gliederungstitel>Allgemeine Vorschriften</gliederungstitel></gliederungseinheit></metadaten><textdaten/></norm>
+<norm><metadaten><jurabk>BGBEG</jurabk><gliederungseinheit><gliederungskennzahl>010010</gliederungskennzahl>
+<gliederungsbez>Art 2</gliederungsbez><gliederungstitel/></gliederungseinheit></metadaten>
+<textdaten><text format="XML"><Content><P>Gesetz im Sinne des Bürgerlichen Gesetzbuchs und dieses Gesetzes ist jede Rechtsnorm.</P></Content></text></textdaten></norm>
+<norm><metadaten><jurabk>BGBEG</jurabk><gliederungseinheit><gliederungskennzahl>090</gliederungskennzahl>
+<gliederungsbez>Art 229</gliederungsbez><gliederungstitel>Weitere Überleitungsvorschriften</gliederungstitel></gliederungseinheit></metadaten><textdaten/></norm>
+<norm><metadaten><jurabk>BGBEG</jurabk><gliederungseinheit><gliederungskennzahl>090</gliederungskennzahl>
+<gliederungsbez>Art 229</gliederungsbez><gliederungstitel/></gliederungseinheit><enbez>§ 1</enbez><titel format="XML">Überleitungsvorschrift zum Gesetz zur Beschleunigung fälliger Zahlungen</titel></metadaten>
+<textdaten><text format="XML"><Content><P>(1) § 284 Abs. 3 des Bürgerlichen Gesetzbuchs gilt auch für Geldforderungen.</P></Content></text></textdaten></norm>
+<norm><metadaten><jurabk>BGBEG</jurabk><gliederungseinheit><gliederungskennzahl>090</gliederungskennzahl>
+<gliederungsbez>-</gliederungsbez><gliederungstitel/></gliederungseinheit><enbez>§ 2</enbez><titel format="XML">Vorschriften</titel></metadaten>
+<textdaten><text format="XML"><Content><P>Ein Paragraph, dessen Gliederung keine Bezeichnung hat.</P></Content></text></textdaten></norm>
+</dokumente>
+"""  # noqa: E501 -- the shape of EGBGB, as the publisher prints it
+
+
+def test_a_numbered_norm_inside_an_article_is_a_provision_cited_within_it(
+    tmp_path: Path,
+) -> None:
+    # A norm stating `enbez` and the outline it is in is a provision (`units.flat.unless`),
+    # cited within the article, whose §§ start from 1 again. An outline that prints its
+    # article's text is cited as that article, ✗ the law; `-` is no label and cites nothing.
+    path = tmp_path / "BJNR006049896.xml"
+    path.write_text(INTRODUCTORY, encoding="utf-8")
+    profile = default_registry().get("de_gii@1.0")
+    doc = Structurer(profile).apply(
+        XmlExtractor().extract(path, title="x", url="u", profile=profile)
+    )
+    e = get("markup")
+    b = Builder(doc=doc, chunker=e.id, version=e.version,
+                config=ChunkConfig(max_tokens=1024, min_tokens=0), profile=profile)  # fmt: skip
+    chunks = {c.identifier: c for c in e.fn(doc, b)}
+    assert set(chunks) == {"Art 2 BGBEG", "Art 229 § 1 BGBEG", "§ 2 BGBEG"}
+    inner = chunks["Art 229 § 1 BGBEG"]
+    assert inner.heading_path.endswith(
+        "Art 229 Weitere Überleitungsvorschriften › § 1 Überleitungsvorschrift zum Gesetz zur "
+        "Beschleunigung fälliger Zahlungen"
+    )
+    assert inner.body.startswith("(1) § 284 Abs. 3")

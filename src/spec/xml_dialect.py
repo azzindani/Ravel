@@ -55,6 +55,15 @@ class ByAttribute(_Base):
     path: str | None = None
     match: Literal["exact", "regex"] = "exact"
     values: dict[str, str] = Field(description="attribute value -> unit name")
+    # ! Left out of the dump while empty, so declaring the rule changes no hash of a dialect
+    # that does not use it (the dump is what extraction is keyed by).
+    unless: list[str] = Field(
+        default_factory=list,
+        exclude_if=lambda v: not v,
+        description="paths: an element where any states text is not this unit. Germany's "
+        "`<norm>` that states its number (`enbez` `§ 1`) is a provision, even when it also "
+        "names the outline it is in (`gliederungseinheit` `Art 97`)",
+    )
 
     _tag = field_validator("tag")(_regex)
 
@@ -69,6 +78,10 @@ class ByAttribute(_Base):
 
     def unit_for(self, element: ET.Element) -> str | None:
         """The unit this element is, by its attribute or its descendant's text."""
+        for path in self.unless:
+            found = element.find(path)
+            if found is not None and "".join(found.itertext()).strip():
+                return None
         if self.path:
             found = element.find(self.path)
             value = "".join(found.itertext()).strip() if found is not None else ""

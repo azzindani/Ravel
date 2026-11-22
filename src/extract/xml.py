@@ -806,14 +806,19 @@ def _compiled_dialects(profile: Profile) -> tuple[_Compiled, ...]:
 
 def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
     """`path` -> the element's text; `path@attr` -> the attribute; `=text` -> the text
-    itself, the last resort of a list (`['.@regulation-type', '=Act']`)."""
+    itself, the last resort of a list (`['.@regulation-type', '=Act']`). `path~pattern`
+    takes the text only where `pattern` is found in it: Germany's outline label `Art 97`,
+    never the bare `-` a law prints for an outline with no label."""
     if source.startswith("="):
         return source[1:] or None
+    source, _, pattern = source.partition("~")
     path, _, attr = source.partition("@")
     found = root.find(path)
     if found is None:
         return None
     value = found.get(attr) if attr else XmlExtractor()._text(found, d)
+    if value and pattern and not re.search(pattern, value):
+        return None
     return value or None
 
 
