@@ -14,8 +14,10 @@ from chunk import Chunking, iter_chunk_shards
 from embed import Embedding, build_embedder
 from embed.reuse import ReuseError
 from extract import Extraction
-from spec import CorpusSpec
+from spec import CorpusSpec, Profile
 from spec.corpus import EmbedSpec
+from spec.loader import Registry, default_registry
+from spec.models import ProfileSpec
 
 DOC = """PERATURAN BUPATI BOYOLALI NOMOR {n} TAHUN 2011 TENTANG PAJAK DAERAH
 
@@ -72,11 +74,32 @@ def snapshot(tmp_path: Path, name: str, edited: set[int]) -> tuple[CorpusSpec, P
     return corpus, ws
 
 
-def stage(corpus: CorpusSpec, ws: Path, reuse: tuple[Path, ...] = (), **cfg: Any) -> Embedding:
+def stage(
+    corpus: CorpusSpec,
+    ws: Path,
+    reuse: tuple[Path, ...] = (),
+    registry: Registry | None = None,
+    **cfg: Any,
+) -> Embedding:
     spec = EmbedSpec.model_validate(embed_config(**cfg))
     return Embedding(
-        corpus, workspace=ws, embedder=build_embedder(spec), config=spec, reuse=reuse
+        corpus,
+        workspace=ws,
+        embedder=build_embedder(spec),
+        config=spec,
+        reuse=reuse,
+        registry=registry,
     )
+
+
+def newer(*context: str) -> Registry:
+    """The registry after a profile update: `id_regulation@1.0` and a `1.1` whose
+    `embed_text` template is `context`."""
+    old = default_registry().get("id_regulation@1.0")
+    spec = old.spec.model_dump(mode="json")
+    spec["version"] = "1.1"
+    spec["pipeline"]["derive"]["embed_text"] = {"separator": "\n", "context": list(context)}
+    return Registry([old, Profile.compile(ProfileSpec.model_validate(spec))])
 
 
 def vectors_of(run: Embedding) -> dict[str, np.ndarray[Any, Any]]:
@@ -159,3 +182,38 @@ def test_vectors_the_embedder_does_not_reproduce_are_refused(tmp_path: Path) -> 
     corpus, new = snapshot(tmp_path, "new", edited={2})
     with pytest.raises(ReuseError, match="reproduces"):
         stage(corpus, new, reuse=(old,)).run()
+
+
+def test_a_profile_update_that_leaves_the_text_keeps_every_vector(tmp_path: Path) -> None:
+    # ! The template changed (a part for a field these chunks lack), the text did not.
+    corpus, old = snapshot(tmp_path, "old", edited=set())
+    stage(corpus, old).run()  # made by 1.0, the newest version then
+    corpus, new = snapshot(tmp_path, "new", edited=set())
+    run = stage(corpus, new, reuse=(old,), registry=newer("Effective: {effective_date}"))
+    report = run.run()
+    assert report.reused == len(list(iter_chunk_shards(new, "fixture")))
+
+
+def test_a_profile_update_that_changes_the_text_embeds_it_again(tmp_path: Path) -> None:
+    corpus, old = snapshot(tmp_path, "old", edited=set())
+    stage(corpus, old).run()
+    corpus, new = snapshot(tmp_path, "new", edited=set())
+    registry = newer("Source: {source_title}")
+    run = stage(corpus, new, reuse=(old,), registry=registry)
+    report = run.run()
+    # Every text now opens with its source: no vector of the old texts stands for it.
+    assert report.reused == 0
+    _, full_ws = snapshot(tmp_path, "full", edited=set())
+    full = stage(corpus, full_ws, registry=registry)
+    full.run()
+    mine, theirs = vectors_of(run), vectors_of(full)
+    assert all(np.allclose(mine[c], v, atol=1e-2) for c, v in theirs.items())
+
+
+def test_a_template_no_registry_version_reproduces_is_refused(tmp_path: Path) -> None:
+    corpus, old = snapshot(tmp_path, "old", edited=set())
+    stage(corpus, old, registry=newer("Source: {source_title}")).run()
+    corpus, new = snapshot(tmp_path, "new", edited=set())
+    # The run was made by 1.1, which this registry no longer holds.
+    with pytest.raises(ReuseError, match="cannot be rebuilt"):
+        stage(corpus, new, reuse=(old,))

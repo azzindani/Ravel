@@ -1,0 +1,22 @@
+# Registry files a published bundle or dataset was built with, frozen (docs/PROFILES.md §7).
+#
+# ! A published dataset names the profile that made it (`profile_ref`), and `ravel update`
+# rebuilds the texts of its vectors with that profile (`embed/reuse.py`). Edited in place,
+# the name would point at rules the data was not made by, and the rebuild would be wrong
+# without failing. So a change is a new version file beside the old one, and the old one
+# stays. `tests/test_registry_published.py` fails if a file below is edited or removed.
+#
+# The digest is sha256 of the file with CRLF read as LF, so a Windows checkout agrees.
+# Add the files of every bundle at the moment it is published.
+
+published:
+  - dataset: Azzindani/CA_LAWS_2611
+    commit: b022cb0
+    files:
+      registry/profiles/ca_laws@1.0.yaml: 082d3a5c9fc45dd8764af2e59eeb20cf3795b981a332b545e32acacc711d038c
+      registry/dialects/justice_ca@1.0.yaml: 114ae38409b848440be3a72ff644bc9a9d9ed3b86c9832ed5d3c5e61826652e0
+  - dataset: Azzindani/ID_REG_RAG_2611
+    commit: da36f37
+    files:
+      registry/profiles/id_regulation_md@1.4.yaml: 2ee5ca397cfc9728581d2c54ebc7dba9346c7e816faaf345081f545e5c8d9bb4
+      registry/lexicons/id_regulation_md@1.txt: 38802aed20494670403ad8fbd371d6677db1a170d0a7dddb0ccdf8b5687ac569

@@ -12,9 +12,14 @@ because hours of GPU are spent reproducing vectors that already exist.
   heading path, so a renamed parent heading keeps the id but changes the text, and reusing by
   id would keep the stale vector.
 * **Only from the same vector space.** The earlier run's `embed.json` must name the same
-  embedder fingerprint and the same `embed_text` template, or nothing is reused and the run
-  stops (`CLAUDE.md` §7.7). Because `embed.json` is written only when a run completes, a
-  half-finished run cannot be reused.
+  embedder fingerprint, or nothing is reused and the run stops (`CLAUDE.md` §7.7). Because
+  `embed.json` is written only when a run completes, a half-finished run cannot be reused.
+* **Across profile versions.** A newer profile may change the `embed_text` template. The
+  earlier texts are then rebuilt with the profile that made them: the one `embed.json`
+  names, or, for a run that predates the field, the version of the same profile whose
+  template hash it records. A chunk whose text the new template leaves as it was keeps its
+  vector; one it changes is embedded again. A template no registry version reproduces is
+  refused, since the texts the vectors were made from can no longer be named.
 * **Reproduction is checked, not assumed.** Before the first reused vector is written, a
   sample of reused texts is embedded again and must match its stored vector at cosine
   >= `MIN_COSINE`. This is the rule `bundle relabel` follows (`DATABASE.md` §4c).
@@ -38,6 +43,7 @@ import pyarrow.parquet as pq
 from chunk.derive import embed_text
 from chunk.store import iter_chunks
 from spec import Profile
+from spec.loader import Registry, default_registry
 
 __all__ = ["MIN_COSINE", "ReuseError", "VectorReuse", "text_digest"]
 
@@ -69,8 +75,10 @@ class VectorReuse:
         fingerprint: str,
         template_hash: str,
         dim: int,
+        registry: Registry | None = None,
     ) -> None:
         self.dim = dim
+        self.registry = registry
         self.paths: list[Path] = []
         self.index: dict[bytes, tuple[int, int]] = {}
         self.verified = False
@@ -94,15 +102,13 @@ class VectorReuse:
                     f"{vector_dir}: embedded by {theirs}, this run by {fingerprint} · "
                     "another vector space (CLAUDE.md §7.7)"
                 )
+            earlier = profile
             if meta["template_hash"] != template_hash:
-                raise ReuseError(
-                    f"{vector_dir}: embed_text template {meta['template_hash']}, this run "
-                    f"{template_hash} · the model was shown different text"
-                )
+                earlier = self._made_with(vector_dir, meta, profile)
             digest_of: dict[str, bytes] = {}
             for shard in sorted(chunk_dir.glob("part-*.parquet")):
                 for chunk in iter_chunks(str(shard)):
-                    digest_of[chunk.id] = text_digest(embed_text(chunk, profile))
+                    digest_of[chunk.id] = text_digest(embed_text(chunk, earlier))
             for path in sorted(vector_dir.glob("part-*.parquet")):
                 ids = pq.read_table(str(path), columns=["chunk_id"]).column(0).to_pylist()
                 slot = len(self.paths)
@@ -111,6 +117,30 @@ class VectorReuse:
                     digest = digest_of.get(chunk_id)
                     if digest is not None:
                         self.index.setdefault(digest, (slot, row))
+
+    def _made_with(
+        self, vector_dir: Path, meta: dict[str, Any], profile: Profile | None
+    ) -> Profile | None:
+        """The profile whose `embed_text` template made an earlier run's texts."""
+        from embed.run import template_hash_of
+
+        registry = self.registry or default_registry()
+        wanted = meta["template_hash"]
+        named = meta.get("profile")
+        candidates = (
+            [p for p in registry if p.ref == named]
+            if named
+            else [p for p in registry if profile is not None and p.id == profile.id]
+        )
+        found = next((p for p in candidates if template_hash_of(p) == wanted), None)
+        if found is None:
+            raise ReuseError(
+                f"{vector_dir}: embed_text template {wanted}, made by "
+                f"{named or 'a version of ' + (profile.id if profile else 'no profile')} "
+                "that this registry does not hold · the texts the vectors were made from "
+                "cannot be rebuilt"
+            )
+        return found
 
     def __len__(self) -> int:
         return len(self.index)

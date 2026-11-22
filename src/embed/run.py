@@ -54,6 +54,7 @@ __all__ = [
     "EmbedReport",
     "Embedding",
     "check_vectors",
+    "earlier_vectors",
     "locate_vectors",
     "template_hash_of",
     "window_key",
@@ -168,6 +169,43 @@ def locate_vectors(
     return found, Path(workspace) / "vectors" / corpus.id / variant / generation
 
 
+def earlier_vectors(
+    corpus: CorpusSpec,
+    *,
+    workspace: Path | str,
+    variant: str = "default",
+    registry: Registry | None = None,
+    fingerprint: str,
+) -> tuple[Path, Path]:
+    """`(chunk directory, vector directory)` of an earlier snapshot, for `--reuse`.
+
+    The directory this profile would name, when it is there. Otherwise a finished run of
+    the newest chunks in the same space, made with another template: the corpus has since
+    moved to a newer profile version (`VectorReuse` rebuilds its texts with the old one).
+    With neither, the named path, which `VectorReuse` refuses with the reason.
+    """
+    chunk_dir, named = locate_vectors(
+        corpus,
+        workspace=workspace,
+        variant=variant,
+        registry=registry,
+        fingerprint=fingerprint,
+    )
+    if named.is_dir():
+        return chunk_dir, named
+    finished = []
+    for meta_path in sorted(named.parent.glob("*/embed.json")):
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if (
+            meta["embedder"]["fingerprint"] == fingerprint
+            and meta.get("chunk_generation") == chunk_dir.name
+        ):
+            finished.append(meta_path.parent)
+    if not finished:
+        return chunk_dir, named
+    return chunk_dir, max(finished, key=lambda d: (d / "embed.json").stat().st_mtime)
+
+
 @dataclass
 class EmbedReport:
     corpus: str
@@ -238,7 +276,7 @@ class Embedding:
         self.reuse: VectorReuse | None = None
         if reuse:
             sources = [
-                locate_vectors(
+                earlier_vectors(
                     corpus,
                     workspace=w,
                     variant=variant,
@@ -253,6 +291,7 @@ class Embedding:
                 fingerprint=spec.fingerprint(),
                 template_hash=self.template_hash,
                 dim=spec.dim,
+                registry=self.registry,
             )
 
     def _pinned(self) -> Profile | None:
@@ -584,6 +623,8 @@ class Embedding:
                 {
                     "embedder": self.embedder.spec.manifest(),
                     "template_hash": self.template_hash,
+                    # The profile that made the texts: a later version can rebuild them.
+                    "profile": self.profile.ref if self.profile else None,
                     "chunk_generation": self.chunk_dir.name,
                     "vector_dtype": self.config.vector_dtype,
                     "shard_rows": self.config.shard_rows,
