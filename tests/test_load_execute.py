@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from load.execute import _columns, _statements, halfvec_text
+from load.execute import _columns, _statements, ensure_schema, halfvec_text, schema_of
 from load.plan import CHUNK_COLUMNS, Step, copy_from
 
 
@@ -77,3 +77,40 @@ def test_vector_rows_refuse_ids_and_vectors_that_do_not_pair_up() -> None:
 
     with pytest.raises(ValueError, match="ids but"):
         vector_copy_rows(["a", "b"], np.zeros(3, dtype=np.float16), 3)
+
+
+@pytest.mark.parametrize(
+    ("dsn", "schema"),
+    [
+        ("postgresql://vera:x@localhost:5432/vera", None),
+        (
+            "postgresql://vera:x@localhost:5432/vera?options=-csearch_path%3Did_reg,public",
+            "id_reg",
+        ),
+        ("host=localhost dbname=vera options='-c search_path=ca_laws,public'", "ca_laws"),
+        (
+            "host=localhost options='-c statement_timeout=0 -c search_path=fr_legi'",
+            "fr_legi",
+        ),
+        ("host=localhost dbname=vera options='-c search_path=public'", None),
+    ],
+)
+def test_a_dsn_names_the_schema_a_domain_loads_into(dsn: str, schema: str | None) -> None:
+    # ! A domain is (database, schema), Vera SCALING.md §4a: unified mode is one database,
+    # a schema per corpus, reached by its DSN.
+    assert schema_of(dsn) == schema
+
+
+def test_a_schema_is_created_before_the_load_and_only_a_plain_name() -> None:
+    ran: list[str] = []
+
+    class Conn:
+        def execute(self, sql: str) -> None:
+            ran.append(sql)
+
+    dsn = "host=localhost options='-c search_path=id_reg,public'"
+    assert ensure_schema(Conn(), dsn) == "id_reg"
+    assert ran == ['CREATE SCHEMA IF NOT EXISTS "id_reg"']
+    with pytest.raises(ValueError, match="lower-case"):
+        ensure_schema(Conn(), "host=localhost options='-c search_path=Bad-Name'")
+    assert ensure_schema(Conn(), "host=localhost dbname=vera") is None

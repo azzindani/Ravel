@@ -201,6 +201,36 @@ def _copy(
     return total
 
 
+_SEARCH_PATH = re.compile(r"search_path\s*=\s*([^,\s]+)")
+
+
+def schema_of(dsn: str) -> str | None:
+    """The schema a connection string loads into: the first entry of the `search_path` its
+    `options` set, or None for the default (`public`).
+
+    ! A domain is `(database, schema)` (Vera `SCALING.md` §4a): one database can hold
+    several corpora, each in its own schema, named by the DSN that reaches it
+    (`...?options=-csearch_path%3Did_reg,public`). Nothing else in a load names a schema;
+    every statement is unqualified and resolves through the path.
+    """
+    import psycopg.conninfo
+
+    options = psycopg.conninfo.conninfo_to_dict(dsn).get("options") or ""
+    found = _SEARCH_PATH.search(str(options))
+    name = found.group(1).strip("\"'") if found else None
+    return None if name in (None, "public", "$user") else name
+
+
+def ensure_schema(conn: Any, dsn: str) -> str | None:
+    """Create the schema the DSN loads into, when it names one. Returns it."""
+    name = schema_of(dsn)
+    if name is not None:
+        if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", name):
+            raise ValueError(f"schema {name!r}: lower-case letters, digits and _ only")
+        conn.execute(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(name)}")
+    return name
+
+
 def width_mismatch(existing: int | None, wanted: int) -> str | None:
     """Why a bundle cannot go into the `chunks` table that is already there, or None."""
     if existing is None or existing == wanted:
@@ -262,8 +292,13 @@ def execute(
 
     with psycopg.connect(dsn) as conn:
         try:
+            current = "schema"
+            ensure_schema(conn, dsn)
             current = "extension"
-            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            # ! Into `public`, ✗ the first schema on the path: on a fresh database whose
+            # first domain loads into `id_reg`, the type would land there, and the next
+            # domain's schema could not see `vector`.
+            conn.execute("CREATE EXTENSION IF NOT EXISTS vector SCHEMA public")
 
             for step in plan:
                 current = step.name

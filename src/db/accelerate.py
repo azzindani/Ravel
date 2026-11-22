@@ -53,6 +53,7 @@ CREATE TRIGGER chunks_provenance_immutable
 BM25_WITH_REGION = (
     "CREATE EXTENSION IF NOT EXISTS pg_search;"
     " DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'chunks_bm25'"
+    " AND schemaname = current_schema()"
     " AND indexdef NOT LIKE '%enacting_body%') THEN DROP INDEX chunks_bm25; END IF; END $$;"
     " CREATE INDEX IF NOT EXISTS chunks_bm25 ON chunks USING bm25"
     " (id, body, (enacting_body::pdb.literal)) WITH (key_field = 'id'); ANALYZE chunks;"
@@ -69,7 +70,7 @@ OPTIONAL: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "text index (rum)",
         (
-            "CREATE EXTENSION IF NOT EXISTS rum;"
+            "CREATE EXTENSION IF NOT EXISTS rum SCHEMA public;"
             " CREATE INDEX IF NOT EXISTS chunks_tsv_rum"
             " ON chunks USING rum (tsv rum_tsvector_ops);",
         ),
@@ -96,7 +97,7 @@ ALTER TABLE corpus_regions ADD PRIMARY KEY (enacting_body);
 
 REGION_FIELD = (
     "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'chunks_bm25'"
-    " AND indexdef LIKE '%enacting_body%')"
+    " AND schemaname = current_schema() AND indexdef LIKE '%enacting_body%')"
 )
 
 
