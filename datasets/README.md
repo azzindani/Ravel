@@ -17,4 +17,4 @@ never generated at publish time.
 | `DE_LAWS_2611` | `de_gii` | named; published once embedded |
 
 On publishing, add the registry files the dataset was built with to
-`registry/published.yaml`: they are frozen from then on (`docs/PROFILES.md` §7).
+`registry/published.yaml`: they are frozen from then on (`docs/pipeline/PROFILES.md` §7).

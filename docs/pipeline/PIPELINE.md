@@ -150,7 +150,7 @@ at block boundaries.
 Each row carries `seq`, its position among the chunks of its document, and `doc_id`. With
 the index `chunks (doc_id, seq)`, "the chunks either side of this one" and "all parts of
 this pasal" are range scans; `chapter` gives "everything in this chapter". The engine's
-expansion tiers (`Vera/docs/SCORING.md` §7) are keyed on those, not on
+expansion tiers (`Vera/docs/design/SCORING.md` §7) are keyed on those, not on
 `(regulation_type, regulation_number, year)`, which is not unique across regions: `Perbup
 13/2017` exists once per kabupaten.
 

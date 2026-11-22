@@ -1,5 +1,5 @@
 """Japan's e-Gov law XML: `fetch.kind: archive_url` with the publisher's index, the url map
-that cites each version at its page, and the `jp_law` dialect (`docs/SOURCE_JP_EGOV.md`)."""
+that cites each version at its page, and the `jp_law` dialect (`SOURCE_JP_EGOV.md`)."""
 
 from __future__ import annotations
 

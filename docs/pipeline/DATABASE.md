@@ -49,13 +49,13 @@ placed chunks, a canary at the corpus width, and the provenance guard installed.
   because the cluster id is decided after the rows exist, and a 2 KB `halfvec(1024)` lives in
   TOAST, so a cold probe of 5 clusters is ~114K scattered reads: 7,622 ms on the 1.7M corpus.
   `chunk_vectors (cluster_id, id, dense)` holds only servable rows, sorted, inline: 2K reads,
-  54 ms. Vera's dense arm reads it when present (Vera `docs/HARDWARE.md` §9). It costs
+  54 ms. Vera's dense arm reads it when present (Vera `docs/operations/HARDWARE.md` §9). It costs
   ~2.7 KB a row of disk (4.6 GB at 1.7M). A delta keeps it exact (`sync_layout`: delete what
   left, append what arrived); appended rows sit out of order until the next full prepare, and
   `verify` refuses a database whose layout does not match `chunks`.
 * **The parent level** (`src/db/routing.py`, also `ravel db parents`) lets the engine hold
   ~√k centroids instead of every leaf: 184 MB -> 15 MB at 20.6M rows (Vera
-  `docs/SCALING.md` §2). It is built from 256 leaves; the engine uses it from
+  `docs/operations/SCALING.md` §2). It is built from 256 leaves; the engine uses it from
   `TWO_LEVEL_FROM` leaves (8,192), because below that it costs routing recall for memory
   nobody is short of.
 * **The gate floor** (`src/db/calibrate.py`, `ravel db calibrate <corpus> --queries ...`)
@@ -73,7 +73,7 @@ placed chunks, a canary at the corpus width, and the provenance guard installed.
 
   Vera's region arm searches within the region a question names. It needs both parts and
   stays off without them. On the 604-case eval it took Recall@5 from 59.1 to 63.6%
-  (`Vera/docs/ROADMAP.md` Stage 3).
+  (`Vera/docs/project/ROADMAP.md` Stage 3).
 
   A pg_search too old for the literal field gets the plain index (`fallback 1` in the
   report) and no list. A delta refreshes the list after it lands, since it can add a

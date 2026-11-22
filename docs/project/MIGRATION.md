@@ -83,7 +83,7 @@ the file itself, which is the only place someone about to edit it will look.
 
 **Why `queries.json` is deliberately kept in both.** Five Vera scripts read it (`e2e.py`,
 `e2e_sweep.py`, `fit_factors.py`, `pool_depth.py`, `run.py`) and
-[Vera's `docs/SCORING.md`](https://github.com/azzindani/Vera/blob/main/docs/SCORING.md)
+[Vera's `docs/design/SCORING.md`](https://github.com/azzindani/Vera/blob/main/docs/design/SCORING.md)
 cites it as what the factor weights are *fitted against* — moving it would break Vera's
 scoring provenance to tidy a directory. So Vera keeps the labels and Ravel keeps an
 import of them. **Edit labels in Vera and re-run the importer.** Two editable copies of

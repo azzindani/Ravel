@@ -7,7 +7,7 @@ Runs the layers up to chunking (the sealed knowledge base), reads each document'
 from its chunks, then -- once every document is known -- resolves each cited instrument to a
 document in the corpus and derives each document's status from the edges that point at it.
 
-Writes two sidecars, both disposable (`docs/RELATIONS.md`):
+Writes two sidecars, both disposable (`docs/pipeline/RELATIONS.md`):
 
 * `relations.parquet`  one row per (document, relation, target), with the sentence it was read
   from and the chunk that holds it.

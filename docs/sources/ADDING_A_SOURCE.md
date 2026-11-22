@@ -230,7 +230,7 @@ ravel load $B --dsn $DATABASE_URL                                     # all or n
 ```
 
 Then k-means, gate and canary, and the eval: **Recall @5 / @10 / @15 / @20 / @25**, all
-five, on a question set for the source (Vera `docs/EVAL.md`). A source without an eval set
+five, on a question set for the source (Vera `docs/eval/EVAL.md`). A source without an eval set
 says so: "determined, ✗ measured".
 
 ---

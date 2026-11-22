@@ -1,291 +1,141 @@
 # CLAUDE.md — Ravel
 
-> Context file for AI coding agents working in this repository.
-> Read this first. It defines what Ravel is, the rules you must follow, and the hard
-> boundaries that keep a corpus reproducible.
+> Context file for AI coding agents working in this repository. It holds the rules; the
+> detail lives in `docs/`, and **[`docs/README.md`](docs/README.md) is the index**. A doc is
+> named the same everywhere, so `PROFILES.md` §7 means `docs/pipeline/PROFILES.md` §7.
 
 ---
 
 ## 1. What Ravel is
 
-**Ravel** is the offline corpus compiler for
-[Vera](https://github.com/azzindani/Vera). It turns raw source
-documents into a versioned **corpus bundle** — parquet shards plus a manifest — that is
-loaded into PostgreSQL and served by Vera.
-
-The name is a contranym: *to tangle* and *to untangle*. Ravel unravels documents into
-structured threads (headings, clauses, tables, entities) and ravels those threads into
-one searchable corpus.
+**Ravel** is the offline corpus compiler for [Vera](https://github.com/azzindani/Vera). It
+turns a publisher's documents into a versioned **corpus bundle** (parquet shards plus a
+manifest) that is loaded into PostgreSQL and served by Vera, and into a public dataset.
 
 **One-line purpose:** make a corpus **reproducible** (same inputs → same bundle),
 **resumable** (a dead GPU box costs minutes, not days), and **comparable** (two chunking
 strategies can be scored against each other).
 
-Ravel is **operator infrastructure** — a CLI a human or agent runs on a GPU box. It is
-not a server, not an MCP tool, and never on a query path.
+Ravel is **operator infrastructure**: a CLI a human or agent runs on a GPU box. It is not a
+server, not an MCP tool, and never on a query path.
 
----
-
-## 2. The core mental model
+## 2. The mental model
 
 Ravel is a **compiler**, not a script.
 
 ```
 Vera's job:    embed → route → search → fuse → return cited results
-Ravel's job:   extract → chunk → enrich → embed → bundle      (clustering is Vera's, §5.17)
+Ravel's job:   fetch → extract → chunk → signals → sparse → embed → bundle → load / publish
 ```
 
-A compiler has deterministic stages, a typed intermediate representation, caching by
-content hash, and a reproducible artifact at the end. Every design decision here follows
-from taking that analogy literally. The **canonical document format**
-(`docs/CANONICAL_FORMAT.md`) is the IR. Treat it with a compiler author's seriousness.
+Deterministic stages, a typed intermediate representation (`CANONICAL_FORMAT.md`), caching
+by content hash, a reproducible artifact at the end. Phase A (extract) is per document and
+run once; phase B (chunk, enrich, embed) is per chunk and re-run per variant; phase C
+(bundle) cannot start until every vector exists. Confusing them is the main way this
+project goes wrong. The diagram is in `ARCHITECTURE.md`; the layers in `PIPELINE.md`.
 
----
+## 3. Where things are
 
-## 3. Architecture in one screen
-
-```
-                 sources/ (files on disk; no crawling — see Krawl)
-                            │
-        ┌───────────────────┴────────────────────┐
-PHASE A │  EXTRACT  (GPU-bound, expensive)        │  SmolDocling / OCR / native text
-  ONCE  │  → canonical markdown + layout + tables │  cached, keyed by content hash
-        └───────────────────┬────────────────────┘
-                            │   ← hard artifact boundary; never crossed backwards
-        ┌───────────────────┴────────────────────┐
-PHASE B │  CHUNK    structure-aware, per corpus   │  cheap, re-run per variant
- MANY   │  ENRICH   NER - entities - KG - signals │
-        │  EMBED    pluggable: local or API       │  GPU-bound, expensive, re-runnable
-        └───────────────────┬────────────────────┘
-                            │
-        ┌───────────────────┴────────────────────┐
-PHASE C │  BUNDLE   parquet shards + manifest     │  whole-corpus; no clustering (Vera's)
- GLOBAL │  (clusters: built by Vera at deploy)    │
-        └───────────────────┬────────────────────┘
-                            │
-                      LOAD (COPY → Postgres)  →  Vera serves
-```
-
-Three phases with different shapes: **A** is per-document and streams; **B** is per-chunk
-and streams; **C** cannot start until every vector exists. Confusing these is the main
-way this project goes wrong.
-
----
-
-## 4. Repository structure
-
-```
-Ravel/
-├── CLAUDE.md                      ← you are here
-├── README.md
-├── docs/
-│   ├── ARCHITECTURE.md            ← stage graph, artifact boundaries, phase split
-│   ├── CANONICAL_FORMAT.md        ← the IR: structured markdown + layout + tables
-│   ├── EXTRACTION.md              ← SmolDocling/OCR/native; throughput, concurrency
-│   ├── PROFILES.md                ← document profiles: corpus knowledge as data, not code
-│   ├── PIPELINE.md                ← the layers, what each may write, what the profile decides
-│   ├── CHUNKING.md                ← chunker registry; provenance capture rules
-│   ├── RELATIONS.md               ← revokes / amends / based_on from citations; status; no NER
-│   ├── QUALITY.md                 ← per-document verdict: clean / degraded / unusable / absent
-│   ├── ENRICHMENT.md              ← NER, entities, KG edges, signals, keyword stats
-│   ├── EMBEDDING.md               ← pluggable embedders; dimension; omni; consistency
-│   ├── EMBED_VERIFICATION.md      ← how embedding was tested: reference checks, speed, vLLM
-│   ├── BUNDLE.md                  ← output contract: parquet + manifest + schema gen
-│   ├── VARIANTS.md                ← the experiment harness
-│   ├── EXECUTION.md               ← work queue, checkpoints, resume, portability
-│   ├── INTERFACES.md              ← CLI / MCP / HTTP faces, Docker images, HF substrate
-│   ├── STACK.md                   ← Python 3.14, libraries, environments, no-orchestrator
-│   ├── CLUSTERING.md              ← domain anchors, k-means, assignment, generations
-│   ├── DATABASE.md                ← bundle → database ready to serve: `ravel db prepare`
-│   ├── LOOPHOLES.md               ← known failure modes + solutions
-│   ├── EVAL.md                    ← how a variant is scored and promoted
-│   ├── MIGRATION.md               ← absorbing notebooks, pre_embed, ID_Legal
-│   ├── ABSORPTION.md              ← measured survey of the existing corpus and code
-│   ├── SOURCE_ID_REG_MARKDOWN.md  ← measured reading of ID_REG_Markdown + the id_regulation_md profile
-│   └── OPEN_QUESTIONS.md          ← decisions still on the table
-│
-├── ravel/                         ← Python package (libraries dictate language)
-│   ├── cli.py                     ← ravel extract | build | bundle | load | eval
-│   ├── sources/                   ← discovery, content hashing, source manifests
-│   ├── spec/                      ← profile loader: YAML → validated, compiled, hashed
-│   ├── extract/                   ← native, text/html, ocr, smoldocling → canonical
-│   │                                 + structure.py: profile-driven heading assignment
-│   ├── canon/                     ← canonical format: parse, validate, serialize
-│   ├── chunk/                     ← chunker registry (pasal/ayat, heading, token, code)
-│   ├── enrich/                    ← NER, entity linking, KG edges, signals, tf-idf
-│   ├── embed/                     ← embedder plugins: local (transformers/vLLM), API
-│   ├── cluster/                   ← domain anchors, k-means, assignment
-│   ├── bundle/                    ← parquet writer, manifest, schema generation
-│   ├── load/                      ← COPY into Postgres; preflight checks
-│   ├── runtime/                   ← work queue, checkpoint store, concurrency, progress
-│   ├── variants/                  ← variant configs, matrix runs
-│   ├── mcp/                       ← MCP server: parser authoring tools (authoring only)
-│   └── service/                   ← FastAPI parse-as-a-service endpoint
-│
-├── registry/                      ← corpus knowledge as data (in git, reviewed)
-│   └── profiles/                  ← <id>@<version>.yaml · see docs/PROFILES.md
-├── corpora/                       ← per-corpus definitions (id_legal.yaml, ...)
-├── eval/                          ← labeled query→answer sets + scoring
-├── notebooks/                     ← archived originals of ported notebooks (provenance)
-├── docker/                        ← ravel-job and ravel-service images
-└── pipeline.yaml
-```
-
-Python 3.14 throughout, managed by `uv`: the whole dependency surface (SmolDocling,
-transformers, vLLM, PyMuPDF, pyarrow, faiss) is Python. Vera is Rust because a stateless
-query engine benefits from it; Ravel would gain nothing and lose the ecosystem. Full
-stack and version policy in `docs/STACK.md`.
-
----
-
-## 5. Architecture principles (do not violate)
-
-1. **Extract once, chunk many.** Extraction output is cached by source content hash. A
-   chunking experiment must never trigger re-extraction. (`docs/ARCHITECTURE.md` §3)
-2. **The canonical format is the only interface between phases.** Chunkers, enrichers and
-   table builders read canonical documents — never the original PDF, never the
-   extractor's raw output. (`docs/CANONICAL_FORMAT.md`)
-3. **Provenance is captured at chunk creation and immutable.** It is the product. Never
-   synthesize, never backfill, never repair. (`docs/CHUNKING.md` §4)
-4. **Enrichment is disposable.** Signals, entities and graph edges live in separate
-   tables that can be dropped and rebuilt without touching `chunks`.
-   (`docs/ENRICHMENT.md` §2)
-5. **Every stage is idempotent and keyed by content hash.** Re-running never
-   double-writes. This is what makes resume safe. (`docs/EXECUTION.md` §3)
-6. **The manifest is part of the corpus.** Model, version, instruction strings, pooling,
-   normalization, chunker version, source hashes. Without it the bundle is unverifiable
-   and Vera's startup canary has nothing to check. (`docs/BUNDLE.md` §3)
-7. **Schema is generated from the manifest, not hardcoded.** Embedding dimension is a
-   variable because the embedder is a plugin. (`docs/EMBEDDING.md` §2)
-8. **Sources are read-only inputs.** Ravel never modifies, renames or deletes a source
-   file.
-9. **Every path is a URI.** `file://`, `s3://`, `hf://` are interchangeable through
-   fsspec. This is what makes local, hybrid and cloud-to-cloud the same code.
-   (`docs/INTERFACES.md` §5)
-10. **vLLM and faiss-gpu are accelerators, never dependencies.** Windows has neither; a
-    stage that cannot run without them kills local development. (`docs/STACK.md` §1)
-11. **MCP is authoring-time only.** It writes configs; the CLI consumes them. A build
-    must never depend on an MCP server being alive. (`docs/INTERFACES.md` §2)
-12. **Corpus knowledge is data, never code.** Patterns, vocabularies, document types
-    and structure markers live in `registry/profiles/*.yaml`; what a publisher's XML
-    elements mean lives in `registry/dialects/*.yaml`. A regex or an element name specific
-    to one corpus inside a `.py` file is the ID_Legal defect reappearing. A new source
-    follows `docs/ADDING_A_SOURCE.md`, step by step.
-    (`docs/PROFILES.md`, `docs/ABSORPTION.md` §4)
-13. **An extractor reports what is on the page; a structurer decides what it means.**
-    Heading assignment is a separate, profile-driven pass over canonical blocks — never
-    logic inside an extractor. (`docs/EXTRACTION.md` §4b)
-14. **Chunkers group; `Builder` builds.** A chunker chooses which blocks belong together
-    and what to call the result. It never constructs a `Chunk` — one place reads
-    provenance off the canonical document, so "never emit a chunk without full
-    provenance" is structural rather than remembered. (`docs/CHUNKING.md` §3b)
-15. **A validator must assert the invariant, not replay the construction.** A check that
-    re-implements the code it checks certifies that code's bugs — 931 documents passed a
-    heading_path rule that shared the builder's defect. (`docs/LOOPHOLES.md`)
-16. **Build the knowledge base before the index.** Layers up to and including the
-    `expected` check produce the sealed chunks; embedding and keyword indexing come after
-    and can be dropped and rebuilt. Every layer writes to one place only — `body` takes
-    deletions, derived text takes repairs, sidecars take anything. (`docs/PIPELINE.md`)
-17. **Clustering belongs to Vera.** Clusters are a deployment concern: how many, how big,
-    how the table is ordered on disk, and how they are restructured when data is added or a
-    new corpus is deployed all depend on the serving hardware and change after the bundle is
-    sealed. Ravel builds the dataset (chunks, vectors, sidecars) and the key factors for
-    algorithmic search (signals, ranking factors, references, relations, status, quality).
-    A bundle ships with `cluster_id` empty and no `clusters.parquet`; Vera assigns it.
-    (`docs/CLUSTERING.md`)
-
----
-
-## 6. Command surface
-
-Full detail in the per-stage docs.
-
-| Command | Role |
+| path | holds |
 |---|---|
-| `ravel profiles list\|show\|try\|route` | inspect and test document profiles |
-| `ravel sources scan <corpus>` | discover files, hash, write the source manifest |
-| `ravel extract <corpus>` | Phase A: documents → canonical, cached, resumable |
-| `ravel chunk <corpus> [--chunker c] [--variant v]` | Phase B: canonical → chunks with provenance |
-| `ravel build <corpus> --variant <v>` | Phase B: chunk → enrich → embed |
-| `ravel sparse <corpus>` | the lexical arm: one BM25 vocabulary over the whole corpus + a sparse vector per chunk (CPU) |
-| `ravel db prepare <bundle> --dsn ...` | the one process that makes a database ready to serve (place, load, index, verify); Vera runs the same code |
-| `ravel bundle delta <old> <new> --out d/`, `ravel db apply d/ --dsn ...` | a change to a loaded corpus: remove, add, replace derived rows, one transaction |
-| `ravel bundle relabel <b> --out b2/ --corpus <id>`, `ravel db relabel b2/ --dsn ...` | a newer profile's text label rules on a built bundle: re-embed only the relabelled chunks, apply in one transaction, provenance guard kept (`docs/DATABASE.md` §4c) |
-| `ravel cluster <corpus> --variant <v>` | optional offline tool (eval, rehearsal); not in the build path |
-| `ravel bundle <corpus> --variant <v>` | write parquet shards + manifest |
-| `ravel load <bundle> --dsn ...` | preflight, `COPY` into Postgres, verify |
-| `ravel eval <bundle> [<bundle> ...]` | score variants against the labeled set |
-| `ravel status <corpus>` | progress, checkpoint state, what would resume |
-| `ravel mcp` | MCP server for parser authoring (stdio) — never in a build path |
-| `ravel serve` | HTTP parse-as-a-service endpoint |
+| `src/` | the Python package: `cli.py`, `sources/` (fetch, scan), `spec/` (profile, dialect, corpus loaders), `extract/`, `canon/`, `chunk/`, `enrich/`, `embed/`, `bundle/`, `load/`, `db/`, `runtime/`, `variants/`, `evaluate/`, `cluster/` (optional) |
+| `registry/` | corpus knowledge as data: `profiles/`, `dialects/`, `lexicons/`, `hardware/`, and `published.yaml` (frozen files) |
+| `corpora/` | one YAML per corpus: where its publisher is, its profile, its embedder |
+| `datasets/` | the card of every published dataset (`<NAME>.md` is `Azzindani/<NAME>`'s README) |
+| `docs/` | `design/`, `pipeline/`, `sources/`, `eval/`, `project/`: see the index |
+| `docker/` | the job image and the pinned vLLM server (`compose.vllm.yml`) |
+| `tools/`, `eval/`, `tests/` | offline helpers, labelled sets, the suite |
+| `sources/`, `work/` | downloaded sources and workspaces: on disk, never in git |
 
-Three faces over one core (`docs/INTERFACES.md`): the CLI builds corpora and must work
-with nothing else running; MCP authors parser configs into the registry; HTTP exposes
-parsing as a stateless service.
+Python 3.14, managed by `uv` (`STACK.md`). Lint, format and `mypy --strict` are enforced in
+CI. What is built and what is not: `PROGRESS.md`.
 
----
+## 4. Architecture principles (do not violate)
 
-## 7. What you must NEVER do
+1. **Extract once, chunk many.** Extraction output is cached by source content hash; a
+   chunking experiment never triggers re-extraction. (`ARCHITECTURE.md` §3)
+2. **The canonical format is the only interface between phases.** Chunkers, enrichers and
+   table builders read canonical documents, never the source or an extractor's raw output.
+   (`CANONICAL_FORMAT.md`)
+3. **Provenance is captured at chunk creation and immutable.** It is the product. Never
+   synthesize, never backfill, never repair. (`CHUNKING.md` §4)
+4. **Enrichment is disposable.** Signals, entities and graph edges live in sidecars that
+   can be dropped and rebuilt without touching `chunks`. (`ENRICHMENT.md` §2)
+5. **Every stage is idempotent and keyed by content hash.** Re-running never
+   double-writes; this is what makes resume safe. (`EXECUTION.md` §3)
+6. **The manifest is part of the corpus.** Model, version, instructions, pooling,
+   normalization, chunker version, source hashes. Without it Vera's startup canary has
+   nothing to check. (`BUNDLE.md` §3)
+7. **Schema is generated from the manifest, not hardcoded.** The embedding dimension is a
+   variable because the embedder is a plugin. (`EMBEDDING.md` §2)
+8. **Sources are read-only inputs.** Ravel never modifies, renames or deletes a source file.
+9. **Every path is a URI.** `file://`, `s3://`, `hf://` through fsspec. (`INTERFACES.md` §5)
+10. **vLLM and faiss-gpu are accelerators, never dependencies.** Windows has neither.
+    (`STACK.md` §1)
+11. **MCP is authoring-time only.** A build never depends on an MCP server being alive.
+    (`INTERFACES.md` §2)
+12. **Corpus knowledge is data, never code.** Patterns, vocabularies, document types and
+    structure markers live in `registry/profiles/*.yaml`; what a publisher's XML elements
+    mean lives in `registry/dialects/*.yaml`. A regex or element name specific to one
+    corpus inside a `.py` file is the ID_Legal defect reappearing. A new source follows
+    `ADDING_A_SOURCE.md`, step by step. (`PROFILES.md`, `ABSORPTION.md` §4)
+13. **An extractor reports what is on the page; a structurer decides what it means.**
+    Heading assignment is a profile-driven pass over canonical blocks. (`EXTRACTION.md` §4b)
+14. **Chunkers group; `Builder` builds.** A chunker never constructs a `Chunk`: one place
+    reads provenance off the canonical document. (`CHUNKING.md` §3b)
+15. **A validator must assert the invariant, not replay the construction.** A check that
+    re-implements the code it checks certifies that code's bugs. (`LOOPHOLES.md`)
+16. **Build the knowledge base before the index.** Every layer writes to one place only:
+    `body` takes deletions, derived text takes repairs, sidecars take anything.
+    (`PIPELINE.md`)
+17. **Clustering belongs to Vera.** A bundle ships with `cluster_id` empty and no
+    `clusters.parquet`; Vera assigns it at deploy. (`CLUSTERING.md`)
+18. **A published registry file is frozen.** A change is a new version beside it, and
+    `ravel update` carries the corpus across. (`PROFILES.md` §7, `registry/published.yaml`)
+19. **Everything a rebuild needs is in git.** A source is rebuilt by `ravel build`, a
+    dataset republished by `ravel publish` from its card in `datasets/`. A step that lives
+    only in a shell history or a scratch file is not done. (`DATABASE.md` §4a)
 
-1. **Never re-extract to satisfy a downstream change.** If a chunker needs something the
-   canonical format lacks, extend the format and re-extract *deliberately*, as a
-   versioned event — not implicitly.
+## 5. The lifecycle of a corpus
+
+| step | command | doc |
+|---|---|---|
+| add a source | corpus YAML + profile + dialect, by the process | `ADDING_A_SOURCE.md` |
+| build from nothing | `ravel build <corpus> -w <ws> --out <bundle> --base-url <vLLM>` | `DATABASE.md` §4a |
+| one stage | `ravel sources fetch` · `extract` · `chunk` · `signals` · `sparse` · `embed` · `bundle build` | `PIPELINE.md` |
+| check the embedding server | `ravel verify-backend <corpus> --base-url ...` | `EMBED_VERIFICATION.md` |
+| serve it | `ravel db prepare <bundle> --dsn ...` | `DATABASE.md` |
+| a newer snapshot or profile | `ravel update <corpus> --from <old ws> --from-bundle <old bundle> ...` | `DATABASE.md` §4b |
+| new text labels only | `ravel bundle relabel` + `ravel db relabel` | `DATABASE.md` §4c |
+| publish a dataset | `ravel publish <corpus> -w <ws> --repo Azzindani/<NAME>` | `datasets/README.md` |
+| inspect | `ravel status`, `ravel profiles try`, `ravel bundle show` | |
+
+The embedding server is the docker vLLM container (`docker/compose.vllm.yml`), checked with
+`verify-backend` before anything is embedded through it.
+
+## 6. What you must NEVER do
+
+1. **Never re-extract to satisfy a downstream change.** Extend the format and re-extract
+   deliberately, as a versioned event.
 2. **Never write enrichment output into the `chunks` table.** It is immutable.
 3. **Never mix vectors from different models, versions, instructions or pooling in one
-   column.** Omni/multimodal vectors are a different space — a separate column with its
-   own query-side embedder, never blended.
+   column.** A different space is a separate column with its own query-side embedder.
 4. **Never emit a chunk without full provenance.** No source_url, no page/section → the
    chunk does not exist.
 5. **Never checkpoint to local disk only** when the run can happen on Kaggle/Colab/Vast.
-   Ephemeral disk is not a checkpoint. (`docs/EXECUTION.md` §4)
+   (`EXECUTION.md` §4)
 6. **Never load a bundle whose manifest fails the consistency preflight** (cosine
    round-trip against the query-side embedder).
 7. **Never let a variant silently reuse another variant's cache.** Cache keys include the
    full config hash.
 8. **Never hardcode the embedding dimension, chunk size, cluster count or batch size.**
-   Read from corpus/variant config.
-9. **Never scrape.** Sources are files. Collection belongs to `Krawl`. The one exception
-   is a corpus's declared `fetch:` block: a publisher's bulk listing, downloaded file for
-   file to the publisher's own paths, never overwritten (`docs/SOURCE_US_CFR.md` §2).
-10. **Never mutate a published bundle.** A change produces a new bundle version.
-
----
-
-## 8. Progress tracker
-
-- [x] Canonical format spec + validator + round-trip test
-- [x] Source scanner: discovery, content hashing, source manifest
-- [x] Execution runtime: ledger, sharding, resume, bounded memory, byte-aware
-      batching — `src/runtime/`
-- [ ] Extractor: SmolDocling (structure → markdown), batched on GPU
-- [x] Extractor: native PDF text + HTML/markdown/plain, profile-driven structuring
-- [ ] Extractor fallbacks: OCR, SmolDocling, table extraction
-- [x] Chunker registry + profile-driven `unit` chunker with provenance
-- [x] Text-layer quality gate: clean/damaged/absent routing — `src/extract/quality.py`
-- [x] URI substrate (`file://`, `hf://`, `s3://`) — `src/uris.py`
-- [x] Embedder plugin interface + manifest + preflight, local (transformers) and API backends, resumable `ravel embed` stage — `src/embed/`; run end to end on 12 real documents with Qwen3-Embedding-0.6B on CPU (1.2 vectors/s: a GPU is needed for the 1.33M chunks); vLLM backend still to write
-- [x] Hardware profiles, serving-engine path (`kind: api` + concurrency, `verify-backend`), remote mirror + `--worker i/N`, second vector space in the manifest, schema and load plan — `registry/hardware/`, `src/runtime/sync.py`; **all tested without a real vLLM, bucket, second machine or VL model**
-- [x] Loader executor (`ravel load`) and bundle assembly (`ravel bundle build`) — `src/load/execute.py`, `src/bundle/build.py`; run against real pgvector in CI
-- [x] Bundle writer: manifest, generated schema, parquet shards, inventory — `src/bundle/`
-- [x] Clustering code (anchors, spherical k-means, assignment) — `src/cluster/`; **optional, Vera owns clustering at deploy and ingest** (§5.17)
-- [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
-- [x] Relations: revokes / replaces / amends / based_on from the verb beside each citation, resolved to documents, status derived — `src/enrich/relations.py`, `docs/RELATIONS.md`; no NER, by decision
-- [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/QUALITY.md`; the index half does not read it yet
-- [x] Lexical arm: `ravel sparse` fits `corpus.bm25.json` (Vera's `BM25_VOCAB`, required at its startup) and writes sparse vectors; bundled, staged and merged into `chunks.sparse`; run on `id_reg_markdown` — `src/enrich/sparse_run.py`
-- [~] Enrichment: ranking factors, references, whole-corpus citation graph — `src/enrich/`
-- [x] `ravel db prepare`: bundle → database ready to serve, 16.5 min for 1.7M chunks, binary vector COPY (10x), cluster id written with the row, canary + provenance guard + verify — `src/db/`, `docs/DATABASE.md`; `ravel db image`/`attach` (build once, deploy by copy; 12.3 GB, 10 s volume copy, engine verified on it); `ravel bundle delta` + `ravel db apply` (add/update/remove, applied == rebuilt, checked in CI); `chunk_vectors`, the cluster-ordered routed layout (prepare builds it, apply syncs it, verify asserts it; cold dense probe 7.6 s -> 54 ms); `ravel db calibrate` writes the measured gate floor into `corpus_meta.gate`; `cluster_parents` gives Vera two-level routing (engine 184 MB -> 15 MB at 20.6M). Vera served it at 1.7M real and 5M/10M/20M replicas on 2 vCPU / 8 GB at 0.4-0.7 s p50 (Vera `docs/HARDWARE.md` §9)
-- [x] Variant harness: chained cache keys, matrix runs, reuse plan — `src/variants/`
-- [~] Eval: coverage matching, metrics, bootstrap CI, oracle search — `src/evaluate/`;
-      Vera's 50-case seed set imported to `eval/id_legal/queries@v1.jsonl` by
-      `tools/import_vera_queries.py`. Still **below the gate it must pass**: 50
-      cases against a 100 minimum, 66% factual against a 40% target, and the
-      source set's own "STILL NEEDS DOMAIN REVIEW" is unaddressed
-- [ ] MCP server: parser authoring tools (inspect, preview, diff, save)
-- [~] Docker images: `ravel-job` (Linux GPU batch image, `docker/Dockerfile.job`, torch.compile verified in it); `ravel-service` and the HTTP service still to write
-- [ ] Remote URI backends: R2 working state, HF datasets for published bundles
-- [x] CI: ruff, hermetic suite on 3 platforms, generated SQL against real pgvector, routing over the 158 sample PDFs, CLI from an installed wheel
-- [x] `ruff format` and `mypy --strict` over `src/` and `tools/`, both enforced in CI
-- [ ] Rebuild `06_ID_Legal` end-to-end and beat it on the eval set
+9. **Never scrape.** Sources are files. The one exception is a corpus's declared `fetch:`
+   block: a publisher's bulk listing, downloaded to the publisher's own paths, never
+   overwritten. (`SOURCE_US_CFR.md` §2)
+10. **Never mutate a published bundle, dataset or registry file.** A change produces a new
+    version.
+11. **Never edit `registry/` or `corpora/` text to tidy it.** A profile's text is part of the
+    config hash every stage is cached by, and a published one is frozen.
 
 ---
 

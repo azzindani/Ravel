@@ -1,6 +1,6 @@
 """The US CFR pipeline: fetch, the `xml` extractor and its dialects, `markup`, signals.
 
-`docs/SOURCE_US_CFR.md`. Hermetic: the XML is written here and the publisher's listing is a
+`SOURCE_US_CFR.md`. Hermetic: the XML is written here and the publisher's listing is a
 fake opener, so the suite never touches the network.
 """
 

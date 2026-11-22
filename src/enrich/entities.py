@@ -75,7 +75,7 @@ class Reference:
 
     ! `None` rather than a guess. This is what Vera's exact-match bypass keys on, and an
     identifier that is wrong is worse than one that is absent, because the bypass trusts
-    it completely (`docs/PROFILES.md`).
+    it completely (`docs/pipeline/PROFILES.md`).
     """
 
     @property

@@ -390,7 +390,7 @@ class GateSpec(Base):
     foreign: list[str] = Field(default_factory=list)
     """Jurisdictions the corpus does NOT cover. Vera refuses a query naming one unless a
     retrieved text names it too, so the corpus's own treaties with them stay answerable
-    (Vera `docs/ROADMAP.md` Stage 1). Matched as whole words, case-insensitive."""
+    (Vera `docs/project/ROADMAP.md` Stage 1). Matched as whole words, case-insensitive."""
 
 
 class CorpusSpec(Base):

@@ -216,4 +216,4 @@ The 60,000 chunks are a fraction of the corpus, so recall was not measured.
 - Throughput depends on cooling and clock; the numbers above are for one machine and one cooling
   state.
 - Retrieval quality of the standard space against the legacy space has not been measured; that needs
-  the labeled eval set (`docs/EVAL.md`), which is still below its gate.
+  the labeled eval set (`docs/eval/EVAL.md`), which is still below its gate.

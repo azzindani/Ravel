@@ -11,7 +11,7 @@ database that is "ready" must not depend on someone remembering three more scrip
 * **The text index (RUM) and the BM25 index (pg_search)** are accelerators. The engine
   probes for each and falls back to a slower scan without it, so a server that cannot build
   one still serves. They are attempted, and a failure is reported, never swallowed.
-* **The region scope** is Vera's migration 0007 (`Vera/docs/ROADMAP.md` Stage 3). The BM25
+* **The region scope** is Vera's migration 0007 (Vera `ROADMAP.md` Stage 3). The BM25
   index carries `enacting_body` as a literal field, and `corpus_regions` lists the region
   names a question is matched against. Vera's region arm needs both and stays off without
   them. A pg_search too old for the literal field still gets the plain index, never none.

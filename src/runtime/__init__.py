@@ -1,5 +1,5 @@
 """Execution: ledger, shards, batching, resume. Durability by content addressing, not by
-an orchestrator (`docs/STACK.md` §4)."""
+an orchestrator (`docs/design/STACK.md` §4)."""
 
 from runtime.batching import MAX_BATCH_BYTES, MAX_BATCH_ITEMS, batched
 from runtime.ledger import Entry, Ledger, Status

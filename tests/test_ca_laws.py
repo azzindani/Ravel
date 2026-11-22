@@ -1,5 +1,5 @@
 """Canada's consolidated Acts and regulations: the `justice_ca` dialect, the `ca_laws`
-profile and the `github` fetch (`docs/SOURCE_CA_LAWS.md`)."""
+profile and the `github` fetch (`docs/sources/SOURCE_CA_LAWS.md`)."""
 
 from __future__ import annotations
 

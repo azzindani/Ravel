@@ -49,7 +49,7 @@ HTTP — parse-as-a-service in Docker, stateless
 ```
 
 All three share one registry and one canonical format. The MCP server is authoring-time
-only — a build must never depend on it. See [docs/INTERFACES.md](docs/INTERFACES.md).
+only — a build must never depend on it. See [docs/design/INTERFACES.md](docs/design/INTERFACES.md).
 
 ## Design principles
 
@@ -68,24 +68,24 @@ only — a build must never depend on it. See [docs/INTERFACES.md](docs/INTERFAC
 | Doc | Contents |
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | anchor context for AI coding agents; principles; never-do list |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | stage graph, artifact boundaries, phase split |
-| [docs/CANONICAL_FORMAT.md](docs/CANONICAL_FORMAT.md) | the intermediate document format — the core contract |
-| [docs/EXTRACTION.md](docs/EXTRACTION.md) | SmolDocling, OCR, tables; throughput and concurrency |
-| [docs/PROFILES.md](docs/PROFILES.md) | document profiles: the corpus knowledge that must not live in code |
-| [docs/CHUNKING.md](docs/CHUNKING.md) | structure-aware chunker registry; provenance capture |
-| [docs/ENRICHMENT.md](docs/ENRICHMENT.md) | NER, entities, knowledge graph, signals, keyword stats |
-| [docs/EMBEDDING.md](docs/EMBEDDING.md) | pluggable embedders, dimension, omni, consistency |
-| [docs/BUNDLE.md](docs/BUNDLE.md) | the output contract: parquet + manifest + schema generation |
-| [docs/VARIANTS.md](docs/VARIANTS.md) | the experiment harness; what is held fixed |
-| [docs/EXECUTION.md](docs/EXECUTION.md) | work queue, checkpoints, resume, portability |
-| [docs/INTERFACES.md](docs/INTERFACES.md) | CLI / MCP / HTTP faces, Docker images, HF substrate |
-| [docs/STACK.md](docs/STACK.md) | Python 3.14, libraries, environments, no-orchestrator |
-| [docs/CLUSTERING.md](docs/CLUSTERING.md) | domain anchors, k-means, cluster assignment |
-| [docs/LOOPHOLES.md](docs/LOOPHOLES.md) | known failure modes + solutions |
-| [docs/EVAL.md](docs/EVAL.md) | how a variant is scored and promoted |
-| [docs/MIGRATION.md](docs/MIGRATION.md) | absorbing the notebooks, `pre_embed`, and ID_Legal |
-| [docs/ABSORPTION.md](docs/ABSORPTION.md) | survey of what exists today, measured: corpus, defects, verdicts |
-| [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | decisions still on the table |
+| [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md) | stage graph, artifact boundaries, phase split |
+| [docs/design/CANONICAL_FORMAT.md](docs/design/CANONICAL_FORMAT.md) | the intermediate document format — the core contract |
+| [docs/pipeline/EXTRACTION.md](docs/pipeline/EXTRACTION.md) | SmolDocling, OCR, tables; throughput and concurrency |
+| [docs/pipeline/PROFILES.md](docs/pipeline/PROFILES.md) | document profiles: the corpus knowledge that must not live in code |
+| [docs/pipeline/CHUNKING.md](docs/pipeline/CHUNKING.md) | structure-aware chunker registry; provenance capture |
+| [docs/pipeline/ENRICHMENT.md](docs/pipeline/ENRICHMENT.md) | NER, entities, knowledge graph, signals, keyword stats |
+| [docs/pipeline/EMBEDDING.md](docs/pipeline/EMBEDDING.md) | pluggable embedders, dimension, omni, consistency |
+| [docs/design/BUNDLE.md](docs/design/BUNDLE.md) | the output contract: parquet + manifest + schema generation |
+| [docs/eval/VARIANTS.md](docs/eval/VARIANTS.md) | the experiment harness; what is held fixed |
+| [docs/pipeline/EXECUTION.md](docs/pipeline/EXECUTION.md) | work queue, checkpoints, resume, portability |
+| [docs/design/INTERFACES.md](docs/design/INTERFACES.md) | CLI / MCP / HTTP faces, Docker images, HF substrate |
+| [docs/design/STACK.md](docs/design/STACK.md) | Python 3.14, libraries, environments, no-orchestrator |
+| [docs/pipeline/CLUSTERING.md](docs/pipeline/CLUSTERING.md) | domain anchors, k-means, cluster assignment |
+| [docs/design/LOOPHOLES.md](docs/design/LOOPHOLES.md) | known failure modes + solutions |
+| [docs/eval/EVAL.md](docs/eval/EVAL.md) | how a variant is scored and promoted |
+| [docs/project/MIGRATION.md](docs/project/MIGRATION.md) | absorbing the notebooks, `pre_embed`, and ID_Legal |
+| [docs/project/ABSORPTION.md](docs/project/ABSORPTION.md) | survey of what exists today, measured: corpus, defects, verdicts |
+| [docs/project/OPEN_QUESTIONS.md](docs/project/OPEN_QUESTIONS.md) | decisions still on the table |
 
 ## Relationship to Vera
 
@@ -97,7 +97,7 @@ documents → bundle → Postgres    ─────► query → route → sear
 ```
 
 Ravel owns the schema because Ravel is the only thing that writes. Readers do not
-define formats. See [docs/BUNDLE.md](docs/BUNDLE.md) §2.
+define formats. See [docs/design/BUNDLE.md](docs/design/BUNDLE.md) §2.
 
 The seam is the **`corpus_meta` row**. `src/bundle/schema.py` generates the table;
 `src/load/plan.py` stamps the manifest into it *before* the first chunk, because
@@ -111,8 +111,8 @@ Shared between the two repositories:
 
 | Thing | Here | In Vera | Rule |
 |---|---|---|---|
-| Labelled eval queries | [`eval/id_legal/queries@v1.jsonl`](eval/id_legal) | [`dev_tools/eval/queries.json`](https://github.com/azzindani/Vera/blob/main/dev_tools/eval/queries.json) — 50 cases, the origin | Imported by [`tools/import_vera_queries.py`](tools/import_vera_queries.py); chunk ids are dropped, because relevance is a document + locator ([docs/EVAL.md](docs/EVAL.md) §1) |
-| Byte-aware batching | [`src/runtime/batching.py`](src/runtime/batching.py) | [`dev_tools/pre_embed/batching.py`](https://github.com/azzindani/Vera/blob/main/dev_tools/pre_embed/batching.py) — frozen | Ported per [docs/ABSORPTION.md](docs/ABSORPTION.md) §7. Ravel owns it; Vera's copy is held only until `pre_embed`'s remaining scripts follow it |
+| Labelled eval queries | [`eval/id_legal/queries@v1.jsonl`](eval/id_legal) | [`dev_tools/eval/queries.json`](https://github.com/azzindani/Vera/blob/main/dev_tools/eval/queries.json) — 50 cases, the origin | Imported by [`tools/import_vera_queries.py`](tools/import_vera_queries.py); chunk ids are dropped, because relevance is a document + locator ([docs/eval/EVAL.md](docs/eval/EVAL.md) §1) |
+| Byte-aware batching | [`src/runtime/batching.py`](src/runtime/batching.py) | [`dev_tools/pre_embed/batching.py`](https://github.com/azzindani/Vera/blob/main/dev_tools/pre_embed/batching.py) — frozen | Ported per [docs/project/ABSORPTION.md](docs/project/ABSORPTION.md) §7. Ravel owns it; Vera's copy is held only until `pre_embed`'s remaining scripts follow it |
 | Corpus schema | [`src/bundle/schema.py`](src/bundle/schema.py) — generated | [`migrations/*.sql`](https://github.com/azzindani/Vera/tree/main/migrations) — applied by hand | Generated from the manifest here, never hand-written there |
 
 Vera: **[github.com/azzindani/Vera](https://github.com/azzindani/Vera)**

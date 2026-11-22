@@ -1,6 +1,6 @@
 """The profile's `pipeline:` section: defaults, derived text, and the expected-output contract.
 
-`docs/PIPELINE.md`. The profile says what the layers after extraction do for a kind of
+`docs/pipeline/PIPELINE.md`. The profile says what the layers after extraction do for a kind of
 document; these tests pin that the corpus can still override it, that derived text never
 reaches `body`, and that a build below its profile's floors is reported rather than trusted.
 """

@@ -1,4 +1,4 @@
-"""Judge every document of a Markdown corpus: is it worth indexing? (`docs/QUALITY.md`)
+"""Judge every document of a Markdown corpus: is it worth indexing? (`docs/pipeline/QUALITY.md`)
 
     uv run python tools/build_quality.py id_regulation_md@1.2 work/id_reg_markdown \
         --out work/quality --workers 16 [--every N] [--show 4] [--registry DIR]

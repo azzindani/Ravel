@@ -150,8 +150,8 @@ ravel export  ca_laws -w work/ca_laws/2026-11-16 --out . --vectors   # this data
 There is no code specific to Canada. Every element name, heading location and number rule is
 declared in YAML (`registry/dialects/justice_ca@1.0.yaml`), and the citation forms and signal
 patterns are in the profile (`registry/profiles/ca_laws@1.0.yaml`). The method is in Ravel's
-`docs/SOURCE_CA_LAWS.md`, and the process every source follows is in
-`docs/ADDING_A_SOURCE.md`.
+`docs/sources/SOURCE_CA_LAWS.md`, and the process every source follows is in
+`docs/sources/ADDING_A_SOURCE.md`.
 
 ## License
 

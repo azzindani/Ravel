@@ -2,7 +2,7 @@
 
 No database needed: the point is which statements run, in which order, and what is
 reported when the server refuses one. The SQL itself was run on the 1.7M corpus as Vera's
-migration 0007 (`Vera/docs/ROADMAP.md` Stage 3).
+migration 0007 (`Vera/docs/project/ROADMAP.md` Stage 3).
 """
 
 from __future__ import annotations

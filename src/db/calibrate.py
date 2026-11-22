@@ -7,7 +7,7 @@ floor is a property of the corpus's vector space AND of its clusters, so it belo
 beside them: measured on the clusters Vera will route by, written into
 `corpus_meta.gate`, read by the engine at startup. A floor kept in the engine's
 configuration was fitted once, on another corpus (0.39), and on this one sat below the
-median of the OFF-topic questions (Vera `docs/EVAL.md` §4c-ter).
+median of the OFF-topic questions (Vera `docs/eval/EVAL.md` §4c-ter).
 
 The rule is deliberately simple, and recorded with its inputs:
 

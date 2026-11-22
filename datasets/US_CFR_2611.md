@@ -166,7 +166,7 @@ ravel publish us_cfr -w work/us_cfr/2026-11-21 --repo Azzindani/US_CFR_2611   # 
 Every element name, heading location and marker rule is declared in YAML
 (`registry/dialects/gpo_cfr@1.0.yaml`), not in code; the signal patterns are in the profile
 (`registry/profiles/us_cfr@1.1.yaml`). Rerun the fetch to take editions published since; it
-never overwrites a file. The method is in Ravel's `docs/SOURCE_US_CFR.md`.
+never overwrites a file. The method is in Ravel's `docs/sources/SOURCE_US_CFR.md`.
 
 ## Changes
 

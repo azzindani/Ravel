@@ -29,7 +29,7 @@ python tools/import_vera_queries.py ../Vera/dev_tools/eval/queries.json \
 ! **Not yet fit to promote on.** 50 queries against a 100 minimum, 66% factual against a
 40% target, and the source set's own "STILL NEEDS DOMAIN REVIEW" is unaddressed — whether
 a clause genuinely *answers* a question is a lawyer's judgement. Both gates report this
-on every import rather than passing quietly. See `docs/MIGRATION.md` §3a.
+on every import rather than passing quietly. See `docs/project/MIGRATION.md` §3a.
 
 ## What a labeled query looks like
 

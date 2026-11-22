@@ -1,5 +1,5 @@
 """A registry file a published dataset was made with is never edited or removed
-(`registry/published.yaml`, `docs/PROFILES.md` §7): a change is a new version beside it."""
+(`registry/published.yaml`, `PROFILES.md` §7): a change is a new version beside it."""
 
 from __future__ import annotations
 

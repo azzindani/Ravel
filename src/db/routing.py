@@ -3,7 +3,7 @@
 Vera holds every cluster centroid in memory and scans all of them per query. `k` grows
 with the corpus (~2,000 rows a cluster), so that set grows with it: 30 MB of engine at
 1.7M rows, 184 MB at 20.6M, and ~0.9 GB at 100M against a 512 MB container (Vera
-`docs/SCALING.md` §1). The fix is the one routing already applies to rows: do not look
+`SCALING.md` §1). The fix is the one routing already applies to rows: do not look
 at what is far away.
 
     cluster_parents (id, corpus_id, centroid, leaves)   ~√k rows, held hot by the engine

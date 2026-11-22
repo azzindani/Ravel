@@ -1,4 +1,4 @@
-"""Build the word list the quality gate counts against (`docs/QUALITY.md`).
+"""Build the word list the quality gate counts against (`docs/pipeline/QUALITY.md`).
 
     uv run python tools/build_lexicon.py work/id_reg_markdown \
         --out registry/lexicons/id_regulation_md@1.txt --min-docs 25 --workers 12

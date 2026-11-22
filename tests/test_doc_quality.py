@@ -1,4 +1,4 @@
-"""The document quality gate (`docs/QUALITY.md`).
+"""The document quality gate (`docs/pipeline/QUALITY.md`).
 
 Hermetic: the word list is written to a temp registry, not read from the real one, so a
 rebuilt lexicon cannot change what these tests mean.

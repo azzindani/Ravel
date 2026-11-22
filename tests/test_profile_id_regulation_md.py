@@ -1,7 +1,7 @@
 """`id_regulation_md` · the profile for the Docling-style Markdown export of regulations.
 
 Every case here is a line, or a shape of line, that was read in `Azzindani/ID_REG_Markdown`
-(46,457 files; census in `docs/SOURCE_ID_REG_MARKDOWN.md`). The near-misses are the ones that
+(46,457 files; census in `SOURCE_ID_REG_MARKDOWN.md`). The near-misses are the ones that
 look like structure and are not, which is the half of a profile that fails silently.
 
 Two things are pinned on purpose:

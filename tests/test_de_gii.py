@@ -1,6 +1,6 @@
 """Germany's Gesetze im Internet: `fetch.kind: listing` over archives, each law cited as the
 archive it was read from, and the `de_gii` dialect, whose file is a flat list of norms
-(`docs/SOURCE_DE_GII.md`)."""
+(`docs/sources/SOURCE_DE_GII.md`)."""
 
 from __future__ import annotations
 

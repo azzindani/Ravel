@@ -1,6 +1,6 @@
 """The canonical document — Ravel's intermediate representation.
 
-Spec: docs/CANONICAL_FORMAT.md. This module is the single definition; the JSON
+Spec: docs/design/CANONICAL_FORMAT.md. This module is the single definition; the JSON
 Schema, the parquet schema and the validator are all derived from it.
 
 ! `markdown` is a derived property, not a stored field. The spec sketch showed it

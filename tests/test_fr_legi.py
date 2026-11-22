@@ -1,5 +1,5 @@
 """France's LEGI: the `legi` dialect's links (a text assembled from its folder of files),
-`text.split_at`, and the `fr_legi` profile (`docs/SOURCE_FR_LEGI.md`)."""
+`text.split_at`, and the `fr_legi` profile (`docs/sources/SOURCE_FR_LEGI.md`)."""
 
 from __future__ import annotations
 

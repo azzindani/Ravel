@@ -1,7 +1,7 @@
 """Phase A: source files to canonical documents.
 
 An extractor reports **what is on the page**; a structurer decides **what it means**
-(`docs/EXTRACTION.md` §4b). Keeping those apart is what lets one corpus profile serve
+(`docs/pipeline/EXTRACTION.md` §4b). Keeping those apart is what lets one corpus profile serve
 a PDF, a scraped HTML page and a Markdown export without re-extraction.
 """
 

@@ -1,7 +1,7 @@
 # ravel-job: the batch image. `ravel extract | chunk | embed | sparse | bundle | load` on a Linux GPU box.
 #
 # Why Linux: the accelerators that matter (Triton for torch.compile, flash attention, vLLM) are Linux
-# first; on Windows they are missing or community builds (docs/STACK.md §1). The project itself installs
+# first; on Windows they are missing or community builds (docs/design/STACK.md §1). The project itself installs
 # from uv.lock, so the versions here are the ones CI and the laptop run. Accelerators that pin torch
 # (vLLM) go in their own layer, after the project (docker/requirements-gpu.txt), never into it.
 #
