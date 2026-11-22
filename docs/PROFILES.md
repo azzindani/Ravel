@@ -250,6 +250,24 @@ a bundle ships.
 The filename must agree with the contents. A file named `x@1.0.yaml` declaring version
 `1.1` is refused at load, because that ambiguity lands directly in a cache key.
 
+**Frozen, by test.** `registry/published.yaml` lists every registry file a published
+dataset was made with (profile, dialect, lexicon) and its digest;
+`tests/test_registry_published.py` fails when one is edited or removed. Add a bundle's
+files there when it is published.
+
+**Changing a published source.** The rules change; the pipeline does not.
+
+1. Copy `x@1.0.yaml` (or its dialect) to `x@1.1.yaml`, change it there, keep `1.0`.
+2. Point the corpus at it (`extract.profile: x@1.1`).
+3. `ravel update <corpus> --from <old workspace> --from-bundle <old bundle> ...`
+   (`DATABASE.md` §4b). The texts of the old vectors are rebuilt with the profile their
+   `embed.json` names (`1.0`), so a chunk whose text `1.1` leaves as it was keeps its vector
+   and only changed text is embedded again. With `1.0` removed, the reuse is refused: the
+   texts the vectors were made from could no longer be named.
+
+A change to how text is read, not what the model is shown (`search_normalize`, signals), is
+`ravel bundle relabel` instead, with no embedding at all (`DATABASE.md` §4c).
+
 ---
 
 ## 8. What does not belong in a profile
