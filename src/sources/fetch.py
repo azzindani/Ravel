@@ -18,6 +18,7 @@ snapshot. Old editions stay on disk, because sources are never deleted.
 
 from __future__ import annotations
 
+import csv
 import fnmatch
 import gzip
 import hashlib
@@ -29,7 +30,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+import zipfile
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -41,6 +43,7 @@ from spec.corpus import CorpusSpec, FetchSpec
 
 MANIFEST = "fetch.jsonl"
 READ_BLOCK = 1 << 20
+NL = "\n"
 
 #: `(url, headers) -> binary stream`. The seam the tests replace; nothing else does I/O.
 Opener = Callable[[str, dict[str, str], float], BinaryIO]
@@ -172,6 +175,8 @@ class Fetcher:
             return self._plan_github()
         if self.spec.kind == "archive_index":
             return self._plan_archive_index()
+        if self.spec.kind == "archive_url":
+            return self._plan_archive_url()
         return self._plan_ecfr()
 
     def _relative(self, url: str) -> str:
@@ -342,6 +347,82 @@ class Fetcher:
             "archive": edition
         }
 
+    def _plan_archive_url(self) -> tuple[list[Wanted], dict[str, str]]:
+        """The archive one URL serves, dated by the day it was fetched.
+
+        ! The URL always serves the publisher's current consolidation and the archive carries
+        no date of its own, so the edition is the fetch day (UTC), and a pinned
+        `edition: <yyyymmdd>` names one already on disk. A second fetch on the same day is
+        the same edition and downloads nothing.
+        """
+        assert self.spec.archive is not None  # the corpus loader holds it present
+        suffix = self.corpus.provenance.archive_suffix or ""
+        edition = (
+            datetime.now(UTC).strftime("%Y%m%d")
+            if self.spec.edition == "latest"
+            else self.spec.edition
+        )
+        name = f"{self.spec.archive}_{edition}{suffix}"
+        return [Wanted(path=name, url=self.spec.listing, group="archive")], {"archive": edition}
+
+    def _members(self, path: Path) -> Iterator[tuple[str, int, Callable[[], BinaryIO]]]:
+        """`(name, size, open)` of every regular file in a tar or zip archive."""
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as zipped:
+                for info in zipped.infolist():
+                    if not info.is_dir():
+                        yield info.filename, info.file_size, lambda i=info: zipped.open(i)
+            return
+        with tarfile.open(path, "r:*") as tarred:
+            for member in tarred:
+                if member.isfile():
+                    source = tarred.extractfile(member)
+                    assert source is not None  # a regular file
+                    yield member.name, member.size, lambda s=source: s
+
+    def _indexed(self, folder: str, members: list[str]) -> list[str]:
+        """The documents the publisher's index keeps; their URLs go to the url map.
+
+        ! Every kept row must name a member that was unpacked. A row pointing at nothing
+        means the index and the archive disagree, and the snapshot would quietly lose a
+        document, so the fetch stops.
+        """
+        spec = self.spec.index
+        assert spec is not None
+        index = self.root / folder / spec.file
+        if not index.is_file():
+            raise ValueError(f"{folder}: the archive holds no index {spec.file}")
+        present = set(members)
+        pattern = re.compile(spec.member)
+        kept: dict[str, str] = {}
+        with open(index, encoding=spec.encoding, newline="") as handle:
+            for row in csv.DictReader(handle):
+                if any((row.get(k) or "").strip() != v for k, v in spec.where.items()):
+                    continue
+                url = (row.get(spec.url) or "").strip()
+                match = pattern.search(url)
+                if match is None:
+                    raise ValueError(f"{spec.file}: {url!r} does not match {spec.member}")
+                relative = f"{folder}/{spec.document.format(**match.groupdict())}"
+                if relative not in present:
+                    raise ValueError(f"{spec.file}: {url} names {relative}, not in the archive")
+                kept[relative] = url
+        if not kept:
+            raise ValueError(f"{spec.file}: no row passes {spec.where}")
+        assert self.corpus.provenance.url_map is not None  # the corpus loader holds it
+        target = self.root / self.corpus.provenance.url_map
+        known: dict[str, str] = {}
+        if target.is_file():
+            with open(target, encoding="utf-8") as handle:
+                known = {r["path"]: r["url"] for r in map(json.loads, handle) if r}
+        known.update(kept)
+        temporary = target.with_suffix(target.suffix + ".part")
+        with open(temporary, "w", encoding="utf-8", newline=NL) as handle:
+            for path, url in sorted(known.items()):
+                handle.write(json.dumps({"path": path, "url": url}, ensure_ascii=False) + NL)
+        os.replace(temporary, target)
+        return sorted(kept)
+
     def _unpack(self, item: Wanted) -> list[str]:
         """The archive's wanted members, unpacked beside it into a folder of its name.
 
@@ -356,23 +437,17 @@ class Fetcher:
         if done.is_file():
             return done.read_text(encoding="utf-8").split("\n")[:-1]
         members: list[str] = []
-        with (
-            tarfile.open(self.root / item.path, "r:*") as archive,
-            open(self.manifest_path, "a", encoding="utf-8", newline="\n") as manifest,
-        ):
-            for member in archive:
-                name = member.name.lstrip("./")
-                if not member.isfile() or not any(
-                    fnmatch.fnmatchcase(name, glob) for glob in self.spec.paths
-                ):
+        with open(self.manifest_path, "a", encoding="utf-8", newline=NL) as manifest:
+            for raw, size, open_member in self._members(self.root / item.path):
+                name = raw.lstrip("./")
+                if not any(fnmatch.fnmatchcase(name, glob) for glob in self.spec.paths):
                     continue
                 if ".." in Path(name).parts or Path(name).is_absolute():
                     raise ValueError(f"{item.path}: member {name} escapes the archive")
                 relative = f"{folder}/{name}"
                 target = self.root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
-                source = archive.extractfile(member)
-                assert source is not None  # a regular file
+                source = open_member()
                 digest = hashlib.sha256()
                 with open(target, "wb") as handle:
                     while block := source.read(READ_BLOCK):
@@ -381,7 +456,7 @@ class Fetcher:
                 entry = {
                     "path": relative,
                     "url": f"{item.url}#{name}",
-                    "bytes": member.size,
+                    "bytes": size,
                     "sha256": digest.hexdigest(),
                     "group": item.path,
                     "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -450,7 +525,17 @@ class Fetcher:
                     on_progress(report, item)
 
         listed = sorted(w.path for w in wanted)
-        if self.spec.kind == "archive_index" and report.complete and not dry_run:
+        archived = self.spec.kind in ("archive_index", "archive_url")
+        if archived and report.complete and not dry_run and self.spec.index:
+            folders = [(w, self._unpack(w)) for w in wanted]
+            report.unpacked = sum(len(m) for _, m in folders)
+            suffix = self.corpus.provenance.archive_suffix or ""
+            listed = [
+                d
+                for w, members in folders
+                for d in self._indexed(w.path[: len(w.path) - len(suffix)], members)
+            ]
+        elif archived and report.complete and not dry_run:
             members = [m for w in wanted for m in self._unpack(w)]
             report.unpacked = len(members)
             listed = sorted(

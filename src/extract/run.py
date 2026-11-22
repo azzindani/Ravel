@@ -284,7 +284,7 @@ class Extraction:
             doc = extractor.extract(
                 path,
                 title=path.stem,
-                url=self.corpus.provenance.url_for(source.path),
+                url=self.corpus.url_for(source.path),
                 profile=profile,
             )
         except ExtractionEmpty as exc:

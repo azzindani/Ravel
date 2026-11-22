@@ -1,0 +1,71 @@
+id: jp_egov
+title: Japanese laws, ordinances and rules in force (e-Gov 法令検索)
+description: >
+  Every law, Cabinet order, ministerial ordinance and rule in force, in Japanese, as the
+  Digital Agency publishes them on e-Gov 法令検索 (docs/SOURCE_JP_EGOV.md): one standard
+  law XML per version, in one bulk archive with the publisher's own index. Laws are not
+  copyrighted (Copyright Act, Article 13). Fetched by `ravel sources fetch jp_egov`; sources
+  are read-only and not in git. Build each snapshot in its own workspace
+  (-w work/jp_egov/<date>).
+
+sources:
+  root: sources/JP_EGOV
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: archive_url
+  # The archive of every law's XML, as e-Gov's bulk download page serves it (277 MB on
+  # 2026-11-22). It carries no date: the edition is the day it was fetched.
+  listing: https://laws.e-gov.go.jp/bulkdownload?file_section=1&only_xml_flag=true
+  files: https://laws.e-gov.go.jp/
+  archive: all_xml
+  paths: ["*"]
+  # The publisher's index: one row per version, `未施行` marking a version not yet in force,
+  # and `本文URL` its page. The rows in force are the snapshot, and each cites its page.
+  index:
+    file: all_law_list.csv
+    where: {未施行: ""}
+    url: 本文URL
+    member: '/law/(?P<id>[^/]+)/(?P<version>[^/]+)$'
+    document: '{id}_{version}/{id}_{version}.xml'
+  timeout_s: 1800
+
+provenance:
+  base_url: https://laws.e-gov.go.jp/
+  archive_suffix: .zip
+  # `https://laws.e-gov.go.jp/law/326AC1000000285/20230401_504AC0000000024`: the page of the
+  # exact version read, from the publisher's index (`fetch.index`).
+  url_map: url_map.jsonl
+  note: >
+    Digital Agency of Japan, e-Gov 法令検索 (laws.e-gov.go.jp), XML bulk download: the law data
+    registered in the e-LAWS database, each version cited at its page. Laws are not subject
+    to copyright (著作権法第十三条). Not the official text: the official text is the 官報.
+
+extract:
+  profile: jp_law@1.0
+  extractors: [xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup
+
+embed:
+  # The same space as every other corpus (one model, one revision, one recipe), so one Vera
+  # build serves them all. Embedded through the docker vLLM server.
+  kind: local
+  id: qwen3-embedding-0.6b-local
+  model: Qwen/Qwen3-Embedding-0.6B
+  revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  dim: 1024
+  pooling: last_token
+  padding_side: left
+  normalize: true
+  instruction_style: prefix
+  doc_instruction: ""
+  query_instruction: "Given a legal or regulatory question, retrieve passages that answer it"
+  max_length: 8192
+  dtype: float16
+  vector_dtype: float16
+  hardware: auto
+  shard_rows: 20000

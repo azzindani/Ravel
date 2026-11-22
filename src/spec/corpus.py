@@ -41,6 +41,32 @@ class SourcesSpec(Base):
     keeps every edition it ever downloaded, and a corpus is built from one of them."""
 
 
+class IndexSpec(Base):
+    """The publisher's own index of an archive's documents (`fetch.kind: archive_url`).
+
+    A table inside the archive, one row per document version, that says which versions are in
+    force and where each is published. Ravel decides neither: the rows `where` keeps are the
+    snapshot, and each row's `url` column is its citation (`provenance.url_map`).
+
+        index:
+          file: all_law_list.csv  # a member of the archive
+          where: {未施行: ""}   # in force: the not-yet-in-force flag is empty
+          url: 本文URL           # the version's page, as the publisher gives it
+          member: '/law/(?P<id>[^/]+)/(?P<version>[^/]+)$'
+          document: '{id}_{version}/{id}_{version}.xml'
+
+    `member` reads the row's URL and `document` names the archive member it is. A kept row
+    whose member is not in the archive is an error, never a skip.
+    """
+
+    file: str
+    encoding: str = "utf-8-sig"
+    where: dict[str, str] = Field(default_factory=dict)
+    url: str
+    member: str
+    document: str
+
+
 class FetchSpec(Base):
     """A publisher's bulk listing, and which of its files make the corpus
     (`SOURCE_US_CFR.md` §2).
@@ -51,12 +77,13 @@ class FetchSpec(Base):
     whose `files` is not its `provenance.base_url`.
     """
 
-    kind: Literal["govinfo_cfr", "ecfr", "github", "archive_index"]
+    kind: Literal["govinfo_cfr", "ecfr", "github", "archive_index", "archive_url"]
     listing: str
     """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
     `github`: the repository's API URL (`https://api.github.com/repos/owner/name`).
     `archive_index`: a web server's directory index of dated archives
-    (`https://echanges.dila.gouv.fr/OPENDATA/LEGI/`)."""
+    (`https://echanges.dila.gouv.fr/OPENDATA/LEGI/`). `archive_url`: the one URL that serves
+    the publisher's current archive (e-Gov's `bulkdownload?file_section=1`)."""
     files: str
     """URL prefix of the files; their path below it is their path below `sources.root`.
     `github`: `https://raw.githubusercontent.com/owner/name/`, below which each file is
@@ -76,6 +103,9 @@ class FetchSpec(Base):
     """`archive_index`: the unpacked members that are documents, as globs, written to the
     snapshot. The others are read only through a document's links (`legi@1.0`). Empty:
     every member unpacked."""
+    index: IndexSpec | None = None
+    """`archive_url`: the publisher's index of the documents in the archive, which picks the
+    snapshot and gives each document's citation."""
     lookback: int = Field(default=3, ge=1)
     """Editions searched back from the newest for a title the newest does not hold."""
     titles: list[int] = Field(default_factory=list)
@@ -112,7 +142,9 @@ class ProvenanceSpec(Base):
     """Prefix joined with each source's path relative to `sources.root`."""
 
     url_map: str | None = None
-    """Optional JSONL of {path, url} overrides, for sources with known canonical URLs."""
+    """A JSONL of {path, url}, below `sources.root`, for sources whose publisher gives each
+    document its own URL (`fetch.index` writes it). ! A path the map does not name is an
+    error at extraction, never a guess."""
 
     note: str = ""
     """What `base_url` points at and why it is authoritative. Goes into the bundle."""
@@ -129,12 +161,37 @@ class ProvenanceSpec(Base):
             raise ValueError(f"base_url must be a URI, got {self.base_url!r}")
         return self
 
-    def url_for(self, relative_path: str) -> str:
+    def url_for(self, relative_path: str, *, root: Path | str | None = None) -> str:
         relative = relative_path.lstrip("/")
+        if self.url_map:
+            if root is None:
+                raise ValueError("provenance.url_map is relative to sources.root; pass root")
+            mapped = _url_map(Path(root) / self.url_map).get(relative)
+            if mapped is None:
+                raise ValueError(
+                    f"{relative}: not in {self.url_map} · the publisher's index does not name "
+                    "it, and a citation is never made up"
+                )
+            return mapped
         if self.archive_suffix and "/" in relative:
             archive, member = relative.split("/", 1)
             return f"{self.base_url.rstrip('/')}/{archive}{self.archive_suffix}#{member}"
         return f"{self.base_url.rstrip('/')}/{relative}"
+
+
+_URL_MAPS: dict[tuple[str, float], dict[str, str]] = {}
+
+
+def _url_map(path: Path) -> dict[str, str]:
+    """`{path: url}` from a url map, read once per version of the file."""
+    if not path.is_file():
+        raise FileNotFoundError(f"{path}: no url map · run `ravel sources fetch` first")
+    key = (str(path), path.stat().st_mtime)
+    if key not in _URL_MAPS:
+        with open(path, encoding="utf-8") as handle:
+            rows = (json.loads(line) for line in handle if line.strip())
+            _URL_MAPS[key] = {row["path"]: row["url"] for row in rows}
+    return _URL_MAPS[key]
 
 
 class ExtractSpec(Base):
@@ -365,12 +422,27 @@ class CorpusSpec(Base):
                     "fetch.kind archive_index needs provenance.archive_suffix: a member is "
                     "cited as the archive's"
                 )
+        if self.fetch and self.fetch.kind == "archive_url":
+            if not (self.fetch.archive and self.fetch.paths and self.provenance.archive_suffix):
+                raise ValueError(
+                    "fetch.kind archive_url needs fetch.archive (the file's name), fetch.paths "
+                    "(the members) and provenance.archive_suffix"
+                )
+            if self.fetch.index and not self.provenance.url_map:
+                raise ValueError(
+                    "fetch.index gives each document its URL: name the file in "
+                    "provenance.url_map"
+                )
         if self.fetch and self.fetch.files.rstrip("/") != self.provenance.base_url.rstrip("/"):
             raise ValueError(
                 f"fetch.files {self.fetch.files!r} must equal provenance.base_url "
                 f"{self.provenance.base_url!r}"
             )
         return self
+
+    def url_for(self, relative_path: str) -> str:
+        """A source's citation: the publisher's own URL for it when `url_map` names one."""
+        return self.provenance.url_for(relative_path, root=self.sources.root)
 
     @property
     def config_hash(self) -> str:

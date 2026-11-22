@@ -123,6 +123,15 @@ class _Compiled:
             return rule.values.get(element.get(rule.attr, ""))
         return None
 
+    def within(self, unit: str, open_units: list[tuple[str, str]]) -> str:
+        """The unit `unit` is read as, given the units open around it (`units.inside`)."""
+        rules = self.dialect.units.inside
+        for outer, _ in reversed(open_units):
+            renamed = rules.get(outer, {}).get(unit)
+            if renamed:
+                return renamed
+        return unit
+
     def flat_of(self, element: ET.Element) -> str | None:
         """The unit a flat heading opens (`<Heading level="2">`), or None."""
         rule = self.dialect.units.flat
@@ -321,6 +330,7 @@ class XmlExtractor:
         if unit is None:
             self._body(element, state, kind="")
             return
+        unit = d.within(unit, state.open_units)
         heading, consumed = found or self._heading(element, unit, state)
         state.units[unit] += 1
         if self._is_reserved(element, unit, heading, d):

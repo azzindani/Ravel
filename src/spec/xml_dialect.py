@@ -65,11 +65,17 @@ class Units(_Base):
     #: constant, last in a list). `number`, when stated, is the unit's number instead of
     #: the one its heading prints.
     attrs: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
+    #: Unit -> {unit -> the unit it is read as when inside it}. Japan's supplementary
+    #: provisions (`<SupplProvision>`, 附則) hold `<Article>`s numbered from 第一条 again; read
+    #: as `article` they would cite as the law's own first article. `{suppl: {article:
+    #: suppl_article}}` makes them a unit of their own, with its own heading and citation.
+    inside: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     def names(self) -> set[str]:
         named = set(self.by_attr.values.values()) if self.by_attr else set()
         flat = set(self.flat.values.values()) if self.flat else set()
-        return set(self.tags.values()) | named | flat
+        renamed = {target for rules in self.inside.values() for target in rules.values()}
+        return set(self.tags.values()) | named | flat | renamed
 
 
 class HeadingRule(_Base):

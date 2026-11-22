@@ -1,0 +1,84 @@
+id: jp_law
+version: "1.0"
+title: Japanese laws, ordinances and rules in force (e-Gov law XML)
+description: >
+  One version of one Japanese law per file, from e-Gov 法令検索's bulk download, read by the
+  `xml` extractor in the `jp_law` dialect and chunked by `markup` (docs/SOURCE_JP_EGOV.md).
+  The structure is the XML's: 編 > 章 > 節 > 款 > 目 nest the 条, and each 条 holds its 項, 号 and
+  イロハ. Identity is the law's: its name and the article, as Japanese practice cites them
+  (`博物館法第二条`), and a supplementary provision by the amending law it came with
+  (`博物館法附則（令和四年六月一七日法律第六八号）第一条`).
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<Law\b', '<LawBody\b', '<LawNum\b']
+  min_hits: 2
+
+extract:
+  xml:
+    dialects: [jp_law@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here. A
+  # supplementary provision or an appendix sits under the law and beside its main provision.
+  from_markup: true
+  units:
+    - {name: law, level: 1, pattern: '^.'}
+    - {name: suppl, level: 2, pattern: '^.'}
+    - {name: appendix, level: 2, pattern: '^.', role: article}
+    - {name: suppl_appendix, level: 3, pattern: '^.', role: article}
+    - {name: part, level: 3, pattern: '^.'}
+    # `第一章　総則`: the unit a reader names after the law.
+    - {name: chapter, level: 4, pattern: '^.', role: chapter}
+    - {name: section, level: 5, pattern: '^.'}
+    - {name: subsection, level: 6, pattern: '^.'}
+    - {name: division, level: 7, pattern: '^.'}
+    - {name: article, level: 8, pattern: '^.', role: article}
+    - {name: suppl_article, level: 8, pattern: '^.', role: article}
+
+identity:
+  markup:
+    scope: law
+    facts:
+      # `Act`, `CabinetOrder`, `MinisterialOrdinance`, `Rule`, `ImperialOrdinance`.
+      regulation_type: "{law.type}"
+      # `昭和二十六年法律第二百八十五号`.
+      regulation_number: "{law.number}"
+      about: "{law.name}"
+    identifier:
+      # Written as Japanese practice cites them, with no space: `博物館法第二条`.
+      article: "{law.name}{article.number}"
+      suppl_article: "{law.name}附則（{suppl.amend}）{suppl_article.number}"
+      suppl: "{law.name}附則（{suppl.amend}）"
+      appendix: "{law.name}{appendix.number}"
+      suppl_appendix: "{law.name}附則（{suppl.amend}）{suppl_appendix.number}"
+      law: "{law.name}"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per article or appendix; longer ones split into `part n of m` on paragraph
+    # boundaries. ! Determined, ✗ measured: no Japanese eval set exists yet.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    #   Citation: 博物館法第二条
+    #   Location: 博物館法 › 第一章　総則 › 第二条 （定義）
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      regulation_number: 0.99
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    # Laws cited in the text by number: `社会教育法（昭和二十四年法律第二百七号）`.
+    law_references:
+      - {pattern: '(?P<ref>(?:明治|大正|昭和|平成|令和)[元〇一二三四五六七八九十百]+年(?:法律|政令|勅令|[^\s　（）]{1,20}?省令|[^\s　（）]{1,20}?規則|[^\s　（）]{1,20}?告示)第[〇一二三四五六七八九十百千]+号)', format: '{ref}'}

@@ -1,0 +1,155 @@
+id: jp_law
+version: "1.0"
+title: e-Gov law XML (Japanese laws and ordinances, 法令標準XMLスキーマ)
+description: >
+  One file per version of a Japanese law, ordinance or rule, as the Digital Agency publishes
+  them on e-Gov 法令検索 (docs/SOURCE_JP_EGOV.md), in the standard law schema
+  (XMLSchemaForJapaneseLaw_v3.xsd). Structure nests: 編 Part > 章 Chapter > 節 Section >
+  款 Subsection > 目 Division > 条 Article > 項 Paragraph > 号 Item > イロハ Subitem. Supplementary
+  provisions (附則) follow the main provision, one per amending law, and number their articles
+  from 第一条 again. Read by the `xml` extractor; an element not named here is still read for
+  its text and named in `extraction.warnings`.
+
+document:
+  detect: {root: '^Law$'}
+
+units:
+  tags:
+    Law: law
+    Part: part
+    Chapter: chapter
+    Section: section
+    Subsection: subsection
+    Division: division
+    Article: article
+    SupplProvision: suppl
+    AppdxTable: appendix
+    AppdxStyle: appendix
+    AppdxFormat: appendix
+    AppdxNote: appendix
+    AppdxFig: appendix
+    Appdx: appendix
+    SupplProvisionAppdxTable: suppl_appendix
+    SupplProvisionAppdxStyle: suppl_appendix
+  # ! A supplementary provision numbers its articles from 第一条 again: read as `article` they
+  # would cite as the law's own first article.
+  inside:
+    suppl: {article: suppl_article}
+  attrs:
+    law:
+      # `昭和二十六年法律第二百八十五号`: the law's number, as it is cited.
+      number: [LawNum]
+      # `Act`, `CabinetOrder`, `MinisterialOrdinance`, `Rule`, `ImperialOrdinance`,
+      # `Constitution`.
+      type: ['.@LawType']
+      era: ['.@Era']
+    suppl:
+      # The amending law it came with (`令和四年六月一七日法律第六八号`). The law's own
+      # supplementary provision, made with it, states none: `制定時`, at enactment.
+      amend: ['.@AmendLawNum', '=制定時']
+
+headings:
+  default: {first: [ChapterTitle]}
+  law:
+    path: [LawBody/LawTitle]
+  part: {first: [PartTitle]}
+  chapter: {first: [ChapterTitle]}
+  section: {first: [SectionTitle]}
+  subsection: {first: [SubsectionTitle]}
+  division: {first: [DivisionTitle]}
+  # `第一条` + `（目的）`: the caption is printed first, the number is read first.
+  article: &article
+    join: [[ArticleTitle], [ArticleCaption]]
+  suppl_article: *article
+  suppl: {first: [SupplProvisionLabel]}
+  appendix:
+    first: [AppdxTableTitle, AppdxStyleTitle, AppdxFormatTitle, AppdxNoteTitle, AppdxFigTitle,
+            ArithFormulaNum]
+  suppl_appendix:
+    first: [SupplProvisionAppdxTableTitle, SupplProvisionAppdxStyleTitle]
+
+labels:
+  # `第一章　総則`, `第二編　物権`, `第三節　登録`: the marker is the number, the rest the name.
+  default:
+    pattern: '^(?P<marker>第[^\s　]+?[編章節款目])[\s　]*(?P<name>.*)$'
+    number: '^(?P<number>.+)$'
+  law:
+    pattern: '^(?P<marker>)(?P<name>.*)$'      # all name; the number is stated (units.attrs)
+  # `第二条の二 （定義）`.
+  article: &article_label
+    pattern: '^(?P<marker>第[^\s　（(]+?条(?:の[^\s　（(]+)*)[\s　]*(?P<name>.*)$'
+    number: '^(?P<number>.+)$'
+  suppl_article: *article_label
+  suppl:
+    pattern: '^(?P<marker>附[\s　]*則)[\s　]*(?P<name>.*)$'
+  # `別表第一（第五条関係）`, `別記様式第二`: the name is what it relates to.
+  appendix: &appendix_label
+    pattern: '^(?P<marker>[^\s　（(]+)[\s　]*(?P<name>.*)$'
+    number: '^(?P<number>.+)$'
+  suppl_appendix: *appendix_label
+
+reserved:
+  # A deleted article prints `削除`: kept, it is the law's state.
+  pattern: '^\[\s*reserved\s*\]$'
+  never: [law]
+
+# The table of contents repeats the headings; the title and number are read as attributes.
+skip: [TOC, LawNum, LawTitle, ArticleRange]
+graphics: [Fig]
+leaves: [ParagraphSentence, ItemSentence, Subitem1Sentence, Subitem2Sentence, Subitem3Sentence,
+         Subitem4Sentence, Subitem5Sentence, Subitem6Sentence, Subitem7Sentence, Subitem8Sentence,
+         Subitem9Sentence, Subitem10Sentence, ListSentence, Sublist1Sentence, Sublist2Sentence,
+         Sublist3Sentence, TableColumn, TableStructTitle, FigStructTitle, StyleStructTitle,
+         FormatStructTitle, NoteStructTitle, RemarksLabel, RelatedArticleNum, EnactStatement,
+         ParagraphCaption, ParagraphNum, ItemTitle, Subitem1Title, Subitem2Title, Subitem3Title,
+         Subitem4Title, Subitem5Title, Subitem6Title, Subitem7Title, Subitem8Title,
+         Subitem9Title, Subitem10Title]
+containers:
+  LawBody: ""
+  MainProvision: ""
+  Preamble: preamble
+  Paragraph: ""
+  Item: ""
+  Subitem1: ""
+  Subitem2: ""
+  Subitem3: ""
+  Subitem4: ""
+  Subitem5: ""
+  Subitem6: ""
+  Subitem7: ""
+  Subitem8: ""
+  Subitem9: ""
+  Subitem10: ""
+  List: ""
+  Sublist1: ""
+  Sublist2: ""
+  Sublist3: ""
+  TableStruct: ""
+  Table: ""
+  TableRow: ""
+  TableHeaderRow: ""
+  Remarks: remarks
+  FigStruct: ""
+  StyleStruct: ""
+  Style: ""
+  FormatStruct: ""
+  Format: ""
+  NoteStruct: ""
+  Note: ""
+inline: [Sentence, Ruby, Sup, Sub, Line, Column, ArithFormula,
+         # Text an amending provision puts in, quoted inside a sentence: read as its text.
+         QuoteStruct]
+
+text:
+  superscript: [Sup]
+  # Ruby readings (`<Ruby>拿<Rt>だ</Rt></Ruby>`): the reading is not the text.
+  drop: [Rt]
+  # A paragraph's columns (`第一号　…　…`) and a sentence's parts are read apart.
+  breaks: [Column]
+label:
+  # `２`, `一`, `イ`, `（１）`: a provision's number opens the text that follows it.
+  tags: [ParagraphNum, ItemTitle, Subitem1Title, Subitem2Title, Subitem3Title, Subitem4Title,
+         Subitem5Title, Subitem6Title, Subitem7Title, Subitem8Title, Subitem9Title,
+         Subitem10Title]
+  suffix: ""
+  max_chars: 24
