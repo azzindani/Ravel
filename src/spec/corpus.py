@@ -77,13 +77,14 @@ class FetchSpec(Base):
     whose `files` is not its `provenance.base_url`.
     """
 
-    kind: Literal["govinfo_cfr", "ecfr", "github", "archive_index", "archive_url"]
+    kind: Literal["govinfo_cfr", "ecfr", "github", "archive_index", "archive_url", "listing"]
     listing: str
     """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
     `github`: the repository's API URL (`https://api.github.com/repos/owner/name`).
     `archive_index`: a web server's directory index of dated archives
     (`https://echanges.dila.gouv.fr/OPENDATA/LEGI/`). `archive_url`: the one URL that serves
-    the publisher's current archive (e-Gov's `bulkdownload?file_section=1`)."""
+    the publisher's current archive (e-Gov's `bulkdownload?file_section=1`). `listing`: an
+    index the publisher keeps of every file (Germany's `gii-toc.xml`), read by `links`."""
     files: str
     """URL prefix of the files; their path below it is their path below `sources.root`.
     `github`: `https://raw.githubusercontent.com/owner/name/`, below which each file is
@@ -103,6 +104,9 @@ class FetchSpec(Base):
     """`archive_index`: the unpacked members that are documents, as globs, written to the
     snapshot. The others are read only through a document's links (`legi@1.0`). Empty:
     every member unpacked."""
+    links: str | None = None
+    """`listing`: a regex whose `url` group is each file the index names
+    (`<link>(?P<url>[^<]+)</link>`). Every match must lie under `files`."""
     index: IndexSpec | None = None
     """`archive_url`: the publisher's index of the documents in the archive, which picks the
     snapshot and gives each document's citation."""
@@ -422,6 +426,16 @@ class CorpusSpec(Base):
                     "fetch.kind archive_index needs provenance.archive_suffix: a member is "
                     "cited as the archive's"
                 )
+        if self.fetch and self.fetch.kind == "listing":
+            if not (self.fetch.links and "(?P<url>" in self.fetch.links):
+                raise ValueError("fetch.kind listing needs fetch.links with (?P<url>)")
+            if not self.provenance.url_map:
+                raise ValueError(
+                    "fetch.kind listing files a snapshot under its day, so its paths are not "
+                    "the publisher's: name provenance.url_map, where each file's URL is kept"
+                )
+            if self.provenance.archive_suffix and not self.fetch.paths:
+                raise ValueError("listed archives need fetch.paths, the members unpacked")
         if self.fetch and self.fetch.kind == "archive_url":
             if not (self.fetch.archive and self.fetch.paths and self.provenance.archive_suffix):
                 raise ValueError(

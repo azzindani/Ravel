@@ -38,12 +38,33 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-__all__ = ["K1", "B", "TOKEN_RE", "Bm25Vectorizer", "TokeniserDrift", "tokenize"]
+__all__ = [
+    "K1",
+    "B",
+    "TOKEN_RE",
+    "WORDS",
+    "WORDS_CJK",
+    "Bm25Vectorizer",
+    "TokeniserDrift",
+    "tokenize",
+]
 
 # ! Part of the recipe. Documents and queries must tokenise identically; if this pattern
 # changes, every vector in every corpus built with it is invalidated. `load()` refuses an
 # artifact whose pattern differs rather than silently producing vectors that do not match.
 TOKEN_RE = re.compile(r"(?u)\b\w\w+\b")
+
+#: The two tokenisers, by the name an artifact records (`token_pattern`). Vera's
+#: `bm25.rs` implements both and picks by that name.
+WORDS = TOKEN_RE.pattern
+#: ! `WORDS`, except that a run of CJK characters becomes its overlapping character bigrams
+#: (one character alone is kept as itself). Japanese and Chinese are written without
+#: spaces, so `\w\w+` reads a whole clause as one term that no query will ever repeat.
+#: Text with no CJK tokenises exactly as under `WORDS`. Every new fit uses it.
+WORDS_CJK = WORDS + "|cjk-bigrams"
+_CJK = "\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f"
+_RUN = re.compile(rf"[{_CJK}]+|[^\W{_CJK}]+")
+_IS_CJK = re.compile(rf"[{_CJK}]")
 
 K1 = 1.5
 B = 0.75
@@ -53,8 +74,20 @@ class TokeniserDrift(ValueError):
     """A saved vectoriser was fitted with a different tokeniser than this code uses."""
 
 
-def tokenize(text: str) -> list[str]:
-    return TOKEN_RE.findall(text.lower())
+def tokenize(text: str, pattern: str = WORDS) -> list[str]:
+    if pattern == WORDS:
+        return TOKEN_RE.findall(text.lower())
+    if pattern != WORDS_CJK:
+        raise TokeniserDrift(f"unknown tokeniser {pattern!r}")
+    out: list[str] = []
+    for run in _RUN.findall(text.lower()):
+        if _IS_CJK.match(run):
+            out.extend(
+                [run] if len(run) == 1 else [run[i : i + 2] for i in range(len(run) - 1)]
+            )
+        elif len(run) >= 2:
+            out.append(run)
+    return out
 
 
 class Bm25Vectorizer:
@@ -69,7 +102,9 @@ class Bm25Vectorizer:
         dim: int,
         k1: float = K1,
         b: float = B,
+        token_pattern: str = WORDS_CJK,
     ) -> None:
+        self.token_pattern = token_pattern
         self.vocab = vocab
         self.idf = idf
         self.avgdl = avgdl
@@ -102,7 +137,7 @@ class Bm25Vectorizer:
         total_len = 0
 
         for text in docs:
-            toks = tokenize(text)
+            toks = tokenize(text, WORDS_CJK)
             if not toks:
                 continue
             n_docs += 1
@@ -116,13 +151,13 @@ class Bm25Vectorizer:
         vocab = {t: i for i, t in enumerate(keep)}
         idf = {t: math.log(1.0 + (n_docs - df[t] + 0.5) / (df[t] + 0.5)) for t in keep}
         avgdl = total_len / n_docs if n_docs else 0.0
-        return cls(vocab, idf, avgdl, n_docs, len(keep), k1, b)
+        return cls(vocab, idf, avgdl, n_docs, len(keep), k1, b, WORDS_CJK)
 
     # -- transforming -------------------------------------------------------
 
     def document(self, text: str) -> dict[int, float]:
         """BM25-weighted document vector, as {index: weight}."""
-        toks = tokenize(text)
+        toks = tokenize(text, self.token_pattern)
         if not toks:
             return {}
         tf = Counter(t for t in toks if t in self.vocab)
@@ -138,7 +173,7 @@ class Bm25Vectorizer:
 
     def query(self, text: str) -> dict[int, float]:
         """Query vector — presence-weighted, so the dot product IS the BM25 score."""
-        toks = {t for t in tokenize(text) if t in self.vocab}
+        toks = {t for t in tokenize(text, self.token_pattern) if t in self.vocab}
         return {self.vocab[t]: 1.0 for t in toks}
 
     def score(self, query: str, document: str) -> float:
@@ -165,7 +200,7 @@ class Bm25Vectorizer:
             "dim": self.dim,
             "n_docs": self.n_docs,
             "avgdl": self.avgdl,
-            "token_pattern": TOKEN_RE.pattern,
+            "token_pattern": self.token_pattern,
             "lowercase": True,
             "vocab": self.vocab,
             "idf": self.idf,
@@ -207,9 +242,18 @@ class Bm25Vectorizer:
     @classmethod
     def load(cls, path: str | Path) -> Bm25Vectorizer:
         d = json.loads(Path(path).read_text(encoding="utf-8"))
-        if d["token_pattern"] != TOKEN_RE.pattern:
+        if d["token_pattern"] not in (WORDS, WORDS_CJK):
             raise TokeniserDrift(
-                f"tokeniser drift: artifact used {d['token_pattern']!r}, this code uses "
-                f"{TOKEN_RE.pattern!r} — vectors would not match"
+                f"tokeniser drift: artifact used {d['token_pattern']!r}, this code knows "
+                f"{WORDS!r} and {WORDS_CJK!r} — vectors would not match"
             )
-        return cls(d["vocab"], d["idf"], d["avgdl"], d["n_docs"], d["dim"], d["k1"], d["b"])
+        return cls(
+            d["vocab"],
+            d["idf"],
+            d["avgdl"],
+            d["n_docs"],
+            d["dim"],
+            d["k1"],
+            d["b"],
+            d["token_pattern"],
+        )

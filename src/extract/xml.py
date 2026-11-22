@@ -120,7 +120,7 @@ class _Compiled:
             return units.tags[element.tag]
         rule = units.by_attr
         if rule and _re(rule.tag).match(element.tag):
-            return rule.values.get(element.get(rule.attr, ""))
+            return rule.unit_for(element)
         return None
 
     def within(self, unit: str, open_units: list[tuple[str, str]]) -> str:
@@ -137,7 +137,7 @@ class _Compiled:
         rule = self.dialect.units.flat
         if rule is None or not _re(rule.tag).match(element.tag):
             return None
-        return rule.values.get(element.get(rule.attr, ""))
+        return rule.unit_for(element)
 
     def is_page(self, element: ET.Element) -> bool:
         return self.dialect.page is not None and element.tag == self.dialect.page.tag
@@ -386,14 +386,24 @@ class XmlExtractor:
                 return text, set()
         if rule.join:
             used: list[int] = []
+            parts: list[str] = []
             for slot in rule.join:
+                # ! A path (`metadaten/enbez`) is read in place: it is not a child, and the
+                # element holding it is skipped furniture.
+                inner = next(
+                    (f for tag in slot if "/" in tag and (f := element.find(tag)) is not None),
+                    None,
+                )
+                if inner is not None:
+                    parts.append(self._text(inner, state.d))
+                    continue
                 index = next(
                     (i for tag in slot for i, c in enumerate(children) if c.tag == tag), None
                 )
                 if index is not None and index not in used:
                     used.append(index)
-            if used:
-                parts = [self._text(children[i], state.d) for i in used]
+                    parts.append(self._text(children[index], state.d))
+            if any(parts):
                 return clean(" ".join(p for p in parts if p)), set(used)
         for i, child in enumerate(children):
             if child.tag in rule.first:

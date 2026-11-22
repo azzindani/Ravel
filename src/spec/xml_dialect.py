@@ -17,6 +17,7 @@ or the unit has none; no rule guesses a heading out of body text.
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -41,13 +42,43 @@ class Detect(_Base):
 
 
 class ByAttribute(_Base):
-    """Units named by an attribute (`<DIV5 TYPE="PART">`) instead of by their tag."""
+    """Units named by an attribute (`<DIV5 TYPE="PART">`) instead of by their tag.
+
+    `path` reads a descendant's text instead of an attribute: Germany's outline headings are
+    `<norm>`s whose depth is the length of `metadaten/gliederungseinheit/gliederungskennzahl`
+    (`010` > `010010`). With `match: regex` the `values` keys are patterns, tried in order and
+    matched in full (`'^\\d{6}$': heading2`).
+    """
 
     tag: str = Field(description="regex every such element's tag matches, e.g. '^DIV\\d+$'")
-    attr: str
+    attr: str = ""
+    path: str | None = None
+    match: Literal["exact", "regex"] = "exact"
     values: dict[str, str] = Field(description="attribute value -> unit name")
 
     _tag = field_validator("tag")(_regex)
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if bool(self.attr) == bool(self.path):
+            raise ValueError("a unit rule reads either `attr` or `path`, exactly one")
+        if self.match == "regex":
+            for key in self.values:
+                re.compile(key)
+        return self
+
+    def unit_for(self, element: ET.Element) -> str | None:
+        """The unit this element is, by its attribute or its descendant's text."""
+        if self.path:
+            found = element.find(self.path)
+            value = "".join(found.itertext()).strip() if found is not None else ""
+        else:
+            value = element.get(self.attr, "")
+        if not value:
+            return None
+        if self.match == "exact":
+            return self.values.get(value)
+        return next((u for k, u in self.values.items() if re.fullmatch(k, value)), None)
 
 
 class Units(_Base):
@@ -85,8 +116,10 @@ class HeadingRule(_Base):
       not consumed, since the element holding it is furniture skipped anyway.
     - `join`: slots of direct children, each the first present of its tags, joined by a
       space in slot order (`[[SECTNO], [SUBJECT, RESERVED]]`; `[[Label], [MarginalNote]]`
-      reads `2 Purpose of Act` where the note is printed first). Consumed. When no slot
-      is present, `first` is tried.
+      reads `2 Purpose of Act` where the note is printed first). Consumed. A slot entry with
+      a `/` is a descendant path, read in place and not consumed
+      (`[[metadaten/enbez], [metadaten/titel]]`). When no slot is present, `first` is
+      tried.
     - `first`: the first direct child past the `skip` tags, if its tag is one of these;
       any other child ends the search. With `anywhere`, the first child with the tag,
       wherever it sits. Consumed.

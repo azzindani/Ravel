@@ -177,6 +177,8 @@ class Fetcher:
             return self._plan_archive_index()
         if self.spec.kind == "archive_url":
             return self._plan_archive_url()
+        if self.spec.kind == "listing":
+            return self._plan_listing()
         return self._plan_ecfr()
 
     def _relative(self, url: str) -> str:
@@ -365,6 +367,47 @@ class Fetcher:
         name = f"{self.spec.archive}_{edition}{suffix}"
         return [Wanted(path=name, url=self.spec.listing, group="archive")], {"archive": edition}
 
+    def _plan_listing(self) -> tuple[list[Wanted], dict[str, str]]:
+        """Every file the publisher's index names, filed under the day it was fetched.
+
+        ! The publisher replaces a file in place (gesetze-im-internet.de's `bgb/xml.zip` is
+        always the current BGB), and the fetcher never overwrites. So a snapshot is a folder
+        of its own, `<yyyymmdd>/<the publisher's path>`, and an update fetches a new folder
+        beside it. `edition: <yyyymmdd>` names one already on disk.
+        """
+        assert self.spec.links is not None  # the corpus loader holds it present
+        text = self._retrying(
+            self.spec.listing, lambda s: s.read().decode("utf-8", "replace"), compressed=False
+        )
+        edition = (
+            datetime.now(UTC).strftime("%Y%m%d")
+            if self.spec.edition == "latest"
+            else self.spec.edition
+        )
+        urls = sorted({m.group("url").strip() for m in re.finditer(self.spec.links, text)})
+        if not urls:
+            raise ValueError(f"{self.spec.listing}: no file matches {self.spec.links!r}")
+        wanted = [
+            Wanted(path=f"{edition}/{self._relative(url)}", url=url, group="files")
+            for url in urls
+        ]
+        return wanted, {"listing": edition}
+
+    def _cite(self, entries: dict[str, str]) -> None:
+        """Merge `{path: url}` into the url map, written whole and atomically."""
+        assert self.corpus.provenance.url_map is not None  # the corpus loader holds it
+        target = self.root / self.corpus.provenance.url_map
+        known: dict[str, str] = {}
+        if target.is_file():
+            with open(target, encoding="utf-8") as handle:
+                known = {r["path"]: r["url"] for r in map(json.loads, handle) if r}
+        known.update(entries)
+        temporary = target.with_suffix(target.suffix + ".part")
+        with open(temporary, "w", encoding="utf-8", newline=NL) as handle:
+            for path, url in sorted(known.items()):
+                handle.write(json.dumps({"path": path, "url": url}, ensure_ascii=False) + NL)
+        os.replace(temporary, target)
+
     def _members(self, path: Path) -> Iterator[tuple[str, int, IO[bytes]]]:
         """`(name, size, stream)` of every regular file in a tar or zip archive. A stream
         is valid until the next member is asked for."""
@@ -411,18 +454,7 @@ class Fetcher:
                 kept[relative] = url
         if not kept:
             raise ValueError(f"{spec.file}: no row passes {spec.where}")
-        assert self.corpus.provenance.url_map is not None  # the corpus loader holds it
-        target = self.root / self.corpus.provenance.url_map
-        known: dict[str, str] = {}
-        if target.is_file():
-            with open(target, encoding="utf-8") as handle:
-                known = {r["path"]: r["url"] for r in map(json.loads, handle) if r}
-        known.update(kept)
-        temporary = target.with_suffix(target.suffix + ".part")
-        with open(temporary, "w", encoding="utf-8", newline=NL) as handle:
-            for path, url in sorted(known.items()):
-                handle.write(json.dumps({"path": path, "url": url}, ensure_ascii=False) + NL)
-        os.replace(temporary, target)
+        self._cite(kept)
         return sorted(kept)
 
     def _unpack(self, item: Wanted) -> list[str]:
@@ -526,7 +558,11 @@ class Fetcher:
                     on_progress(report, item)
 
         listed = sorted(w.path for w in wanted)
-        archived = self.spec.kind in ("archive_index", "archive_url")
+        archived = self.spec.kind in ("archive_index", "archive_url") or (
+            self.spec.kind == "listing" and bool(self.corpus.provenance.archive_suffix)
+        )
+        if self.spec.kind == "listing" and not archived and report.complete and not dry_run:
+            self._cite({w.path: w.url for w in wanted})
         if archived and report.complete and not dry_run and self.spec.index:
             folders = [(w, self._unpack(w)) for w in wanted]
             report.unpacked = sum(len(m) for _, m in folders)
@@ -537,8 +573,19 @@ class Fetcher:
                 for d in self._indexed(w.path[: len(w.path) - len(suffix)], members)
             ]
         elif archived and report.complete and not dry_run:
-            members = [m for w in wanted for m in self._unpack(w)]
+            unpacked = [(w, self._unpack(w)) for w in wanted]
+            members = [m for _, found in unpacked for m in found]
             report.unpacked = len(members)
+            if self.spec.kind == "listing":
+                # ! Each member is cited as the archive it was read from: `<url>#<member>`.
+                suffix = self.corpus.provenance.archive_suffix or ""
+                self._cite(
+                    {
+                        m: f"{w.url}#{m[len(w.path) - len(suffix) + 1 :]}"
+                        for w, found in unpacked
+                        for m in found
+                    }
+                )
             listed = sorted(
                 m
                 for m in members

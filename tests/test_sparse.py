@@ -222,3 +222,32 @@ def test_a_vocabulary_without_vectors_cannot_be_loaded(chunk_dir: Path, tmp_path
 
     with pytest.raises(ValueError, match="sparse"):
         load_plan(document, root)
+
+
+def test_cjk_runs_become_bigrams_and_other_text_is_tokenised_as_before() -> None:
+    from enrich.sparse import WORDS, WORDS_CJK, tokenize
+
+    # ! `\w\w+` read a Japanese clause as one term no query would ever repeat.
+    assert tokenize("博物館法第二条", WORDS_CJK) == [
+        "博物",
+        "物館",
+        "館法",
+        "法第",
+        "第二",
+        "二条",
+    ]
+    assert tokenize("法", WORDS_CJK) == ["法"]
+    for text in ("Wajib Pajak a 28/2007", "C-46, s. 718.2 Purpose of Act", "§ 7 Wohnsitz"):
+        assert tokenize(text, WORDS_CJK) == tokenize(text, WORDS)
+
+
+def test_an_artifact_keeps_the_tokeniser_it_was_fitted_with(tmp_path: Path) -> None:
+    from enrich.sparse import WORDS, WORDS_CJK, Bm25Vectorizer
+
+    new = Bm25Vectorizer.fit(["博物館法第二条 定義", "公立博物館"])
+    assert new.token_pattern == WORDS_CJK and "博物" in new.vocab
+    new.save(tmp_path / "v.json")
+    assert Bm25Vectorizer.load(tmp_path / "v.json").token_pattern == WORDS_CJK
+    old = Bm25Vectorizer({"pajak": 0}, {"pajak": 1.0}, 1.0, 1, 1, token_pattern=WORDS)
+    old.save(tmp_path / "o.json")
+    assert Bm25Vectorizer.load(tmp_path / "o.json").token_pattern == WORDS
