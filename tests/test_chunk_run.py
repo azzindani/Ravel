@@ -202,6 +202,40 @@ def test_a_reconfigured_variant_writes_a_new_generation(
     assert {c.config_hash for c in rows} == {narrow.config.config_hash}
 
 
+def test_a_corrected_profile_writes_a_new_generation(
+    corpus: CorpusSpec, workspace: Path
+) -> None:
+    """! The per-document key folds in the profile's hash; the directory must too.
+
+    A corrected citation template found no key done, chunked every document again and
+    appended the new rows beside the old: 841,034 became 1,682,068 in one directory.
+    """
+    from spec import Profile, default_registry
+
+    base = default_registry()
+    pinned = base.get("id_regulation")
+    spec = pinned.spec.model_copy(deep=True)
+    spec.description = spec.description + " corrected"
+    corrected = Profile.compile(spec)
+
+    class _Registry:
+        def get(self, ref: str) -> Profile:
+            return corrected if ref == "id_regulation" else base.get(ref)
+
+        def __iter__(self):  # type: ignore[no-untyped-def]
+            return iter(base)
+
+    before = Chunking(corpus, workspace=workspace)
+    after = Chunking(corpus, workspace=workspace, registry=_Registry())  # type: ignore[arg-type]
+    assert corrected.config_hash != pinned.config_hash
+    assert before.output_generation != after.output_generation
+
+    before.run()
+    after.run()
+    rows = _rows(workspace, "default")
+    assert len(rows) == len({c.id for c in rows})
+
+
 def test_forcing_a_rerun_does_not_duplicate_rows(corpus: CorpusSpec, workspace: Path) -> None:
     run = Chunking(corpus, workspace=workspace)
     first = run.run()

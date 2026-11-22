@@ -49,6 +49,28 @@ identity:
     identifier:
       # `Code de commerce, art. L233-1`.
       article: "{text.name}, art. {article.number}"
+      # ! Text a section holds outside any numbered article (an `Annexe`, an unnumbered
+      # article): cited by the sections over it, so it never cites as the whole text:
+      # `Arrêté du 28 janvier 2005, Annexe, Section II`.
+      section1: "{text.name}, {section1.marker}"
+      section2: "{text.name}, {section1.marker}, {section2.marker}"
+      section3: "{text.name}, {section1.marker}, {section2.marker}, {section3.marker}"
+      section4: >-
+        {text.name}, {section1.marker}, {section2.marker}, {section3.marker},
+        {section4.marker}
+      section5: >-
+        {text.name}, {section1.marker}, {section2.marker}, {section3.marker},
+        {section4.marker}, {section5.marker}
+      section6: >-
+        {text.name}, {section1.marker}, {section2.marker}, {section3.marker},
+        {section4.marker}, {section5.marker}, {section6.marker}
+      section7: >-
+        {text.name}, {section1.marker}, {section2.marker}, {section3.marker},
+        {section4.marker}, {section5.marker}, {section6.marker}, {section7.marker}
+      section8: >-
+        {text.name}, {section1.marker}, {section2.marker}, {section3.marker},
+        {section4.marker}, {section5.marker}, {section6.marker}, {section7.marker},
+        {section8.marker}
       text: "{text.name}"
 
 pipeline:

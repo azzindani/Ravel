@@ -185,7 +185,22 @@ class Chunking:
             self.generation or "none",
             self.entry.ref,
             self.config.config_hash,
+            self._profiles_hash(),
         )
+
+    def _profiles_hash(self) -> str:
+        """The profiles the chunks are read by, as `stage_key` folds them in per document.
+
+        ! Without it a corrected citation template (fr_legi, 2026-11-22) found no key
+        done, chunked every document again, and appended 841,034 rows beside the old
+        841,034 in the same directory: the per-document key moved, the directory did not.
+        A corpus that routes (`auto`) can be read by any profile, so all of them count.
+        """
+        if self.pinned is not None:
+            return self.pinned.config_hash
+        if self.corpus.extract.profile == "auto":
+            return generation_of(*sorted(f"{p.ref}={p.config_hash}" for p in self.registry))
+        return "none"
 
     def _newest_canon(self) -> str | None:
         found = newest_generation(self.workspace / "canon" / self.corpus.id)

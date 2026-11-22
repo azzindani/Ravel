@@ -179,6 +179,30 @@ def test_chunks_cite_text_and_article(folder: Path, profile: Any) -> None:
     assert "Code de commerce, art. L1" in chunks
 
 
+def test_an_article_without_a_number_cites_its_sections(folder: Path, profile: Any) -> None:
+    # ! An `Annexe` is an article with no `NUM` under a section: cited by the sections over
+    # it, never as the whole text (48,311 chunks of the 2026-11-08 dump did).
+    annex = "LEGIARTI000030927300"
+    section = SECTION.replace(
+        "<TITRE_TA>Partie législative</TITRE_TA>", "<TITRE_TA>Annexe</TITRE_TA>"
+    )
+    section = section.replace("LEGIARTI000030927196", annex)
+    _write(folder / "section_ta/LEGI/SCTA/00/00/06/08/32/LEGISCTA000006083281.xml", section)
+    _write(_article_path(folder, annex), _article(annex, "", "<p>Tableau des taux.</p>"))
+    _, doc = _doc(folder, profile)
+    e = get("markup")
+    b = Builder(
+        doc=doc,
+        chunker=e.id,
+        version=e.version,
+        config=ChunkConfig(max_tokens=1024, min_tokens=0),
+        profile=profile,
+    )
+    cited = {c.identifier: c.body for c in e.fn(doc, b)}
+    assert "Tableau des taux." in cited["Code de commerce, Annexe"]
+    assert "Code de commerce" not in cited
+
+
 def test_a_link_outside_the_folder_is_not_followed(tmp_path: Path, profile: Any) -> None:
     root = tmp_path / "t"
     escaped = STRUCT.replace("/LEGI/SCTA/00/00/06/08/32/", "/../../../../")
