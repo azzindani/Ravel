@@ -201,6 +201,17 @@ command that produced it). Then update `SOURCES_NEXT.md`.
 ravel export <id> -w $W --out <dir>         # data/*.parquet + sources/manifest.jsonl + snapshot
 ```
 
+With vectors (after `ravel embed`, §13), the same command adds an `embedding` column:
+
+```bash
+ravel export <id> -w $W --out <dir> --vectors   # each chunk's dense vector, joined by id
+```
+
+The card then states the model and revision, the exact text that was embedded (the profile's
+`derive.embed_text` template), and the query instruction. Re-embed a few rows from that
+template and check that cosine is 1.0 before upload: it proves the card's recipe is the one
+the vectors were made with (`CA_LAWS_2611`, 2026-11-22: five rows, 1.0000).
+
 Write the dataset card: source and licence, official status, columns, signal coverage,
 build commands, changes since the last version. Upload with `HfApi.upload_folder` and
 `delete_patterns` for the old shards. **Verify on the Hub**: the new commit exists, and the
