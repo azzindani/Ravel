@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from canon import BlockType, CanonicalDoc, Cell, Extraction, Source, Table
-from extract.base import BlockBuilder, ExtractionFailed, Probe, registry
+from extract.base import BlockBuilder, ExtractionEmpty, ExtractionFailed, Probe, registry
 from sources import guess_mime, sha256_file
 from spec.xml_dialect import LabelRule, XmlDialect, XmlOptions
 
@@ -196,6 +196,16 @@ class XmlExtractor:
         self._document(root, state)
 
         if not any(b.type is not BlockType.HEADING for b in state.builder.blocks):
+            # ! Empty by its own statement only when no link passed `keep`: a text whose
+            # articles are all out of force. One that kept links and still has no text lost
+            # files, and that is a failure.
+            if (
+                assembled is not None
+                and dialect.links
+                and dialect.links.empty_when_nothing_kept
+                and assembled["kept"] == 0
+            ):
+                raise ExtractionEmpty(f"{path.name}: nothing in force ({dialect.ref} dialect)")
             raise ExtractionFailed(f"{path.name}: produced no text ({dialect.ref} dialect)")
 
         warnings = [
@@ -673,7 +683,7 @@ def _assemble(root: ET.Element, path: Path, dialect: XmlDialect) -> dict[str, in
     links = dialect.links
     base = (path.parent / links.base).resolve()
     rules = {rule.element: rule for rule in links.rules}
-    counts = {"followed": 0, "dropped": 0, "missing": 0}
+    counts = {"followed": 0, "dropped": 0, "missing": 0, "kept": 0}
     pending = [root]
     while pending:
         node = pending.pop()
@@ -686,6 +696,8 @@ def _assemble(root: ET.Element, path: Path, dialect: XmlDialect) -> dict[str, in
                 node.remove(child)
                 counts["dropped"] += 1
                 continue
+            if rule.keep:
+                counts["kept"] += 1
             value = child.get(rule.attr, "")
             match = _re(rule.pattern).fullmatch(value) if rule.pattern else None
             if rule.pattern and match is None:

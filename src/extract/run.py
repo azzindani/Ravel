@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from canon import CANON_VERSION, CanonicalDoc, Severity, validate
-from extract.base import ExtractionFailed, Extractor, Probe
+from extract.base import ExtractionEmpty, ExtractionFailed, Extractor, Probe
 from extract.native import NativeExtractor
 from extract.native import probe as probe_pdf
 from extract.structure import Structurer
@@ -52,6 +52,8 @@ class DocResult:
     error: str | None = None
     quarantine: bool = False
     deferred: bool = False
+    empty: bool = False
+    """The document states it holds nothing (`ExtractionEmpty`): quarantined, not failed."""
 
 
 @dataclass
@@ -67,6 +69,8 @@ class RunReport:
     extracted: int = 0
     failed: int = 0
     deferred: int = 0
+    empty: int = 0
+    """Documents that state they hold nothing (`ExtractionEmpty`): ✗ failures, ✗ corpus."""
     invalid: int = 0
     shards: int = 0
     bytes_written: int = 0
@@ -88,6 +92,7 @@ class RunReport:
     @property
     def coverage(self) -> float:
         """Share of considered documents that actually entered the corpus."""
+        # ! `empty` is left out: a document with nothing to read is not one the corpus lacks.
         total = (
             self.extracted + self.failed + self.deferred + self.skipped_done + self.duplicates
         )
@@ -282,6 +287,10 @@ class Extraction:
                 url=self.corpus.provenance.url_for(source.path),
                 profile=profile,
             )
+        except ExtractionEmpty as exc:
+            return DocResult(
+                key=key, path=source.path, quarantine=True, empty=True, error=str(exc)
+            )
         except ExtractionFailed as exc:
             return DocResult(key=key, path=source.path, quarantine=True, error=str(exc))
         except Exception as exc:  # noqa: BLE001 — transient; retryable, not quarantined
@@ -363,6 +372,8 @@ class Extraction:
                     if result.doc is None:
                         if result.deferred:
                             report.deferred += 1
+                        elif result.empty:
+                            report.empty += 1
                         else:
                             report.failed += 1
                             report.errors.append((result.path, result.error or "unknown"))

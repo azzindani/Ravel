@@ -31,6 +31,15 @@ class ExtractionFailed(RuntimeError):
     """
 
 
+class ExtractionEmpty(ExtractionFailed):
+    """The document states that it holds nothing to read: a LEGI text in force none of whose
+    articles or sections is. Not a fault, so it is counted apart and never against the
+    corpus's failure tolerance; a document that SHOULD hold text and yields none is still an
+    `ExtractionFailed`. Only a rule the dialect declares raises it
+    (`links.empty_when_nothing_kept`).
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class Probe:
     """What a cheap look at a file says about how to extract it."""

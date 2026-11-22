@@ -336,6 +336,11 @@ def extract(
     summary.add_row("extracted", f"[bold]{report.extracted:,}[/bold]")
     summary.add_row("failed", f"{report.failed:,}  ({report.failure_rate:.1%})")
     summary.add_row("deferred", f"{report.deferred:,}  [dim]no text layer · awaiting OCR[/dim]")
+    if report.empty:
+        summary.add_row(
+            "empty",
+            f"{report.empty:,}  [dim]state they hold nothing (no article in force)[/dim]",
+        )
     summary.add_row("coverage", f"{report.coverage:.1%}")
     summary.add_row("shards", f"{report.shards:,}  ({report.bytes_written / 1e6:.1f} MB)")
     summary.add_row("elapsed", f"{report.seconds:.1f}s")

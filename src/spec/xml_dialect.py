@@ -199,6 +199,9 @@ class Links(_Base):
     rules: list[Link] = Field(min_length=1)
     #: Files read at most, so a link cycle or a runaway tree ends the document, loudly.
     max_files: int = Field(default=100_000, ge=1)
+    #: A document with no text and no link that passed a `keep` filter states it holds
+    #: nothing (LEGI: no article in force): counted as empty, ✗ as a failure.
+    empty_when_nothing_kept: bool = False
 
 
 class Emphasis(_Base):

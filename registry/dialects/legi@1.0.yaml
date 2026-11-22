@@ -18,6 +18,9 @@ document:
 links:
   # From `texte/struct/<id>.xml`, the text's folder is two up.
   base: ../..
+  # A text in force none of whose articles or sections is (`etat=""` on every link) has
+  # nothing to read: counted as empty, not as a failure. 59 of the first 62 empties.
+  empty_when_nothing_kept: true
   rules:
     # The text's title page (`TITRE`, `TITREFULL`, visas, signatories).
     - element: LIEN_TXT

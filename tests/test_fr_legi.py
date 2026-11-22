@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from canon import Severity, validate
 from chunk import Builder, ChunkConfig, get
+from extract.base import ExtractionEmpty, ExtractionFailed
 from extract.structure import Structurer
 from extract.xml import XmlExtractor
 from sources.fetch import Fetcher
@@ -128,7 +129,12 @@ def test_links_assemble_the_text_in_force(folder: Path, profile: Any) -> None:
     raw, doc = _doc(folder, profile)
     # Followed: the version page, the section in force, and two articles in force.
     # Dropped: the repealed section and the superseded article version. Missing: one article.
-    assert raw.extraction.params["links"] == {"followed": 4, "dropped": 2, "missing": 1}
+    assert raw.extraction.params["links"] == {
+        "followed": 4,
+        "dropped": 2,
+        "missing": 1,
+        "kept": 4,
+    }
     heads = [(b.attrs.get("unit"), b.text) for b in doc.blocks if b.type.value == "heading"]
     assert heads[:3] == [
         ("text", "Code de commerce"),
@@ -301,3 +307,24 @@ def test_archive_index_refuses_a_glob_matching_nothing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no member matches"):
         Fetcher(_legi_corpus(tmp_path), opener=opener, sleep=lambda _: None).run()
     assert not (tmp_path / "current.txt").exists()
+
+
+def test_a_text_with_nothing_in_force_is_empty_not_failed(tmp_path: Path, profile: Any) -> None:
+    root = tmp_path / "t"
+    nothing = STRUCT.replace('etat="VIGUEUR"', 'etat=""')
+    _write(root / f"texte/struct/{TEXT}.xml", nothing)
+    _write(root / f"texte/version/{TEXT}.xml", VERSION)
+    with pytest.raises(ExtractionEmpty, match="nothing in force"):
+        XmlExtractor().extract(root / f"texte/struct/{TEXT}.xml", title=TEXT, profile=profile)
+
+
+def test_a_text_whose_kept_articles_are_missing_still_fails(
+    tmp_path: Path, profile: Any
+) -> None:
+    root = tmp_path / "t"
+    _write(root / f"texte/struct/{TEXT}.xml", STRUCT)
+    _write(root / f"texte/version/{TEXT}.xml", VERSION)
+    # The section and articles in force are linked, and none of their files is here.
+    with pytest.raises(ExtractionFailed, match="produced no text") as caught:
+        XmlExtractor().extract(root / f"texte/struct/{TEXT}.xml", title=TEXT, profile=profile)
+    assert not isinstance(caught.value, ExtractionEmpty)
