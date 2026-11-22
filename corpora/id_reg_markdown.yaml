@@ -25,35 +25,9 @@ chunk:
   min_tokens: 24
 
 embed:
-  kind: local
-  id: qwen3-embedding-0.6b-local
-  model: Qwen/Qwen3-Embedding-0.6B
-  # ! An exact commit, never `main` (EMBEDDING.md §3). Read from the model's public API
-  # on 2026-11-06; bump it deliberately, because a new revision is a new space.
-  revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
-  dim: 1024
-  pooling: last_token
-  padding_side: left
-  # Standard recipe: the tokenizer closes the sequence once, as the model card does. The first
-  # 1.7M vectors (generation 95c78dc6bd98) were built with `append_eos: true`, a nonstandard
-  # extra `<|im_end|>`; they stay on disk untouched and are NOT continued by this config.
-  normalize: true
-  # Qwen3 puts the instruction on the QUERY and embeds a document bare. The string is
-  # Vera's own (crates/embed/src/lib.rs); the two sides must agree or they are different
-  # spaces.
-  instruction_style: prefix
-  doc_instruction: ""
-  query_instruction: "Given a legal or regulatory question, retrieve passages that answer it"
-  max_length: 8192
-  dtype: float16
-  vector_dtype: float16
-  # ! Batching and device are not part of the corpus: they depend on the card the build runs
-  # on, and none of them changes a vector. `auto` detects the machine and uses its profile
-  # from registry/hardware/ (the 8 GB laptop this corpus was first built on has one), or an
-  # estimate scaled from it. `ravel hardware list` shows the choice; `ravel hardware tune`
-  # measures one.
-  hardware: auto
-  shard_rows: 20000
+  # The one vector space every regulation corpus shares, declared once
+  # (registry/embedders/): one Vera build and one index serve them all.
+  use: qwen3-embedding-0.6b@1.0
 
 gate:
   # Jurisdictions this corpus does not cover. `ravel db calibrate` records them in

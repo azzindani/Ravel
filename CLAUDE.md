@@ -45,7 +45,7 @@ project goes wrong. The diagram is in `ARCHITECTURE.md`; the layers in `PIPELINE
 | path | holds |
 |---|---|
 | `src/` | the Python package: `cli.py`, `sources/` (fetch, scan), `spec/` (profile, dialect, corpus loaders), `extract/`, `canon/`, `chunk/`, `enrich/`, `embed/`, `bundle/`, `load/`, `db/`, `runtime/`, `variants/`, `evaluate/`, `cluster/` (optional) |
-| `registry/` | corpus knowledge as data: `profiles/`, `dialects/`, `lexicons/`, `hardware/`, and `published.yaml` (frozen files) |
+| `registry/` | corpus knowledge as data: `profiles/`, `dialects/`, `lexicons/`, `embedders/` (a vector space, declared once), `hardware/`, and `published.yaml` (frozen files) |
 | `corpora/` | one YAML per corpus: where its publisher is, its profile, its embedder |
 | `datasets/` | the card of every published dataset (`<NAME>.md` is `Azzindani/<NAME>`'s README) |
 | `docs/` | `design/`, `pipeline/`, `sources/`, `eval/`, `project/`: see the index |
@@ -141,7 +141,10 @@ The embedding server is the docker vLLM container (`docker/compose.vllm.yml`), c
 10. **Never mutate a published bundle, dataset or registry file.** A change produces a new
     version.
 11. **Never edit `registry/` or `corpora/` text to tidy it.** A profile's text is part of the
-    config hash every stage is cached by, and a published one is frozen.
+    config hash every stage is cached by, and a published one is frozen. A refactor of
+    them shows every corpus's hashes unchanged before it lands.
+12. **Never copy a shared declaration.** A vector space is named (`embed.use`), never
+    pasted into a corpus: copies drift, and the drifted corpus lands in another space.
 
 ---
 

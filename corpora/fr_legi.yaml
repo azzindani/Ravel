@@ -48,22 +48,6 @@ chunk:
   chunker: markup
 
 embed:
-  # The same space as id_reg_markdown (one model, one revision, one recipe), so every corpus
-  # is served by the same Vera build. Embedded through the docker vLLM server:
-  # `ravel embed <corpus> -w <ws> --base-url http://localhost:8000/v1`.
-  kind: local
-  id: qwen3-embedding-0.6b-local
-  model: Qwen/Qwen3-Embedding-0.6B
-  revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
-  dim: 1024
-  pooling: last_token
-  padding_side: left
-  normalize: true
-  instruction_style: prefix
-  doc_instruction: ""
-  query_instruction: "Given a legal or regulatory question, retrieve passages that answer it"
-  max_length: 8192
-  dtype: float16
-  vector_dtype: float16
-  hardware: auto
-  shard_rows: 20000
+  # The one vector space every regulation corpus shares, declared once
+  # (registry/embedders/): one Vera build and one index serve them all.
+  use: qwen3-embedding-0.6b@1.0

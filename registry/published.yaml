@@ -25,3 +25,10 @@ published:
     files:
       registry/profiles/us_cfr@1.1.yaml: d8a7a368e2f3cca7043e1bf3762288cf4a2920a41a98b7655e8c7d399c86ef40
       registry/dialects/gpo_cfr@1.0.yaml: bea9713bebb77107f6a54c70ae631c9be62e7269c59c6a9ed59d4ec7796b04cb
+  # The vector space of every dataset above, declared once since 2026-11-22: the copied
+  # `embed:` blocks it replaced resolved to exactly these fields (fingerprint
+  # 2231c38c768a08c7).
+  - dataset: CA_LAWS_2611, US_CFR_2611, ID_REG_RAG_2611 (the embedding space)
+    commit: a0c75f1
+    files:
+      registry/embedders/qwen3-embedding-0.6b@1.0.yaml: aa28cd0cb8d104970c0145cfb37ebbad7b0e617bb70329a184ae2bfbb0e70d37

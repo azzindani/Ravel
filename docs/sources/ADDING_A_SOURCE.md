@@ -71,7 +71,14 @@ fetch:    {kind: github, listing: ..., files: ..., edition: latest, paths: [...]
 provenance: {base_url: <must equal fetch.files>, note: who, what, licence, official or not}
 extract:  {profile: ca_laws@1.0, extractors: [xml], failure_tolerance: 0.0}
 chunk:    {chunker: markup}
+embed:    {use: qwen3-embedding-0.6b@1.0}   # the shared space, registry/embedders/
 ```
+
+! The vector space is **named, never copied**: `embed.use` resolves the registry file
+before the corpus is validated, so every regulation corpus is in one space and one index
+holds them all. A corpus may set how it is run beside `use` (`shard_rows`, `hardware`),
+never what the vector is: that is a new embedder version. `tests/test_embedders.py`
+refuses a corpus that copies a registry space.
 
 | fetch kind | listing | the edition | path below `sources.root` |
 |---|---|---|---|
@@ -212,7 +219,9 @@ The card then states the model and revision, the exact text that was embedded (t
 template and check that cosine is 1.0 before upload: it proves the card's recipe is the one
 the vectors were made with (`CA_LAWS_2611`, 2026-11-22: five rows, 1.0000).
 
-Write the dataset card: source and licence, official status, columns, signal coverage,
+Write the dataset card in `datasets/<NAME>.md` (`datasets/README.md`), then
+`ravel publish <id> -w $W --repo Azzindani/<NAME>` exports, puts the card beside the data
+and uploads both. The card covers: source and licence, official status, columns, signal coverage,
 build commands, changes since the last version. Upload with `HfApi.upload_folder` and
 `delete_patterns` for the old shards. **Verify on the Hub**: the new commit exists, and the
 row and column counts read back from the parquet metadata. A transfer can finish while the

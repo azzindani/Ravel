@@ -393,6 +393,40 @@ class GateSpec(Base):
     (Vera `docs/project/ROADMAP.md` Stage 1). Matched as whole words, case-insensitive."""
 
 
+#: Shared embedder declarations: one vector space, one file (`registry/embedders/`).
+EMBEDDERS = Path(__file__).resolve().parents[2] / "registry" / "embedders"
+
+
+def resolve_embedder(
+    block: dict[str, Any], *, where: str, root: Path = EMBEDDERS
+) -> dict[str, Any]:
+    """`{use: <id>@<version>, ...overrides}` → the registry file's fields, overrides applied.
+
+    ! The reference is replaced before validation, so a corpus's hashes and its embedder
+    fingerprint are those of the resolved fields: moving a corpus from a copied block to a
+    reference changes neither. An override may only set how the space is run
+    (`OVERRIDABLE`): a field that changes the vector is the space itself, and a corpus
+    wanting another value wants another registry version.
+    """
+    ref = str(block["use"])
+    path = root / f"{ref}.yaml"
+    if "@" not in ref or not path.is_file():
+        known = sorted(p.stem for p in root.glob("*.yaml")) if root.is_dir() else []
+        raise ValueError(f"{where}: embed.use {ref!r} is not in {root} · known: {known}")
+    base: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    overrides = {k: v for k, v in block.items() if k != "use"}
+    if stray := set(overrides) - OVERRIDABLE:
+        raise ValueError(
+            f"{where}: embed.use {ref} cannot override {sorted(stray)}: they change the "
+            "vector, so they are a new registry version, ✗ a corpus setting"
+        )
+    return {**base, **overrides}
+
+
+#: The `embed` fields a corpus may set beside `use`: how the space is run, not what it is.
+OVERRIDABLE = frozenset({"hardware", "shard_rows", "batch_items", "batch_bytes", "concurrency"})
+
+
 class CorpusSpec(Base):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     title: str
@@ -507,6 +541,8 @@ class CorpusSpec(Base):
         raw: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise ValueError(f"{path.name}: expected a mapping at the top level")
+        if isinstance(raw.get("embed"), dict) and "use" in raw["embed"]:
+            raw["embed"] = resolve_embedder(raw["embed"], where=path.name)
         spec = cls.model_validate(raw)
         if path.stem != spec.id:
             raise ValueError(

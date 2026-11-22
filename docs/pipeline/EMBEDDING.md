@@ -64,7 +64,9 @@ The same interface serves both, so a variant swaps embedders by id in config.
 
 **Built.** `embed/local.py` (`TransformersEmbedder`) and `embed/api.py`
 (`OpenAICompatEmbedder`), chosen by the corpus's `embed:` section (`kind: local | api |
-hash`) through `embed/factory.py`. Both import their heavy dependencies when an embedder is
+hash`) through `embed/factory.py`. A shared space is declared once in `registry/embedders/`
+and named by `embed: {use: <id>@<version>}`; the loader resolves it before validation, so
+the fingerprint is the resolved fields' (`spec/corpus.py`, `resolve_embedder`). Both import their heavy dependencies when an embedder is
 *built*, so a machine without torch still imports `embed` and runs every other stage.
 
 - *Local* pools `last_token` / `mean` / `cls`, honours `padding_side` (the rule is a pure

@@ -1,0 +1,43 @@
+# The vector space every regulation corpus is embedded in, declared once.
+#
+# A corpus names it with `embed: {use: qwen3-embedding-0.6b@1.0}` and may set a field
+# beside `use` to override it (`shard_rows`, `hardware`: how it is run, not what the vector
+# is). The loader replaces the reference with this file before the corpus is validated, so
+# the corpus's hashes and the embedder fingerprint (2231c38c768a08c7) are those of the
+# fields below, ✗ of the reference.
+#
+# ! One space, one file. Six copies of this block could drift by one field, and the corpus
+# with the drifted copy would land in another space: its vectors would no longer be
+# comparable with the others' and one index could not hold them all. A change to any field
+# that changes a vector is a new version beside this one (docs/pipeline/PROFILES.md §7), and
+# it is frozen once a published dataset used it (registry/published.yaml).
+#
+# Embedded through the docker vLLM server (docker/compose.vllm.yml), checked with
+# `ravel verify-backend` first: `ravel embed <corpus> -w <ws> --base-url http://localhost:8000/v1`.
+kind: local
+id: qwen3-embedding-0.6b-local
+model: Qwen/Qwen3-Embedding-0.6B
+# ! An exact commit, never `main` (EMBEDDING.md §3). Read from the model's public API on
+# 2026-11-06; bump it deliberately, because a new revision is a new space.
+revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+dim: 1024
+pooling: last_token
+padding_side: left
+normalize: true
+# Qwen3 puts the instruction on the QUERY and embeds a document bare. The string is Vera's
+# own (crates/embed/src/lib.rs); the two sides must agree or they are different spaces.
+# The tokenizer closes the sequence once, as the model card does. (The first 1.7M
+# id_reg_markdown vectors, generation 95c78dc6bd98, were built with a nonstandard extra
+# `<|im_end|>`; they stay on disk untouched and are not continued by this space.)
+instruction_style: prefix
+doc_instruction: ""
+query_instruction: "Given a legal or regulatory question, retrieve passages that answer it"
+max_length: 8192
+dtype: float16
+vector_dtype: float16
+# ! Batching and device are not part of the space: they depend on the card the build runs
+# on, and none of them changes a vector. `auto` detects the machine and uses its profile
+# from registry/hardware/, or an estimate scaled from it (`ravel hardware list`). A corpus
+# may override this and `shard_rows` beside `use`.
+hardware: auto
+shard_rows: 20000
