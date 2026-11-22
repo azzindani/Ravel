@@ -35,7 +35,7 @@ What is built, what is not. Moved out of `CLAUDE.md` on 2026-11-22; the items up
 - [x] Hardware profiles, serving-engine path (`kind: api` + concurrency, `verify-backend`), remote mirror + `--worker i/N`, second vector space in the manifest, schema and load plan — `registry/hardware/`, `src/runtime/sync.py`; **all tested without a real vLLM, bucket, second machine or VL model**
 - [x] Loader executor (`ravel load`) and bundle assembly (`ravel bundle build`) — `src/load/execute.py`, `src/bundle/build.py`; run against real pgvector in CI
 - [x] Bundle writer: manifest, generated schema, parquet shards, inventory — `src/bundle/`
-- [x] Clustering code (anchors, spherical k-means, assignment) — `src/cluster/`; **optional, Vera owns clustering at deploy and ingest** (`CLAUDE.md` §4, principle 17)
+- [x] Clustering code (anchors, spherical k-means, assignment) — `src/cluster/`; **optional, Vera owns clustering at deploy and ingest** (`CLAUDE.md` §5.17)
 - [~] Loader: the seven preflight checks + the generated load plan — `src/load/`; the psycopg executor still to write
 - [x] Relations: revokes / replaces / amends / based_on from the verb beside each citation, resolved to documents, status derived — `src/enrich/relations.py`, `docs/pipeline/RELATIONS.md`; no NER, by decision
 - [x] Quality gate: per-document verdict from the share of unknown words, `indexable` sidecar — `src/enrich/quality.py`, `docs/pipeline/QUALITY.md`; the index half does not read it yet

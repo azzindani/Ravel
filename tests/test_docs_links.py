@@ -2,7 +2,7 @@
 
 A path `docs/<dir>/X.md` names a file that exists, when a doc of that name exists here at
 all (one that does not is Vera's, or not written yet). A relative markdown link resolves.
-`registry/` and `corpora/` are left out: their text is frozen or hashed (`CLAUDE.md` §6.11).
+`registry/` and `corpora/` are left out: their text is frozen or hashed (`CLAUDE.md` §7.11).
 """
 
 from __future__ import annotations

@@ -3,6 +3,8 @@
 > Context file for AI coding agents working in this repository. It holds the rules; the
 > detail lives in `docs/`, and **[`docs/README.md`](docs/README.md) is the index**. A doc is
 > named the same everywhere, so `PROFILES.md` §7 means `docs/pipeline/PROFILES.md` §7.
+> Sections are cited across the code as `CLAUDE.md` §5.n (a principle) and §7.n (a
+> never-rule): keep their numbers when editing.
 
 ---
 
@@ -29,12 +31,16 @@ Ravel's job:   fetch → extract → chunk → signals → sparse → embed → 
 ```
 
 Deterministic stages, a typed intermediate representation (`CANONICAL_FORMAT.md`), caching
-by content hash, a reproducible artifact at the end. Phase A (extract) is per document and
+by content hash, a reproducible artifact at the end.
+
+## 3. Architecture in one paragraph
+
+Phase A (extract) is per document and
 run once; phase B (chunk, enrich, embed) is per chunk and re-run per variant; phase C
 (bundle) cannot start until every vector exists. Confusing them is the main way this
 project goes wrong. The diagram is in `ARCHITECTURE.md`; the layers in `PIPELINE.md`.
 
-## 3. Where things are
+## 4. Where things are
 
 | path | holds |
 |---|---|
@@ -50,7 +56,7 @@ project goes wrong. The diagram is in `ARCHITECTURE.md`; the layers in `PIPELINE
 Python 3.14, managed by `uv` (`STACK.md`). Lint, format and `mypy --strict` are enforced in
 CI. What is built and what is not: `PROGRESS.md`.
 
-## 4. Architecture principles (do not violate)
+## 5. Architecture principles (do not violate)
 
 1. **Extract once, chunk many.** Extraction output is cached by source content hash; a
    chunking experiment never triggers re-extraction. (`ARCHITECTURE.md` §3)
@@ -96,7 +102,7 @@ CI. What is built and what is not: `PROGRESS.md`.
     dataset republished by `ravel publish` from its card in `datasets/`. A step that lives
     only in a shell history or a scratch file is not done. (`DATABASE.md` §4a)
 
-## 5. The lifecycle of a corpus
+## 6. The lifecycle of a corpus
 
 | step | command | doc |
 |---|---|---|
@@ -113,7 +119,7 @@ CI. What is built and what is not: `PROGRESS.md`.
 The embedding server is the docker vLLM container (`docker/compose.vllm.yml`), checked with
 `verify-backend` before anything is embedded through it.
 
-## 6. What you must NEVER do
+## 7. What you must NEVER do
 
 1. **Never re-extract to satisfy a downstream change.** Extend the format and re-extract
    deliberately, as a versioned event.
