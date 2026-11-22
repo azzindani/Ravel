@@ -118,6 +118,23 @@ def test_a_rerun_changes_nothing_and_skips_finished_shards(
     assert second.rows == 4
 
 
+def test_an_update_keeps_the_earlier_vocabulary(chunk_dir: Path, tmp_path: Path) -> None:
+    # ! A delta refuses two bundles whose vocabularies differ: an update must not refit.
+    earlier = build_sparse(chunk_dir, tmp_path / "old")
+    later = build_sparse(chunk_dir, tmp_path / "new", vocab=tmp_path / "old" / VOCAB_NAME)
+    assert not later.fitted_now
+    assert later.vocab_sha256 == earlier.vocab_sha256
+
+
+def test_another_vocabulary_over_written_shards_is_refused(
+    chunk_dir: Path, tmp_path: Path
+) -> None:
+    build_sparse(chunk_dir, tmp_path / "a")
+    build_sparse(chunk_dir, tmp_path / "b", max_features=3)
+    with pytest.raises(ValueError, match="another vocabulary"):
+        build_sparse(chunk_dir, tmp_path / "b", vocab=tmp_path / "a" / VOCAB_NAME)
+
+
 def test_a_stage_with_no_chunks_is_refused(tmp_path: Path) -> None:
     (tmp_path / "empty").mkdir()
     with pytest.raises(FileNotFoundError, match="ravel chunk"):

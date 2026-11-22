@@ -1101,6 +1101,14 @@ def sparse_cmd(
     max_features: Annotated[
         int, typer.Option("--max-features", help="Vocabulary size (the sparse width).")
     ] = 20_000,
+    vocab: Annotated[
+        Path | None,
+        typer.Option(
+            "--vocab",
+            help="Use this vocabulary (an earlier snapshot's corpus.bm25.json) instead of "
+            "fitting one. An update must: a delta refuses a changed vocabulary.",
+        ),
+    ] = None,
 ) -> None:
     """Fit the corpus BM25 vocabulary and write a sparse vector per chunk.
 
@@ -1122,7 +1130,9 @@ def sparse_cmd(
     def show(phase: str, done: int, total: int) -> None:
         out.print(f"[dim]{phase} {done}/{total}[/dim]")
 
-    report = build_sparse(chunk_dir, out_dir, max_features=max_features, on_progress=show)
+    report = build_sparse(
+        chunk_dir, out_dir, max_features=max_features, on_progress=show, vocab=vocab
+    )
     table = RichTable(show_header=False, box=None)
     table.add_row("sparse", str(report.directory))
     table.add_row(
@@ -1133,6 +1143,98 @@ def sparse_cmd(
     table.add_row("rows", f"{report.rows:,}")
     table.add_row("vocab sha256", report.vocab_sha256[:16])
     out.print(table)
+
+
+@app.command(name="update")
+def update_cmd(
+    corpus_id: CorpusArg,
+    previous: Annotated[
+        Path, typer.Option("--from", help="The previous snapshot's workspace.")
+    ],
+    previous_bundle: Annotated[
+        Path, typer.Option("--from-bundle", help="The bundle the database is at.")
+    ],
+    bundle_dir: Annotated[Path, typer.Option("--out", help="The new bundle, to create.")],
+    delta_dir: Annotated[Path, typer.Option("--delta", help="The delta, to create.")],
+    workspace: WORKSPACE = Path("."),
+    fetch: Annotated[
+        bool, typer.Option("--fetch/--no-fetch", help="Fetch the newest edition first.")
+    ] = True,
+    base_url: Annotated[
+        str, typer.Option("--base-url", help="Embed through this endpoint (vLLM, TEI).")
+    ] = "",
+    concurrency: Annotated[int, typer.Option("--concurrency")] = 0,
+    batch_items: Annotated[int, typer.Option("--batch-items")] = 0,
+    batch_bytes: Annotated[int, typer.Option("--batch-bytes")] = 0,
+    dsn: Annotated[
+        str,
+        typer.Option(
+            "--dsn", help="Apply the delta to this database. Without it, the delta is written."
+        ),
+    ] = "",
+) -> None:
+    """A new snapshot of a corpus, as a delta against the one the database holds.
+
+    The same stages a first build runs, in a new workspace, with two differences that make
+    an update cost what changed instead of what exists. The BM25 vocabulary is the previous
+    snapshot's (`sparse --vocab`): a delta refuses a refit. Every vector whose embed text the
+    previous snapshot already embedded is reused (`embed --reuse`), in the same space only.
+
+        fetch -> extract -> chunk -> signals -> sparse --vocab -> embed --reuse
+              -> bundle build -> bundle delta -> (db apply, with --dsn)
+
+    Any corpus: what "newest edition" means is the corpus's `fetch:` block (CFR: the newest
+    complete edition of each title; Canada: the repository's head; LEGI: the newest dump).
+    """
+    from enrich.sparse_run import VOCAB_NAME, locate_sparse
+    from runtime.shards import newest_generation
+
+    spec = CorpusSpec.find(corpus_id)
+    chunks = newest_generation(Path(previous) / "chunks" / spec.id / "default")
+    if chunks is None:
+        err.print(f"[red]{previous}: no chunks of {spec.id} · not a previous snapshot[/red]")
+        raise typer.Exit(1)
+    vocab = locate_sparse(previous, spec.id, "default", chunks.name) / VOCAB_NAME
+    if not vocab.is_file():
+        err.print(
+            f"[red]{vocab}: no vocabulary · the previous snapshot was never sparse-built[/red]"
+        )
+        raise typer.Exit(1)
+    if Path(workspace).resolve() == Path(previous).resolve():
+        err.print("[red]the new snapshot needs its own workspace (stages append)[/red]")
+        raise typer.Exit(2)
+
+    def step(name: str) -> None:
+        err.print(f"[bold]update {spec.id}[/bold] · {name}")
+
+    if fetch:
+        step("fetch")
+        sources_fetch(corpus_id)
+    step("extract")
+    extract(corpus_id, workspace=workspace)
+    step("chunk")
+    chunk_cmd(corpus_id, workspace=workspace)
+    step("signals")
+    signals_cmd(corpus_id, workspace=workspace)
+    step("sparse, with the previous vocabulary")
+    sparse_cmd(corpus_id, workspace=workspace, vocab=vocab)
+    step("embed, reusing the previous vectors")
+    embed_cmd(
+        corpus_id,
+        workspace=workspace,
+        base_url=base_url,
+        concurrency=concurrency,
+        batch_items=batch_items,
+        batch_bytes=batch_bytes,
+        reuse=[Path(previous)],
+    )
+    step("bundle")
+    bundle_build(corpus_id, bundle_dir, workspace=workspace)
+    step("delta")
+    bundle_delta(previous_bundle, bundle_dir, delta_dir)
+    if dsn:
+        step("apply")
+        db_apply(delta_dir, dsn=dsn)
 
 
 @app.command(name="load")

@@ -24,6 +24,7 @@ embedding header, which the lexical arm must not match on.
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,8 +80,15 @@ def build_sparse(
     *,
     max_features: int = 20_000,
     on_progress: Callable[[str, int, int], None] | None = None,
+    vocab: Path | str | None = None,
 ) -> SparseReport:
-    """Fit (once) and transform every chunk shard of one chunk generation."""
+    """Fit (once) and transform every chunk shard of one chunk generation.
+
+    `vocab` is an earlier snapshot's vocabulary, used instead of a fit. An update must keep
+    it: sparse vectors are indexed by vocabulary position, and `bundle delta` refuses two
+    bundles whose vocabularies differ (`DATABASE.md` §4b). The vocabulary changes only in a
+    refit, which is a rebuild.
+    """
     chunk_dir = Path(chunk_dir)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -90,6 +98,15 @@ def build_sparse(
 
     report = SparseReport(directory=out)
     vocab_path = out / VOCAB_NAME
+    if vocab is not None:
+        given = Bm25Vectorizer.load(Path(vocab))
+        if vocab_path.exists() and Bm25Vectorizer.load(vocab_path).sha256() != given.sha256():
+            raise ValueError(
+                f"{vocab_path} already holds another vocabulary than {vocab} · these shards "
+                "were written against it; remove the directory to start over"
+            )
+        if not vocab_path.exists():
+            shutil.copyfile(vocab, vocab_path)
     if vocab_path.exists():
         vectorizer = Bm25Vectorizer.load(vocab_path)
     else:
