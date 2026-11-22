@@ -114,4 +114,14 @@ citing only the law fell from 10,129 to 7,884; 1,138 now cite `Art … § …`. 
 BGB and GG they fell from 7, 194, 8 and 1 to 1, 1, 2 and 1 (commit 20c477a says "1 each":
 BGB keeps 2, its own text split in two parts).
 
-✗ Not embedded yet. Published as `Azzindani/DE_LAWS_2611` once it is.
+Embedded through vLLM (`verify-backend` at cosine 1.00000): 136,284 vectors, 3 texts cut
+at 8,192 tokens.
+
+```bash
+ravel embed   de_gii -w $W --base-url http://localhost:8000/v1
+ravel publish de_gii -w $W --repo Azzindani/DE_LAWS_2611   # 2 shards, 313 MB on the Hub
+```
+
+Published as `Azzindani/DE_LAWS_2611` (card: `datasets/DE_LAWS_2611.md`), 136,284 rows read
+back. Five random rows, re-embedded through vLLM from the card's template, reproduce their
+stored vector at cosine 1.0000. ✗ No bundle or eval set exists yet.

@@ -30,10 +30,15 @@ published:
     files:
       registry/profiles/jp_law@1.0.yaml: e8a9b5d9318fbeac529c7c9fb36a791060447657b4562cc4f8f9f1c5231fbad7
       registry/dialects/jp_law@1.0.yaml: f85906c74cfec976cd2e9311f95cb71721fcbe737b04885a18db5aeef67802f3
+  - dataset: Azzindani/DE_LAWS_2611
+    commit: 45dd2ec
+    files:
+      registry/profiles/de_gii@1.0.yaml: f5e99ab22d34b97da1a21cd908e7b0829c80c48d1da67766da438a9b0f11885f
+      registry/dialects/de_gii@1.0.yaml: 93f5e97a10c82da3217c216d94310bdfb1fe9fb46ac13bd1040448c5f7f8e652
   # The vector space of every dataset above, declared once since 2026-11-22: the copied
   # `embed:` blocks it replaced resolved to exactly these fields (fingerprint
   # 2231c38c768a08c7).
-  - dataset: CA_LAWS_2611, US_CFR_2611, ID_REG_RAG_2611, JP_LAWS_2611 (the embedding space)
+  - dataset: CA_LAWS_2611, US_CFR_2611, ID_REG_RAG_2611, JP_LAWS_2611, DE_LAWS_2611 (the embedding space)
     commit: a0c75f1
     files:
       registry/embedders/qwen3-embedding-0.6b@1.0.yaml: aa28cd0cb8d104970c0145cfb37ebbad7b0e617bb70329a184ae2bfbb0e70d37

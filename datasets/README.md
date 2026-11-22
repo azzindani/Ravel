@@ -14,7 +14,7 @@ never generated at publish time.
 | `US_CFR_2611` | `us_cfr` | published, with embeddings |
 | `JP_LAWS_2611` | `jp_egov` | published, with embeddings |
 | `FR_LAWS_2611` | `fr_legi` | named; published once embedded |
-| `DE_LAWS_2611` | `de_gii` | named; published once embedded |
+| `DE_LAWS_2611` | `de_gii` | published, with embeddings |
 
 On publishing, add the registry files the dataset was built with to
 `registry/published.yaml`: they are frozen from then on (`docs/pipeline/PROFILES.md` §7).
