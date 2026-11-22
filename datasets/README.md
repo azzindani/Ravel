@@ -12,7 +12,7 @@ never generated at publish time.
 |---|---|---|
 | `CA_LAWS_2611` | `ca_laws` | published, with embeddings |
 | `US_CFR_2611` | `us_cfr` | published, with embeddings |
-| `JP_LAWS_2611` | `jp_egov` | named; published once embedded |
+| `JP_LAWS_2611` | `jp_egov` | published, with embeddings |
 | `FR_LAWS_2611` | `fr_legi` | named; published once embedded |
 | `DE_LAWS_2611` | `de_gii` | named; published once embedded |
 

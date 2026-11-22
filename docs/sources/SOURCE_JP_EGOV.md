@@ -44,8 +44,8 @@ Division > 条 Article, each article holding its 項, 号 and イロハ.
 
 | field | value |
 |---|---|
-| `identifier` | `博物館法第二条` · `博物館法附則（令和四年六月一七日法律第六八号）第一条` · `博物館法附則（制定時）` · `博物館法別表第一` |
-| `regulation_type` | `Act`, `CabinetOrder`, `MinisterialOrdinance`, `Rule`, `ImperialOrdinance`, `Constitution` |
+| `identifier` | `博物館法第二条` · `博物館法附則（令和四年四月一五日法律第二四号）第一条` · `博物館法附則（制定時）` · `消防法別表第一` |
+| `regulation_type` | `Act`, `CabinetOrder`, `MinisterialOrdinance`, `Rule`, `ImperialOrder`, `Constitution` |
 | `regulation_number` | `昭和二十六年法律第二百八十五号` |
 | `about` | the law's title |
 
@@ -76,5 +76,15 @@ ravel sparse  jp_egov -w $W                        # WORDS_CJK, vocab sha 444c33
 ravel embed   jp_egov -w $W --base-url http://localhost:8000/v1
 ```
 
-`verify-backend` agreed with the reference at cosine 0.99999 before the embed. ✗ The embed
-is running; no bundle, dataset or eval set exists yet.
+`verify-backend` agreed with the reference at cosine 0.99999 before the embed. The embed
+stalled at window 27 of 32 on the 8 GB laptop (vLLM at 0.80 of the card, Windows paging GPU
+memory while the desktop decoded video: 1 text/s) and finished after vLLM was recreated at
+0.70 (`VLLM_GPU_MEMORY`, `docker/compose.vllm.yml`): 603,782 vectors.
+
+```bash
+ravel publish jp_egov -w $W --repo Azzindani/JP_LAWS_2611   # 4 shards, 1,278 MB on the Hub
+```
+
+Published as `Azzindani/JP_LAWS_2611` (card: `datasets/JP_LAWS_2611.md`). Five random rows,
+re-embedded through vLLM from the card's template, reproduce their stored vector at cosine
+1.0000. ✗ No bundle or eval set exists yet.
