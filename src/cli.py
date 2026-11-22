@@ -1017,8 +1017,16 @@ def export_cmd(
     signals: Annotated[
         bool, typer.Option("--signals/--no-signals", help="Join the signal sidecar.")
     ] = True,
+    vectors: Annotated[
+        bool,
+        typer.Option(
+            "--vectors/--no-vectors",
+            help="Join the dense vector `ravel embed` wrote for each chunk (`embedding`).",
+        ),
+    ] = False,
 ) -> None:
-    """Write the chunks, joined with their signals, as a text dataset (no vectors).
+    """Write the chunks, joined with their signals (and with `--vectors`, their embedding), as
+    a dataset.
 
     `data/<split>-N-of-M.parquet` plus `sources/manifest.jsonl` and the snapshot list: what a
     dataset hub serves. The dataset card is written by hand; this writes only data.
@@ -1028,6 +1036,15 @@ def export_cmd(
     spec = CorpusSpec.find(corpus_id)
     root = Path(spec.sources.root)
     snapshot = root / spec.sources.snapshot if spec.sources.snapshot else None
+    vector_dir: Path | None = None
+    if vectors:
+        from embed.run import locate_vectors
+
+        try:
+            _, vector_dir = locate_vectors(spec, workspace=workspace, variant=variant)
+        except (ValueError, FileNotFoundError) as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1) from exc
     try:
         report = export_dataset(
             workspace,
@@ -1038,6 +1055,7 @@ def export_cmd(
             source_root=root,
             snapshot=snapshot,
             with_signals=signals,
+            vector_dir=vector_dir,
         )
     except ExportError as exc:
         err.print(f"[red]{exc}[/red]")
@@ -1047,6 +1065,7 @@ def export_cmd(
     table.add_row("rows", f"{report.rows:,} in {report.shards} shards")
     table.add_row("columns", ", ".join(report.columns))
     table.add_row("signals", report.signals or "[dim]none[/dim]")
+    table.add_row("vectors", report.vectors or "[dim]none[/dim]")
     table.add_row("sources", f"{report.sources:,}")
     out.print(table)
 

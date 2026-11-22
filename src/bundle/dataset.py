@@ -1,7 +1,8 @@
 """A text dataset: finished chunks with their signals, and the sources they were read from.
 
 `ravel export <corpus> --out DIR` writes what a dataset hub serves (a Hugging Face dataset,
-say) without the vectors a Vera bundle carries:
+say). Without `--vectors` it carries no embedding; with it, each row also carries the dense
+vector `ravel embed` wrote for that chunk (`embedding`, float16 x dim, as stored):
 
     DIR/data/train-0000N-of-0000M.parquet   every chunk column, then every signal column
     DIR/sources/manifest.jsonl              one line per source: path, url, bytes, sha256
@@ -11,6 +12,11 @@ say) without the vectors a Vera bundle carries:
 position and checked by id: the sidecar is written in chunk order, so a shard of chunks and
 the matching slice of signals must name the same ids, and an export that would pair a chunk
 with another chunk's signals fails instead.
+
+! Vectors are joined by id, ✗ by position, from the generation `embed.run.locate_vectors`
+names for this chunk generation, so they are the ones made from these chunks by the
+corpus's declared embedder. A chunk with no vector fails the export: a dataset that is
+partly embedded looks whole.
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ class ExportReport:
     sources: int = 0
     columns: list[str] = field(default_factory=list)
     signals: str | None = None
+    vectors: str | None = None
 
 
 def export_dataset(
@@ -49,6 +56,7 @@ def export_dataset(
     source_root: Path | None = None,
     snapshot: Path | None = None,
     with_signals: bool = True,
+    vector_dir: Path | None = None,
 ) -> ExportReport:
     """Write the dataset. `source_root` makes manifest paths relative, as the corpus states
     them; `snapshot` is copied beside the manifest."""
@@ -71,6 +79,17 @@ def export_dataset(
         signals = pa.concat_tables(pq.read_table(p) for p in parts)
         report.signals = signal_dir.as_posix()
 
+    vectors: dict[str, int] = {}
+    embedding: pa.ChunkedArray | None = None
+    if vector_dir is not None:
+        parts = sorted(Path(vector_dir).glob("part-*.parquet"))
+        if not parts:
+            raise ExportError(f"no vectors at {vector_dir} · run `ravel embed` first")
+        stored = pa.concat_tables(pq.read_table(p) for p in parts)
+        vectors = {cid: i for i, cid in enumerate(stored["chunk_id"].to_pylist())}
+        embedding = stored["embedding"]
+        report.vectors = Path(vector_dir).as_posix()
+
     data = out_dir / "data"
     data.mkdir(parents=True, exist_ok=True)
     for old in data.glob(f"{split}-*.parquet"):
@@ -88,6 +107,16 @@ def export_dataset(
                 if name in table.column_names:
                     raise ExportError(f"signal column {name!r} collides with a chunk column")
                 table = table.append_column(part.schema.field(name), part[name])
+        if embedding is not None:
+            ids = table["id"].to_pylist()
+            absent = [cid for cid in ids if cid not in vectors]
+            if absent:
+                raise ExportError(
+                    f"{shard.name}: {len(absent):,} chunks have no vector (first {absent[0]})"
+                    " · finish `ravel embed`"
+                )
+            rows = pa.array([vectors[cid] for cid in ids], type=pa.int64())
+            table = table.append_column("embedding", embedding.take(rows))
         offset += table.num_rows
         name = f"{split}-{index:05d}-of-{len(shards):05d}.parquet"
         pq.write_table(table, data / name, compression="zstd")
