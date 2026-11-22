@@ -94,7 +94,8 @@ class Units(_Base):
     #: Unit -> attribute -> sources, relative to the unit's element and tried in order:
     #: `path` (an element's text), `path@attr`, `.@attr` (its own attribute), `=text` (a
     #: constant, last in a list). `number`, when stated, is the unit's number instead of
-    #: the one its heading prints.
+    #: the one its heading prints. `marker`, when stated and the heading opens with it, is
+    #: the heading's marker and the rest its name (`<enbez>Anhang 1 zu Nummer 3</enbez>`).
     attrs: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
     #: Unit -> {unit -> the unit it is read as when inside it}. Japan's supplementary
     #: provisions (`<SupplProvision>`, 附則) hold `<Article>`s numbered from 第一条 again; read

@@ -1,0 +1,114 @@
+id: de_gii
+version: "1.0"
+title: Gesetze im Internet XML (German federal laws, gii-norm DTD)
+description: >
+  One file per German federal law or ordinance, as the Federal Ministry of Justice and juris
+  publish them on gesetze-im-internet.de (docs/SOURCE_DE_GII.md), in the `gii-norm` DTD.
+  ! The file is flat: `<dokumente>` holds one `<norm>` per piece of the law, in order. The
+  first states the law (its title `langue`, abbreviation `jurabk`, signing date); an outline
+  norm states a heading (`gliederungseinheit`: Buch, Teil, Abschnitt, Titel …) and its depth
+  is the length of its `gliederungskennzahl` (`010` > `010010` > `010010010`); every other
+  norm is a provision (`enbez`: `§ 1`, `Art 3`, `Anlage 2`, `Eingangsformel`). Read by the
+  `xml` extractor; an element not named here is still read for its text and named in
+  `extraction.warnings`.
+
+document:
+  detect: {root: '^dokumente$'}
+  date: ['norm/metadaten/ausfertigung-datum']
+  dated_unit: law
+
+units:
+  tags:
+    dokumente: law
+    norm: article
+  # An outline norm opens a heading that runs to the next one as deep or shallower. Tried
+  # before `tags`, so an outline norm is never read as a provision.
+  flat:
+    tag: '^norm$'
+    path: metadaten/gliederungseinheit/gliederungskennzahl
+    match: regex
+    values:
+      '^\S{3}$': division1
+      '^\S{6}$': division2
+      '^\S{9}$': division3
+      '^\S{12}$': division4
+      '^\S{15}$': division5
+      '^\S{18}$': division6
+  attrs:
+    law:
+      # `BGB`: the abbreviation a law is cited by, the official one where it has one.
+      number: ['norm/metadaten/amtabk', 'norm/metadaten/jurabk']
+      short: ['norm/metadaten/kurzue']
+    # ! The marker is stated apart from the caption: `<enbez>Anhang 1 zu Nummer 3</enbez>`
+    # then `<titel>`. No pattern could find where the one ends.
+    article:
+      marker: ['metadaten/enbez']
+    division1: &division
+      marker: ['metadaten/gliederungseinheit/gliederungsbez']
+    division2: *division
+    division3: *division
+    division4: *division
+    division5: *division
+    division6: *division
+
+headings:
+  default:
+    join: [[metadaten/gliederungseinheit/gliederungsbez],
+           [metadaten/gliederungseinheit/gliederungstitel]]
+  law:
+    path: [norm/metadaten/langue]
+  # `§ 1` + `Beginn der Rechtsfähigkeit`.
+  article:
+    join: [[metadaten/enbez], [metadaten/titel]]
+
+labels:
+  default:
+    pattern: '^(?P<marker>\S+\s+\S+)\s*(?P<name>.*)$'
+    # `-` is printed where a heading has no designation.
+    number: '^(?P<number>(?!-$).+)$'
+  law:
+    pattern: '^(?P<marker>)(?P<name>.*)$'      # all name; the number is stated (units.attrs)
+  article:
+    pattern: '^(?P<marker>\S+(?:\s+\d\S*)?)\s*(?P<name>.*)$'
+    # `(XXXX)` marks a provision with no number: `(XXXX) §§ 16a bis 16c` is still `§§ 16a
+    # bis 16c`, and `(XXXX)` alone is none, so it cites as the law.
+    number: '^(?!\(XXXX\)$)(?:\(XXXX\)\s*)?(?P<number>.+)$'
+
+reserved:
+  # `§ 5 (weggefallen)`, with no text: repealed, counted, not emitted.
+  pattern: '\(weggefallen\)\s*$'
+  ignore: [metadaten, textdaten]
+  never: [law]
+
+# The metadata is read as attributes; the table of contents repeats the headings.
+skip: [metadaten, TOC]
+graphics: [IMG, FILE]
+leaves: [DT, Title, Subtitle, pre]
+containers:
+  textdaten: ""
+  text: ""
+  Content: ""
+  P: ""
+  DL: ""
+  DD: ""
+  LA: ""
+  # The norm's footnotes: amendment history (`(+++ Textnachweis ab: 1.1.1980 +++)`) and
+  # notes on the text.
+  fussnoten: footnote
+  Footnotes: footnote
+  Footnote: footnote
+  FnArea: footnote
+inline: [B, I, U, SUP, SUB, SP, F, small, NB, BR, FnR, ABWFORMAT, Split, Accolade, QuoteR,
+         # `(Fundstelle: BGBl. I 2012, 1546)`, printed inside the text it cites.
+         noindex, kommentar]
+
+text:
+  superscript: [SUP]
+  breaks: [BR]
+label:
+  # `1.`, `a)`: a list item's number opens the text that follows it.
+  tags: [DT]
+  suffix: ""
+  max_chars: 24
+tables:
+  elements: {table: cals}

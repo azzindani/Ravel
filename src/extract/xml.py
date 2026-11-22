@@ -426,7 +426,8 @@ class XmlExtractor:
         own = stated.pop("number", None)
         if own is None and units.number_attr:
             own = element.get(units.number_attr)
-        marker, name, number = _label(heading, d.dialect.label_rule(unit), own)
+        stated_marker = stated.pop("marker", None)
+        marker, name, number = _label(heading, d.dialect.label_rule(unit), own, stated_marker)
         return {
             **{k: clean(v) for k, v in stated.items()},
             "unit": unit,
@@ -808,16 +809,25 @@ def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
     return value or None
 
 
-def _label(heading: str, rule: LabelRule, own_number: str | None) -> tuple[str, str, str]:
-    """(marker, name, number) of a heading, as the dialect's label rule reads it."""
-    match = _re(rule.pattern, re.DOTALL).match(heading)
-    marker, name = (
-        ((match["marker"] or "").strip(), (match["name"] or "").strip())
-        if match
-        else (heading, "")
-    )
-    if not match:
-        marker = heading.strip()
+def _label(
+    heading: str, rule: LabelRule, own_number: str | None, own_marker: str | None = None
+) -> tuple[str, str, str]:
+    """(marker, name, number) of a heading, as the dialect's label rule reads it.
+
+    `own_marker`: the marker the markup states apart from the heading (`<enbez>§ 1</enbez>`
+    before `<titel>`): when the heading opens with it, the rest is the name, and `pattern`
+    is not tried. ! No pattern can tell `Anhang 1 zu Nummer 3` from a name that follows it.
+    """
+    stated = clean(own_marker or "")
+    if stated and heading.startswith(stated):
+        marker, name = stated, heading[len(stated) :].strip()
+    else:
+        match = _re(rule.pattern, re.DOTALL).match(heading)
+        marker, name = (
+            ((match["marker"] or "").strip(), (match["name"] or "").strip())
+            if match
+            else (heading.strip(), "")
+        )
     if rule.name_strip:
         name = _re(rule.name_strip, re.IGNORECASE).sub("", name)
     number = own_number or ""

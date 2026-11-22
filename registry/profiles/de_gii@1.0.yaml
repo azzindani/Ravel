@@ -1,0 +1,80 @@
+id: de_gii
+version: "1.0"
+title: German federal laws and ordinances in force (Gesetze im Internet XML)
+description: >
+  One German federal law or ordinance per file, from gesetze-im-internet.de, read by the
+  `xml` extractor in the `de_gii` dialect and chunked by `markup` (docs/SOURCE_DE_GII.md).
+  The file is a flat list of norms; outline norms (Buch, Teil, Abschnitt, Titel …) open
+  headings by the depth of their outline number, and each provision (§, Art, Anlage) sits
+  under the last heading opened. Identity is the law's: the provision and the law's
+  abbreviation, as German practice cites them (`§ 7 BGB`).
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<dokumente\b', '<norm\b', '<jurabk>']
+  min_hits: 2
+
+extract:
+  xml:
+    dialects: [de_gii@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here.
+  from_markup: true
+  units:
+    - {name: law, level: 1, pattern: '^.'}
+    # `Buch 1 Allgemeiner Teil`: the unit a reader names after the law.
+    - {name: division1, level: 2, pattern: '^.', role: chapter}
+    - {name: division2, level: 3, pattern: '^.'}
+    - {name: division3, level: 4, pattern: '^.'}
+    - {name: division4, level: 5, pattern: '^.'}
+    - {name: division5, level: 6, pattern: '^.'}
+    - {name: division6, level: 7, pattern: '^.'}
+    - {name: article, level: 8, pattern: '^.', role: article}
+
+identity:
+  markup:
+    scope: law
+    facts:
+      # `BGB`, `GoldMG`: the abbreviation it is cited by.
+      regulation_number: "{law.number}"
+      about: "{law.name}"
+      # The year it was signed (`Ausfertigungsdatum`), ✗ the year it came into force.
+      year: "{law.year}"
+    identifier:
+      # Written as German practice cites them: `§ 7 BGB`, `Art 3 GG`, `Anlage 2 BKleingG`.
+      # A provision with no number (`Eingangsformel` aside) cites as the law.
+      article: "{article.number} {law.number}"
+      law: "{law.number}"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per provision; longer ones split into `part n of m` on paragraph
+    # boundaries. ! Determined, ✗ measured: no German eval set exists yet.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    #   Citation: § 7 BGB
+    #   Location: Bürgerliches Gesetzbuch › Buch 1 Allgemeiner Teil › … › § 7 Wohnsitz; Begründung und Aufhebung
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      regulation_number: 0.99
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    # Federal Law Gazette citations: `BGBl. I S. 1004`, `BGBl. I 2002, 2420`, `BGBl. 2023 I Nr. 411`.
+    gazette_references:
+      - {pattern: '\b(?P<ref>BGBl\.\s*(?:\d{4}\s+)?(?:I{1,3}\s+)?(?:S\.\s*\d+|\d{4},\s*\d+|Nr\.\s*\d+))', format: '{ref}'}
+    # Provisions of other laws cited by abbreviation: `§ 77 Absatz 3 SGB IX`, `§ 41 AO`.
+    law_references:
+      - {pattern: '(?P<ref>§§?\s*\d+[a-z]?(?:\s+(?:Absatz|Abs\.)\s*\d+[a-z]?)?(?:\s+(?:Satz|Nummer|Nr\.)\s*\d+[a-z]?)*\s+(?:des\s+)?[A-ZÄÖÜ][A-Za-zÄÖÜäöüß]*[A-ZÄÖÜ][A-Za-zÄÖÜäöüß0-9]*(?:\s+[IVX]+)?)\b', format: '{ref}'}

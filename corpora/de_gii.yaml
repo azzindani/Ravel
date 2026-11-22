@@ -1,0 +1,67 @@
+id: de_gii
+title: German federal laws and ordinances (Gesetze im Internet)
+description: >
+  Every federal law and ordinance (Gesetz, Verordnung) in force, in German, as the Federal
+  Ministry of Justice and juris publish them on gesetze-im-internet.de
+  (docs/SOURCE_DE_GII.md): one XML per law in the `gii-norm` DTD, each in its own
+  `xml.zip`, named by the index `gii-toc.xml`. Free to reuse; not the official text, which
+  is the Bundesgesetzblatt. Fetched by `ravel sources fetch de_gii` into a folder per day;
+  sources are read-only and not in git. Build each snapshot in its own workspace
+  (-w work/de_gii/<date>).
+
+sources:
+  root: sources/DE_GII
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: listing
+  # 6,150 laws on 2026-11-22, each `<item><title>...</title><link>.../xml.zip</link></item>`.
+  listing: https://www.gesetze-im-internet.de/gii-toc.xml
+  files: http://www.gesetze-im-internet.de/
+  links: '<link>(?P<url>[^<]+)</link>'
+  # Each zip holds the law's XML, and for some, its images.
+  paths: ["*.xml"]
+  documents: ["*.xml"]
+  delay_s: 0.2
+  concurrency: 4
+
+provenance:
+  # ! The index's links are http and answer 302 to https; they are cited as the index
+  # lists them. A law is cited as the archive it was read from: `.../bgb/xml.zip#BJNR001950896.xml`.
+  base_url: http://www.gesetze-im-internet.de/
+  archive_suffix: .zip
+  url_map: url_map.jsonl
+  note: >
+    Bundesministerium der Justiz and juris GmbH, Gesetze im Internet
+    (gesetze-im-internet.de), the XML of each federal law as consolidated there, fetched on
+    the day named by the snapshot's folder. Free to reuse. Not the official text: the
+    official text is the Bundesgesetzblatt.
+
+extract:
+  profile: de_gii@1.0
+  extractors: [xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup
+
+embed:
+  # The same space as every other corpus (one model, one revision, one recipe), so one Vera
+  # build serves them all. Embedded through the docker vLLM server.
+  kind: local
+  id: qwen3-embedding-0.6b-local
+  model: Qwen/Qwen3-Embedding-0.6B
+  revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+  dim: 1024
+  pooling: last_token
+  padding_side: left
+  normalize: true
+  instruction_style: prefix
+  doc_instruction: ""
+  query_instruction: "Given a legal or regulatory question, retrieve passages that answer it"
+  max_length: 8192
+  dtype: float16
+  vector_dtype: float16
+  hardware: auto
+  shard_rows: 20000
