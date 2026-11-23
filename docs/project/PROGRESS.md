@@ -15,8 +15,7 @@ What is built, what is not. Moved out of `CLAUDE.md` on 2026-11-22; the items up
 - [x] Published registry files frozen by test — `registry/published.yaml`
 - [x] CJK: token counts by character, BM25 by character bigrams (`WORDS_CJK`, matched in
       Vera's `bm25.rs`)
-- [x] Published with embeddings: `CA_LAWS_2611`, `US_CFR_2611`, `JP_LAWS_2611`, `DE_LAWS_2611`; `ID_REG_RAG_2611`
-- [~] France (`fr_legi`): extracting — `sources/SOURCES_NEXT.md`
+- [x] Published with embeddings: `CA_LAWS_2611`, `US_CFR_2611`, `JP_LAWS_2611`, `DE_LAWS_2611`, `FR_LAWS_2611`; `ID_REG_RAG_2611`
 
 ## As tracked in CLAUDE.md until 2026-11-22
 
