@@ -1047,6 +1047,14 @@ def export_cmd(
             help="Join the dense vector `ravel embed` wrote for each chunk (`embedding`).",
         ),
     ] = False,
+    bundle: Annotated[
+        Path | None,
+        typer.Option(
+            "--bundle",
+            help="Write this sealed bundle's chunks and vectors, ✗ the workspace's newest "
+            "generation. The workspace still gives the sources.",
+        ),
+    ] = None,
 ) -> None:
     """Write the chunks, joined with their signals (and with `--vectors`, their embedding), as
     a dataset.
@@ -1060,7 +1068,18 @@ def export_cmd(
     root = Path(spec.sources.root)
     snapshot = root / spec.sources.snapshot if spec.sources.snapshot else None
     vector_dir: Path | None = None
-    if vectors:
+    chunk_dir: Path | None = None
+    if bundle is not None:
+        # ! A bundle is sealed: its manifest names every file. One without a manifest is a
+        # directory that happens to hold parquet, and is refused.
+        if not (bundle / "manifest.json").is_file():
+            err.print(f"[red]{bundle}: no manifest.json · not a bundle[/red]")
+            raise typer.Exit(1)
+        chunk_dir = bundle / "chunks"
+        vector_dir = bundle / "vectors" if vectors else None
+        # A bundle carries its own relations and status tables, ✗ a signal sidecar.
+        signals = False
+    elif vectors:
         from embed.run import locate_vectors
 
         try:
@@ -1079,6 +1098,7 @@ def export_cmd(
             snapshot=snapshot,
             with_signals=signals,
             vector_dir=vector_dir,
+            chunk_dir=chunk_dir,
         )
     except ExportError as exc:
         err.print(f"[red]{exc}[/red]")
@@ -1113,13 +1133,19 @@ def publish_cmd(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Stage the dataset; upload nothing.")
     ] = False,
+    bundle: Annotated[
+        Path | None,
+        typer.Option("--bundle", help="Publish this sealed bundle's chunks and vectors."),
+    ] = None,
 ) -> None:
     """Export a corpus and publish it as a dataset: the data, the sources, and its card.
 
     The card is a file in git (`datasets/<name>.md`), never written at publish time: it
     states what was measured, and a dataset whose card lives only where it was uploaded
-    from cannot be published again. The upload replaces `data/` and `sources/` whole, so a
-    shard the new export does not write is not left behind. Needs a Hugging Face token
+    from cannot be published again. The upload replaces the dataset whole: every file in
+    the repository the new export does not write is deleted in the same commit (only
+    `.gitattributes` is kept), so neither a stale shard nor an earlier layout is left
+    behind. Needs a Hugging Face token
     (`HF_TOKEN` or `huggingface-cli login`). Add the registry files it was built with to
     `registry/published.yaml` (`PROFILES.md` §7).
     """
@@ -1133,7 +1159,7 @@ def publish_cmd(
     staged = out_dir or Path(workspace) / "publish" / name
     if staged.exists():
         shutil.rmtree(staged)
-    export_cmd(corpus_id, staged, workspace=workspace, vectors=vectors)
+    export_cmd(corpus_id, staged, workspace=workspace, vectors=vectors, bundle=bundle)
     shutil.copyfile(card_path, staged / "README.md")
     if dry_run:
         out.print(f"staged {staged} · nothing uploaded")
@@ -1142,13 +1168,21 @@ def publish_cmd(
 
     api = HfApi()
     api.create_repo(repo, repo_type="dataset", exist_ok=True)
+    written = {p.relative_to(staged).as_posix() for p in staged.rglob("*") if p.is_file()}
+    stale = [
+        f
+        for f in api.list_repo_files(repo, repo_type="dataset")
+        if f not in written and f != ".gitattributes"
+    ]
     info = api.upload_folder(
         repo_id=repo,
         repo_type="dataset",
         folder_path=str(staged),
-        delete_patterns=["data/*.parquet", "sources/*"],
+        delete_patterns=stale,
         commit_message=message or f"{corpus_id}: {name}",
     )
+    if stale:
+        out.print(f"[dim]removed {len(stale):,} files the new export does not write[/dim]")
     out.print(f"published {repo} · {info}")
 
 

@@ -104,3 +104,16 @@ def test_the_written_shards_carry_bounded_row_groups(tmp_path: Path, monkeypatch
     for shard in (tmp_path).rglob("data/*.parquet"):
         meta = pq.ParquetFile(shard).metadata
         assert meta.num_row_groups == meta.num_rows, "one row per group at a 1-byte target"
+
+
+def test_a_named_chunk_dir_is_written_instead_of_the_newest_generation(tmp_path: Path) -> None:
+    # `ravel publish --bundle`: a sealed bundle's chunks, the rows a database serves.
+    ws = _workspace(tmp_path, ["a", "b", "c"])
+    sealed = tmp_path / "bundle" / "chunks"
+    sealed.mkdir(parents=True)
+    relabelled = pa.table({"id": ["q"], "body": ["relabelled"]})
+    pq.write_table(relabelled, sealed / "part-00000.parquet")
+    report = export_dataset(ws, "c", tmp_path / "out", with_signals=False, chunk_dir=sealed)
+    assert report.rows == 1
+    only = pq.read_table(tmp_path / "out" / "data" / "train-00000-of-00001.parquet")
+    assert only.to_pylist() == [{"id": "q", "body": "relabelled"}]

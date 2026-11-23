@@ -73,11 +73,17 @@ def export_dataset(
     snapshot: Path | None = None,
     with_signals: bool = True,
     vector_dir: Path | None = None,
+    chunk_dir: Path | None = None,
 ) -> ExportReport:
     """Write the dataset. `source_root` makes manifest paths relative, as the corpus states
-    them; `snapshot` is copied beside the manifest."""
+    them; `snapshot` is copied beside the manifest.
+
+    `chunk_dir` names the chunks to write instead of the workspace's newest generation: a
+    sealed bundle's `chunks/`, whose rows are the ones a database prepared from it serves
+    (a bundle may carry rows relabelled after the build, `bundle.relabel`)."""
     workspace, out_dir = Path(workspace), Path(out_dir)
-    chunk_dir = newest_generation(workspace / "chunks" / corpus_id / variant)
+    if chunk_dir is None:
+        chunk_dir = newest_generation(workspace / "chunks" / corpus_id / variant)
     if chunk_dir is None:
         raise ExportError(f"no chunks for {corpus_id}/{variant} in {workspace}")
     shards = sorted(chunk_dir.glob("part-*.parquet"))
