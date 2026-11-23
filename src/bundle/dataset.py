@@ -31,6 +31,22 @@ import pyarrow.parquet as pq
 from extract.run import iter_canon
 from runtime.shards import newest_generation
 
+# ! A row group is what a reader must load whole to read any row of it, and the Hugging Face
+# dataset viewer refuses one over 300 MB ("Scan size limit exceeded"). Written without a
+# size, pyarrow put each shard in ONE row group: JP_LAWS_2611's were 515 MB and its viewer
+# showed nothing; FR (343 MB) and DE (275 MB) were at the edge. Sized by bytes, ✗ rows: a
+# row's size runs from a short German paragraph to a Japanese article with its vector.
+ROW_GROUP_BYTES = 64 * 1024 * 1024
+
+
+def row_group_rows(table: pa.Table, target: int = ROW_GROUP_BYTES) -> int:
+    """Rows per row group so that one holds about `target` bytes, in memory, uncompressed."""
+    rows = int(table.num_rows)
+    if rows == 0:
+        return 1
+    per_row = max(1, int(table.nbytes) // rows)
+    return max(1, min(rows, target // per_row))
+
 
 class ExportError(RuntimeError):
     pass
@@ -119,7 +135,14 @@ def export_dataset(
             table = table.append_column("embedding", embedding.take(rows))
         offset += table.num_rows
         name = f"{split}-{index:05d}-of-{len(shards):05d}.parquet"
-        pq.write_table(table, data / name, compression="zstd")
+        # ! A page index too, so a reader can seek inside a row group (the viewer's advice).
+        pq.write_table(
+            table,
+            data / name,
+            compression="zstd",
+            row_group_size=row_group_rows(table, ROW_GROUP_BYTES),
+            write_page_index=True,
+        )
         report.rows += table.num_rows
         report.shards += 1
         report.columns = table.column_names

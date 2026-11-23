@@ -82,3 +82,25 @@ def test_a_chunk_without_a_vector_fails(tmp_path: Path) -> None:
     ws = _workspace(tmp_path, ["a", "b", "c"])
     with pytest.raises(ExportError, match="no vector"):
         export_dataset(ws, "c", tmp_path / "out", vector_dir=_vectors(tmp_path, ["a", "b"]))
+
+
+def test_a_row_group_is_sized_by_bytes_so_a_viewer_can_read_it() -> None:
+    # ! JP_LAWS_2611 was written one 515 MB row group per shard and the dataset viewer,
+    # which reads at most 300 MB at once, showed nothing.
+    from bundle.dataset import row_group_rows
+
+    table = pa.table({"body": ["x" * 1000] * 5000})
+    rows = row_group_rows(table, target=100_000)
+    assert 50 <= rows <= 100, rows
+    assert row_group_rows(table, target=10**12) == table.num_rows
+    assert row_group_rows(pa.table({"body": pa.array([], pa.string())})) == 1
+
+
+def test_the_written_shards_carry_bounded_row_groups(tmp_path: Path, monkeypatch) -> None:
+    import bundle.dataset as ds
+
+    monkeypatch.setattr(ds, "ROW_GROUP_BYTES", 1)
+    test_signals_join_each_shard(tmp_path)
+    for shard in (tmp_path).rglob("data/*.parquet"):
+        meta = pq.ParquetFile(shard).metadata
+        assert meta.num_row_groups == meta.num_rows, "one row per group at a 1-byte target"
