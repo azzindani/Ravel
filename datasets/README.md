@@ -15,6 +15,7 @@ never generated at publish time.
 | `JP_LAWS_2611` | `jp_egov` | published, with embeddings |
 | `FR_LAWS_2611` | `fr_legi` | published, with embeddings |
 | `DE_LAWS_2611` | `de_gii` | published, with embeddings |
+| `ID_REG_RAG_2611` | `id_reg_markdown` | published, with embeddings (from bundle v6: `ravel publish --bundle`) |
 
 On publishing, add the registry files the dataset was built with to
 `registry/published.yaml`: they are frozen from then on (`docs/pipeline/PROFILES.md` §7).
