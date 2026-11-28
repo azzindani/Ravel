@@ -111,8 +111,17 @@ Measured on an RTX 3070 Ti Laptop (8 GB), `sources/ID_PDF`, docling 2.154:
 | pipeline | pages/s | how measured |
 |---|---|---|
 | standard (layout + TableFormer, no OCR) | 11.8 warm (20 pages in 1.7 s); first call 18.5 s for 5 pages, model load included | docling `convert(page_range=…)` on `PERBUP_NO._1_TAHUN_2023__1_.pdf` |
+| standard, whole document through `Extraction.process` | 2.3 (271 pages in 120.1 s: probe, hash, 27 tables, 91 figures, structurer, validation) | same file; 155 structural headings promoted (9 BAB, 92 Pasal), 50 demoted |
+| vlm, in-process transformers | 0.044 (3 pages in 68.6 s warm) | `Perbup_Boyolali_Tahun_2011_No_41.pdf` (DAMAGED), pages 2-4 |
+| vlm, vLLM server (`vlm_engine: api`, concurrency 8) | 0.33 (3 pages in 9.1 s; 24 pages in 74.1 s) | same pages; markdown agrees with transformers at 0.9992 (`difflib` ratio) |
 
-Probe of the 50 largest files (2.0 GB, 14,652 pages): 34 CLEAN, 14 DAMAGED, 2 ABSENT.
+Probe of the 50 largest files (2.0 GB, 14,652 pages): 34 CLEAN (9,791 pages), 14 DAMAGED
+(4,619), 2 ABSENT (242). So the VLM reads a third of the pages and takes nearly all the time.
+
+> ! **vLLM strips DocTags unless told not to.** DocTags are special tokens; with vLLM's
+> default `skip_special_tokens` every request returned 200 and docling parsed every page
+> as empty (0 characters for 3 pages, against 7,219 in-process). The extractor sends
+> `skip_special_tokens: false`.
 
 ---
 

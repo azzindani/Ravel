@@ -1,0 +1,42 @@
+# A vLLM server for the docling extractor's VLM path (`extract.docling.vlm_engine: api`),
+# local or on a rented GPU, the same arrangement as the embedder (compose.vllm.yml).
+#
+#   docker compose -f docker/compose.vllm-docling.yml up -d
+#   ravel extract id_pdf --limit 50 --largest-first     # id_pdf: vlm_url http://localhost:8001/...
+#
+# Why a server and not docling's in-process transformers engine: on the 8 GB laptop that engine
+# read a page in ~23 s (3 pages, 68.6 s warm, EXTRACTION.md §2b), one page at a time; a server
+# batches the pages docling sends concurrently (`vlm_concurrency`).
+#
+# ! The image is the embedder's, pinned by digest, and the model is pinned by revision: a new
+# vLLM or new weights are a new extractor, and the generation must say so.
+#
+# ! VLLM_DOCLING_GPU_MEMORY is this server's share of the card. 0.40 leaves room for the
+# embedding container beside it on 8 GB; on a rented GPU with nothing else, raise it.
+services:
+  vllm-docling:
+    image: vllm/vllm-openai@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    command: >
+      ibm-granite/granite-docling-258M
+      --revision 982fe3b40f2fa73c365bdb1bcacf6c81b7184bfe
+      --dtype bfloat16 --max-model-len 8192
+      --gpu-memory-utilization ${VLLM_DOCLING_GPU_MEMORY:-0.40} --max-num-seqs 32
+      --limit-mm-per-prompt '{"image": 1}'
+      --port 8001
+    ports: ["127.0.0.1:8001:8001"]
+    ipc: host
+    environment:
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+    restart: unless-stopped

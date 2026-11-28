@@ -29,7 +29,11 @@ extract:
     clean: standard       # keep the born-digital text; add layout and TableFormer
     damaged: vlm          # damaged or absent layer: re-read the page with the VLM
     vlm_preset: granite_docling
-    vlm_engine: auto      # `api` + vlm_url for a vLLM container on a rented GPU
+    # A vLLM server (docker/compose.vllm-docling.yml), local or on a rented GPU. The
+    # in-process engine read ~23 s/page on the 8 GB laptop (EXTRACTION.md §2b).
+    vlm_engine: api
+    vlm_url: http://localhost:8001/v1/chat/completions
+    vlm_concurrency: 8
     tables: true
     device: auto
   # A docling document holds paragraphs, not lines, so far fewer blocks than native;

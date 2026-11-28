@@ -224,7 +224,13 @@ class DoclingSpec(Base):
 
     vlm_url: str | None = None
     vlm_batch: int = Field(default=1, ge=1)
-    """Pages per VLM call. A latency knob, measured per device, never assumed."""
+    """Pages per in-process VLM call. A latency knob, measured per device, never assumed."""
+
+    vlm_concurrency: int = Field(default=8, ge=1)
+    """Pages in flight to the `api` server at once: what lets vLLM batch them."""
+
+    vlm_timeout_s: float = Field(default=180.0, gt=0)
+    """Seconds one page may take on the `api` server before docling gives up on it."""
 
     tables: bool = True
     """TableFormer on the standard pipeline: cells with spans, not flattened text."""

@@ -95,7 +95,15 @@ class DoclingExtractor:
                 if not self.spec.vlm_url:
                     raise ValueError("docling.vlm_engine 'api' needs docling.vlm_url")
                 engine: Any = eng.ApiVlmEngineOptions(
-                    engine_type=VlmEngineType.API, url=AnyUrl(self.spec.vlm_url)
+                    engine_type=VlmEngineType.API,
+                    url=AnyUrl(self.spec.vlm_url),
+                    concurrency=self.spec.vlm_concurrency,
+                    timeout=self.spec.vlm_timeout_s,
+                    # ! DocTags ARE special tokens. vLLM strips them by default, and
+                    # docling then parses every page as empty while every request
+                    # returns 200: measured 0 characters for 3 pages, against 7,219
+                    # from the in-process engine. Kept, the two agree at 0.9992.
+                    params={"skip_special_tokens": False, "max_tokens": 8192},
                 )
             elif self.spec.vlm_engine == "vllm":
                 engine = eng.VllmVlmEngineOptions()
@@ -121,7 +129,10 @@ class DoclingExtractor:
             fmt = PdfFormatOption(
                 pipeline_cls=VlmPipeline,
                 pipeline_options=VlmPipelineOptions(
-                    vlm_options=self._vlm_options(), accelerator_options=self._device()
+                    vlm_options=self._vlm_options(),
+                    accelerator_options=self._device(),
+                    # Docling refuses to send pages anywhere unless told it may.
+                    enable_remote_services=self.spec.vlm_engine == "api",
                 ),
             )
         else:
