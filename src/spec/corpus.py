@@ -114,6 +114,7 @@ class FetchSpec(Base):
         "archive_url",
         "listing",
         "govinfo_tree",
+        "sparql",
     ]
     listing: str
     """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
@@ -148,6 +149,16 @@ class FetchSpec(Base):
     index: IndexSpec | None = None
     """`archive_url`: the publisher's index of the documents in the archive, which picks the
     snapshot and gives each document's citation."""
+    queries: list[str] = Field(default_factory=list)
+    """`sparql`: SELECT queries run against `listing`, each binding `?url` (a file below
+    `files`), `?group` (the document it is a version of) and `?edition` (which version, as a
+    string that sorts oldest first), and each ending in `ORDER BY`: the fetcher pages them
+    with `LIMIT page_size OFFSET n`. ! The first query names the groups the corpus holds;
+    a later one only offers newer editions of those groups, and the newest edition of each
+    is what is fetched. For EUR-Lex: the acts in force, then their consolidations."""
+    page_size: int = Field(default=10000, ge=1)
+    """`sparql`: rows per page. Virtuoso, behind most public endpoints, caps a result at
+    10,000."""
     lookback: int = Field(default=3, ge=1)
     """Editions searched back from the newest for a title the newest does not hold."""
     titles: list[int] = Field(default_factory=list)
@@ -606,6 +617,15 @@ class CorpusSpec(Base):
             raise ValueError("a corpus with fetch: needs sources.snapshot, the list it writes")
         if self.fetch and self.fetch.kind == "github" and not self.fetch.paths:
             raise ValueError("fetch.kind github needs fetch.paths, the files that make it")
+        if self.fetch and self.fetch.kind == "sparql":
+            if not self.fetch.queries:
+                raise ValueError("fetch.kind sparql needs fetch.queries")
+            for query in self.fetch.queries:
+                if "ORDER BY" not in query.upper() or " LIMIT " in query.upper():
+                    raise ValueError(
+                        "fetch.queries: each ends in ORDER BY and states no LIMIT, so its "
+                        "pages are stable and the fetcher's LIMIT/OFFSET is the only one"
+                    )
         if self.fetch and self.fetch.kind == "govinfo_tree" and not self.fetch.paths:
             raise ValueError(
                 "fetch.kind govinfo_tree needs fetch.paths, the files that make it"

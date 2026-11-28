@@ -152,7 +152,9 @@ class Chunking:
         # among several profiles has no single answer and keeps the corpus defaults.
         self.pinned = self._pinned()
         self.entry = get(chunker or corpus.chunk.resolved_chunker(self.pinned))
+        self._fixed = config
         self.config = config or corpus.chunk.to_config(self.pinned)
+        self._configs: dict[str, ChunkConfig] = {}
 
         # ! Resolved once, here, to a concrete generation name — never left as a
         # placeholder meaning "whatever is newest". `output_generation` hashes this
@@ -186,7 +188,31 @@ class Chunking:
             self.entry.ref,
             self.config.config_hash,
             self._profiles_hash(),
+            *(["per-profile"] if self._routed else []),
         )
+
+    @property
+    def _routed(self) -> bool:
+        """A corpus that routes among profiles, with no config the caller fixed."""
+        return self._fixed is None and self.pinned is None
+
+    def config_for(self, doc: CanonicalDoc) -> ChunkConfig:
+        """The settings one document is chunked with: its own profile's, under the corpus's.
+
+        ! A corpus that routes (`profile: auto`) used to keep the engine defaults for every
+        document. `us_federal` reads the CFR and the Federal Register, whose profiles both
+        say 1,024 tokens, and was chunked at 512: 3,422,154 chunks where the two corpora
+        built alone make about half, every one of them cut in two (median 438 tokens
+        against 919). Each document says which profile read it; that profile decides.
+        """
+        if not self._routed:
+            return self.config
+        profile = self.profile_for(doc)
+        if profile is None:
+            return self.config
+        if profile.ref not in self._configs:
+            self._configs[profile.ref] = self.corpus.chunk.to_config(profile)
+        return self._configs[profile.ref]
 
     def _profiles_hash(self) -> str:
         """The profiles the chunks are read by, as `stage_key` folds them in per document.
@@ -237,7 +263,7 @@ class Chunking:
             doc=doc,
             chunker=self.entry.id,
             version=self.entry.version,
-            config=self.config,
+            config=self.config_for(doc),
             profile=profile,
         )
         return list(self.entry.fn(doc, builder))
@@ -350,7 +376,7 @@ class Chunking:
             doc.doc_id,
             chunker=self.entry.id,
             version=self.entry.version,
-            config_hash=self.config.config_hash,
+            config_hash=self.config_for(doc).config_hash,
             profile=self.profile_for(doc),
             generation=self.generation,
         )

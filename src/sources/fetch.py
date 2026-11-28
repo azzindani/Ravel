@@ -42,6 +42,8 @@ from sources.scan import sha256_file
 from spec.corpus import CorpusSpec, FetchSpec
 
 MANIFEST = "fetch.jsonl"
+#: A SPARQL query's prologue: its PREFIX and BASE lines, kept outside the paging wrapper.
+_PROLOGUE = re.compile(r"\s*(PREFIX|BASE)\b", re.IGNORECASE)
 READ_BLOCK = 1 << 20
 NL = "\n"
 
@@ -181,6 +183,8 @@ class Fetcher:
             return self._plan_archive_url()
         if self.spec.kind == "listing":
             return self._plan_listing()
+        if self.spec.kind == "sparql":
+            return self._plan_sparql()
         return self._plan_ecfr()
 
     def _relative(self, url: str) -> str:
@@ -311,6 +315,86 @@ class Fetcher:
             raise ValueError(f"{self.spec.listing}: no file matches {globs}")
         wanted.sort(key=lambda w: w.path)
         return wanted, {group: f"{n} files" for group, n in sorted(groups.items())}
+
+    def _sparql_rows(self, query: str) -> Iterator[dict[str, str]]:
+        """Every row of one query, `page_size` at a time, as {variable: value}.
+
+        ! The ordered query is paged from outside, as a subquery. Virtuoso refuses an ORDER BY
+        whose OFFSET + LIMIT passes 10,000 rows (`SR353: Sorted TOP clause`), which is the
+        second page of every EUR-Lex listing; wrapped, the same query pages to the end.
+        """
+        prologue = [line for line in query.splitlines() if _PROLOGUE.match(line)]
+        body = [line for line in query.splitlines() if not _PROLOGUE.match(line)]
+        offset = 0
+        while True:
+            paged = NL.join(
+                [
+                    *prologue,
+                    "SELECT * WHERE {",
+                    *body,
+                    "}",
+                    f"LIMIT {self.spec.page_size} OFFSET {offset}",
+                ]
+            )
+            url = f"{self.spec.listing}?{urllib.parse.urlencode({'query': paged})}"
+            result = self._retrying(
+                url,
+                lambda stream: json.loads(stream.read().decode("utf-8")),
+                compressed=False,
+                accept="application/sparql-results+json",
+            )
+            bindings = result.get("results", {}).get("bindings", [])
+            for binding in bindings:
+                row = {name: str(value.get("value", "")) for name, value in binding.items()}
+                missing = {"group", "edition"} - row.keys()
+                if missing:
+                    names = ", ?".join(sorted(missing))
+                    raise ValueError(f"fetch.queries: a row binds no ?{names}")
+                yield row
+            if len(bindings) < self.spec.page_size:
+                return
+            offset += self.spec.page_size
+
+    def _plan_sparql(self) -> tuple[list[Wanted], dict[str, str]]:
+        """The newest edition of every group the first query names (`FetchSpec.queries`).
+
+        ! A later query never adds a group. For EUR-Lex the first lists the acts in force;
+        consolidations carry no in-force flag, so the second would otherwise bring back
+        every act ever consolidated, repealed ones included. A row with no `?url` names a
+        group and offers no file: an act in force whose only English text is a
+        consolidation. A group no row gives a file is counted, never fetched.
+        """
+        groups: set[str] = set()
+        newest: dict[str, tuple[str, int, set[str]]] = {}
+        for index, query in enumerate(self.spec.queries):
+            for row in self._sparql_rows(query):
+                group, edition, url = row["group"], row["edition"], row.get("url")
+                if index == 0:
+                    groups.add(group)
+                elif group not in groups:
+                    continue
+                if not url:
+                    continue
+                held = newest.get(group)
+                if held is None or edition > held[0]:
+                    newest[group] = (edition, index, {url})
+                elif edition == held[0]:
+                    held[2].add(url)
+        if not newest:
+            raise ValueError(f"{self.spec.listing}: the queries returned no row")
+        wanted = [
+            Wanted(path=self._relative(url), url=url, group=group)
+            for group, (_, _, urls) in sorted(newest.items())
+            for url in sorted(urls)
+        ]
+        by_query: dict[int, int] = {}
+        for _, index, _ in newest.values():
+            by_query[index] = by_query.get(index, 0) + 1
+        self.held["no file"] = f"{len(groups - newest.keys()):,} of {len(groups):,} groups"
+        return wanted, {
+            f"query {index + 1}": f"newest for {n:,} of {len(newest):,} groups"
+            for index, n in sorted(by_query.items())
+        }
 
     def _plan_ecfr(self) -> tuple[list[Wanted], dict[str, str]]:
         listing = self.get_json(self.spec.listing)
@@ -614,7 +698,8 @@ class Fetcher:
 
         listed = sorted(w.path for w in wanted)
         archived = self.spec.kind in ("archive_index", "archive_url") or (
-            self.spec.kind == "listing" and bool(self.corpus.provenance.archive_suffix)
+            self.spec.kind in ("listing", "sparql")
+            and bool(self.corpus.provenance.archive_suffix)
         )
         if self.spec.kind == "listing" and not archived and report.complete and not dry_run:
             self._cite({w.path: w.url for w in wanted})

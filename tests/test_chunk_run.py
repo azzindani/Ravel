@@ -8,6 +8,7 @@ PDF fixture would make them slow without making them stronger.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -295,3 +296,24 @@ def test_a_corrected_extraction_is_rechunked(corpus: CorpusSpec, tmp_path: Path)
 
     assert again.skipped_done == 0
     assert again.chunks > 0
+
+
+def test_a_routing_corpus_chunks_each_document_by_its_own_profile(tmp_path: Path) -> None:
+    """! `us_federal` routes the CFR and the Federal Register to their own profiles, both at
+    1,024 tokens, and was chunked at the engine's 512: 3,422,154 chunks, each cut in two.
+    The profile that read a document decides how it is chunked; a pinned corpus is
+    unchanged."""
+    from types import SimpleNamespace
+
+    from chunk.run import Chunking
+
+    def doc(profile: str) -> Any:
+        return SimpleNamespace(extraction=SimpleNamespace(params={"profile": profile}))
+
+    routed = Chunking(CorpusSpec.find("us_federal"), workspace=tmp_path)
+    assert routed.config.max_tokens == 512
+    assert routed.config_for(doc("us_fr@1.0")).max_tokens == 1024
+    assert routed.config_for(doc("us_cfr@1.1")).max_tokens == 1024
+
+    pinned = Chunking(CorpusSpec.find("us_fr"), workspace=tmp_path)
+    assert pinned.config_for(doc("us_cfr@1.1")) is pinned.config

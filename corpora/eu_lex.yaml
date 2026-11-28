@@ -1,0 +1,85 @@
+id: eu_lex
+title: EU law in force (EUR-Lex via the Cellar, English Formex)
+description: >
+  Every EU legal act in force (CELEX sector 3) in English, as its newest consolidated
+  version when the Publications Office has consolidated it (sector 0), else as adopted
+  (docs/sources/SOURCE_EU_LEX.md). Listed by the Cellar's SPARQL endpoint, fetched as each
+  manifestation's Formex package. Fetched by `ravel sources fetch eu_lex`; sources are
+  read-only and not in git.
+
+sources:
+  root: sources/EU_LEX
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: sparql
+  listing: https://publications.europa.eu/webapi/rdf/sparql
+  files: http://publications.europa.eu/resource/cellar/
+  # ! The first query names the acts: every one in force, with its English Formex as adopted
+  # where there is one. The second offers their consolidations, which carry no in-force flag
+  # of their own, so it may only give an act a newer text, never add an act
+  # (FetchSpec.queries). ! Naming an act without a file matters: 4,296 acts in force have an
+  # English Formex consolidation and none as adopted (1958R0001, the languages regulation,
+  # predates English in the Official Journal), and requiring one dropped them all.
+  # ?group is the CELEX number without its sector (2016R0679); ?edition the consolidation's
+  # date, and 00000000 for the act as adopted, so any consolidation is newer.
+  queries:
+    - |
+      PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
+      SELECT ?url ?group ?edition WHERE {
+        ?work cdm:resource_legal_id_sector "3"^^<http://www.w3.org/2001/XMLSchema#string> ;
+              cdm:resource_legal_in-force "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ;
+              cdm:resource_legal_id_celex ?celex .
+        FILTER(!CONTAINS(STR(?celex), "R("))
+        OPTIONAL {
+          ?expr cdm:expression_belongs_to_work ?work ;
+                cdm:expression_uses_language <http://publications.europa.eu/resource/authority/language/ENG> .
+          ?man cdm:manifestation_manifests_expression ?expr ;
+               cdm:manifestation_type "fmx4"^^<http://www.w3.org/2001/XMLSchema#string> .
+        }
+        BIND(IF(BOUND(?man), CONCAT(STR(?man), "/zip"), "") AS ?url)
+        BIND(SUBSTR(STR(?celex), 2) AS ?group)
+        BIND("00000000" AS ?edition)
+      } ORDER BY ?celex
+    - |
+      PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
+      SELECT ?url ?group ?edition WHERE {
+        ?work cdm:resource_legal_id_sector "0"^^<http://www.w3.org/2001/XMLSchema#string> ;
+              cdm:resource_legal_id_celex ?celex .
+        ?expr cdm:expression_belongs_to_work ?work ;
+              cdm:expression_uses_language <http://publications.europa.eu/resource/authority/language/ENG> .
+        ?man cdm:manifestation_manifests_expression ?expr ;
+             cdm:manifestation_type "fmx4"^^<http://www.w3.org/2001/XMLSchema#string> .
+        BIND(CONCAT(STR(?man), "/zip") AS ?url)
+        BIND(REPLACE(SUBSTR(STR(?celex), 2), "-[0-9]{8}$", "") AS ?group)
+        BIND(STRAFTER(STR(?celex), "-") AS ?edition)
+      } ORDER BY ?man
+  # The package's XML: the act, its annexes, and the `.doc.xml` descriptor, which only the
+  # snapshot leaves out (`documents`). Images (.tif, .jpg) are never unpacked.
+  paths: ["*.xml"]
+  documents: ["*[0-9].xml"]
+  delay_s: 1.0
+  concurrency: 4
+  user_agent: ravel-fetch/1.0
+
+provenance:
+  # ! Each package is the manifestation's `/zip`, the URL the Cellar redirects a CELEX
+  # number to, and a document is cited as its member: `<cellar>/<id>/zip#<file>.xml`.
+  base_url: http://publications.europa.eu/resource/cellar/
+  archive_suffix: /zip
+  note: >
+    Publications Office of the European Union, Cellar (EUR-Lex): the Formex manifestation of
+    each act's English expression. Reuse authorised (Commission Decision 2011/833/EU);
+    only the Official Journal is authentic.
+
+extract:
+  profile: eu_lex@1.0
+  extractors: [xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup
+
+embed:
+  use: qwen3-embedding-0.6b@1.0
