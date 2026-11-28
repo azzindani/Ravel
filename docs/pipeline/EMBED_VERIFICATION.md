@@ -134,8 +134,12 @@ profile); which kernel the compiled graph picks was not profiled.
 
 ## 6. Context length
 
-Embedder cap: `max_length 8192`, the model card's value. Chunk budget: the profile
-`id_regulation_md@1.2` splits at `max_tokens: 4096` by Ravel's own `token_count`, which is an estimate:
+Embedder cap: `max_length 8192`, the model card's value. Chunk budget: 512 by Ravel's own
+`token_count`. ! The profile (`id_regulation_md@1.2` to `@1.4`) declares `max_tokens: 4096`, but
+the corpus file `id_reg_markdown.yaml` states 512 and a corpus's own value wins
+(`ChunkSpec.to_config`): the published 1,716,628 chunks all carry `config_hash`
+`82ce5caa077e68c7`, the 512 config (4096 would be `41a5781c7f11d4e8`), and split parts run p50
+486, p90 521 tokens. Corrected 2026-11-28; the text said 4096 before. `token_count` is an estimate:
 on 2,011 sampled chunks the real Qwen token count was a median 1.44x `token_count` (p95 2.2x, max
 6x). By Ravel's count, 25 of 1,716,628 chunks exceed 8192 tokens (largest 20,737), so up to that
 many are truncated when embedded; none of the 2,011 sampled chunks exceeded 8192 real tokens (the

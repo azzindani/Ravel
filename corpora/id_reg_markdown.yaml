@@ -22,7 +22,8 @@ extract:
 chunk:
   chunker: unit
   # ! Stated here, so it wins over the profile's `max_tokens: 4096` (`ChunkSpec.to_config`).
-  # 512 is the measured one: p50 147, p90 507 tokens, no chunk past the model's 8,192.
+  # The published 1,716,628 chunks are this 512 config (`config_hash` 82ce5caa077e68c7):
+  # p50 139, p90 506 tokens; 25 over 8,192 by Ravel's count (`EMBED_VERIFICATION.md` §6).
   max_tokens: 512
   min_tokens: 24
 

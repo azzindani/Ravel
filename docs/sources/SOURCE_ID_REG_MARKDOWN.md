@@ -249,7 +249,9 @@ under a chapter or section heading that is not itself citable). Chapters: `N/A` 
 under a `BAB R` with no title, where the title is longer than `max_title_chars` or two lines.
 
 `id_regulation_md@1.2` adds the `pipeline:` section (`PIPELINE.md`): one chunk per pasal,
-`max_tokens` 4096, a context header for the embedder, and floors measured per chunk on the
+`max_tokens` 4096 (! declared only: the corpus file states 512, which wins, and the published
+build is chunked at 512, `config_hash` `82ce5caa077e68c7`; see `EMBED_VERIFICATION.md` §6), a
+context header for the embedder, and floors measured per chunk on the
 same sample. On the sample that is 26,576 chunks (the default 1.0 build gives 90,052), 12.9%
 of them under 8 tokens before chapter titles were consumed as labels and 6.2% after.
 
