@@ -12,7 +12,9 @@
 # vLLM or new weights are a new extractor, and the generation must say so.
 #
 # ! VLLM_DOCLING_GPU_MEMORY is this server's share of the card. 0.40 leaves room for the
-# embedding container beside it on 8 GB; on a rented GPU with nothing else, raise it.
+# embedding container beside it on 8 GB; on a rented GPU with nothing else, raise it, and
+# VLLM_DOCLING_MAX_SEQS with it (docling's GPU guide: 0.9 and 512). Measured on 8 GB: 64
+# sequences at 0.40 leave no memory for the KV cache and the server does not start.
 services:
   vllm-docling:
     image: vllm/vllm-openai@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
@@ -20,7 +22,7 @@ services:
       ibm-granite/granite-docling-258M
       --revision 982fe3b40f2fa73c365bdb1bcacf6c81b7184bfe
       --dtype bfloat16 --max-model-len 8192
-      --gpu-memory-utilization ${VLLM_DOCLING_GPU_MEMORY:-0.40} --max-num-seqs 32
+      --gpu-memory-utilization ${VLLM_DOCLING_GPU_MEMORY:-0.40} --max-num-seqs ${VLLM_DOCLING_MAX_SEQS:-32}
       --limit-mm-per-prompt '{"image": 1}'
       --port 8001
     ports: ["127.0.0.1:8001:8001"]

@@ -166,6 +166,20 @@ server idle otherwise; scratch benchmarks, ✗ in the pipeline):
 | standard, `layout_batch_size` 4 / 16 / 64 (`ThreadedPdfPipelineOptions`) | 4.50 / 4.62 / 4.51, identical text | no gain: already at the guide's RTX 5070 figure (4.2) |
 | vLLM `--max-num-seqs 64`, or `--enable-chunked-prefill --max-num-batched-tokens 8192` | did not start | at 0.40 of 8 GB no memory is left for the KV cache (-0.34 GiB); the guide's flags assume a card the server has to itself (`--gpu-memory-utilization 0.9`) |
 
+**On bigger hardware, nothing is compiled in.** Each knob is read from the corpus YAML or the
+environment, and none of the ones that only change speed moves the generation:
+
+| what scales | knob | 8 GB laptop |
+|---|---|---|
+| documents in flight | `extract.workers` | 3 |
+| documents per pipeline, each with its own models | `docling.standard_lanes`, `docling.vlm_lanes` (✗ in the hash) | 1, 1 |
+| page ranges per VLM document, requests per range | `vlm_workers`, `vlm_concurrency` | 8, 4 |
+| the server's share of the card and its batch | `VLLM_DOCLING_GPU_MEMORY`, `VLLM_DOCLING_MAX_SEQS` | 0.40, 32 |
+| more GPUs | one VLM server each, or docling's own distributed runner (Docling Jobkit: Ray, Kubeflow), ✗ wired here | one |
+
+The server sees up to `vlm_lanes x vlm_workers x vlm_concurrency` requests; keep that at or
+under `--max-num-seqs`, or pages wait in the queue until they time out.
+
 So on this laptop the VLM server is memory-bound: 0.40 of the card is 2.15 GiB of KV cache
 (100,368 tokens), and the extraction process's own docling models hold ~3.5 GB beside it.
 The next factor is a bigger GPU, where `VLLM_DOCLING_GPU_MEMORY` and the guide's flags apply

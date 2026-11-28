@@ -239,7 +239,8 @@ class DoclingSpec(Base):
     """How the `docling` extractor reads a PDF (`EXTRACTION.md` §2b).
 
     ! Every field here reaches the extractor, so every field is in
-    `CorpusSpec.extraction_hash`: change one and the generation changes with it.
+    `CorpusSpec.extraction_hash`: change one and the generation changes with it. The
+    exception is `LANES`, which decides how many documents read at once.
     """
 
     clean: Literal["standard", "vlm"] = "standard"
@@ -293,6 +294,23 @@ class DoclingSpec(Base):
     fallback: bool = True
     """When one pipeline fails on a document, read it once with the other, and say so in
     its warnings."""
+
+    standard_lanes: int = Field(default=1, ge=1, le=16)
+    """Documents the standard pipeline reads at once, each with its own models.
+
+    ! Hardware, ✗ content: left out of the hash (`LANES`). 1 on the 8 GB laptop, where
+    a second copy of the layout and table models starves the VLM server beside it; raise
+    it on a card with room, with `extract.workers` at least the lanes summed."""
+
+    vlm_lanes: int = Field(default=1, ge=1, le=16)
+    """Documents the VLM pipeline reads at once. Each keeps `vlm_workers` page ranges in
+    flight, so the server sees up to `vlm_lanes * vlm_workers * vlm_concurrency`
+    requests: raise it with the server's `--max-num-seqs`, never past it, or pages queue
+    into their timeout. ✗ in the hash (`LANES`)."""
+
+
+#: DoclingSpec fields that decide how many documents read at once, never what one says.
+LANES = frozenset({"standard_lanes", "vlm_lanes"})
 
 
 class ExtractSpec(Base):
@@ -648,7 +666,11 @@ class CorpusSpec(Base):
                     # Only when it can reach a document: a corpus that never names
                     # docling keeps the hash, and so the generation, it already had.
                     **(
-                        {"docling": self.extract.docling.model_dump(mode="json")}
+                        {
+                            "docling": self.extract.docling.model_dump(
+                                mode="json", exclude=set(LANES)
+                            )
+                        }
                         if "docling" in self.extract.extractors
                         else {}
                     ),

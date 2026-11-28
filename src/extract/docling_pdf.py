@@ -21,6 +21,7 @@ every corpus that does not name `docling` must not pay for torch.
 
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ from canon import Asset, BlockType, CanonicalDoc, Cell, Extraction, Source, Tabl
 from extract.base import BlockBuilder, ExtractionFailed, Probe
 from extract.quality import TextLayer
 from sources import guess_mime, sha256_file
+from spec.corpus import LANES
 
 if TYPE_CHECKING:
     from spec.corpus import DoclingSpec
@@ -69,12 +71,17 @@ class DoclingExtractor:
         # ! Per thread: with `extract.workers` > 1 the router's probe for one document
         # must never be read back by the thread extracting another.
         self._local = threading.local()
-        # ! One document per pipeline at a time, whatever `extract.workers` is. Two
-        # standard reads would load the layout and table models twice on an 8 GB card
-        # already holding the VLM server, and two VLM documents double the requests
-        # queued behind one server's KV cache, which is what times a page out. One of
-        # each overlaps the two pieces of hardware, which is the point.
-        self._lanes = {"standard": threading.Lock(), "vlm": threading.Lock()}
+        # ! A lane is one document in flight on one pipeline, with converters of its own:
+        # `standard_lanes` and `vlm_lanes`, whatever `extract.workers` is. On the 8 GB
+        # laptop both are 1: two standard reads load the layout and table models twice
+        # beside the VLM server, two VLM documents double the requests queued behind one
+        # KV cache, which is what times a page out. One of each overlaps the two pieces
+        # of hardware. A free lane's number is taken from the queue and given back.
+        self._lanes: dict[str, queue.Queue[int]] = {}
+        for pipeline, count in (("standard", spec.standard_lanes), ("vlm", spec.vlm_lanes)):
+            self._lanes[pipeline] = queue.Queue()
+            for lane in range(count):
+                self._lanes[pipeline].put(lane)
 
     # -- routing ------------------------------------------------------------
     def supports(self, path: Path, probe: Probe) -> bool:
@@ -129,7 +136,7 @@ class DoclingExtractor:
         options.scale = self.spec.images_scale
         return options
 
-    def converter(self, pipeline: str, *, slot: int = 0) -> Any:
+    def converter(self, pipeline: str, *, slot: int | str = 0) -> Any:
         """One converter per pipeline and worker slot, built once: model weights load on
         first use. ! A slot each, because one converter is not shared between threads."""
         key = f"{pipeline}:{slot}"
@@ -193,20 +200,22 @@ class DoclingExtractor:
 
         def one(index_range: tuple[int, tuple[int, int] | None]) -> Any:
             index, page_range = index_range
-            converter = self.converter(pipeline, slot=index % workers)
+            converter = self.converter(pipeline, slot=f"{lane}.{index % workers}")
             if page_range is None:
                 return converter.convert(path, raises_on_error=False)
             return converter.convert(path, raises_on_error=False, page_range=page_range)
 
+        lane = self._lanes[pipeline].get()
         try:
-            with self._lanes[pipeline]:
-                if workers <= 1:
-                    results = [one((0, r)) for r in ranges]
-                else:
-                    with ThreadPoolExecutor(max_workers=workers) as pool:
-                        results = list(pool.map(one, enumerate(ranges)))
+            if workers <= 1:
+                results = [one((0, r)) for r in ranges]
+            else:
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    results = list(pool.map(one, enumerate(ranges)))
         except Exception as exc:  # noqa: BLE001 — docling raises anything; recorded
             return [], f"{type(exc).__name__}: {exc}"
+        finally:
+            self._lanes[pipeline].put(lane)
         failed = [r for r in results if r.status is ConversionStatus.FAILURE]
         if failed:
             errors = "; ".join(str(e.error_message) for r in failed for e in r.errors[:2])
@@ -286,7 +295,7 @@ class DoclingExtractor:
                     "docling": _version(),
                     "seconds": round(elapsed, 1),
                     "seconds_per_page": round(elapsed / pages, 3) if pages else None,
-                    **self.spec.model_dump(mode="json"),
+                    **self.spec.model_dump(mode="json", exclude=set(LANES)),
                 },
                 extracted_at=datetime.now(UTC),
                 pages=pages or None,

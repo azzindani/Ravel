@@ -181,8 +181,9 @@ def test_a_captioned_table_survives_the_round_trip() -> None:
     assert next(b for b in builder.blocks if b.type is BlockType.TABLE_REF).text == ""
 
 
-def test_one_document_per_pipeline_at_a_time_and_the_two_overlap(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(("standard", "vlm"), [(1, 1), (2, 3)])
+def test_one_document_per_lane_and_the_pipelines_overlap(
+    monkeypatch: pytest.MonkeyPatch, standard: int, vlm: int
 ) -> None:
     """! `extract.workers` overlaps a clean document (this machine's GPU) with a scanned
     one (the VLM server), never two of a kind: two standard reads load the models twice
@@ -192,7 +193,7 @@ def test_one_document_per_pipeline_at_a_time_and_the_two_overlap(
     from concurrent.futures import ThreadPoolExecutor
 
     base = pytest.importorskip("docling.datamodel.base_models")
-    ex = DoclingExtractor(DoclingSpec(vlm_workers=1))
+    ex = DoclingExtractor(DoclingSpec(vlm_workers=1, standard_lanes=standard, vlm_lanes=vlm))
     running: dict[str, int] = {"standard": 0, "vlm": 0}
     peak: dict[str, int] = {"standard": 0, "vlm": 0, "both": 0}
     guard = threading.Lock()
@@ -212,9 +213,19 @@ def test_one_document_per_pipeline_at_a_time_and_the_two_overlap(
             return type("R", (), {"status": base.ConversionStatus.SUCCESS, "errors": []})()
 
     monkeypatch.setattr(ex, "converter", lambda pipeline, slot=0: Fake(pipeline))
-    jobs = ["standard", "standard", "vlm", "vlm", "standard", "vlm"]
+    jobs = ["standard", "vlm"] * 6
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         for _, failure in pool.map(lambda p: ex._convert(Path("a.pdf"), p, 8), jobs):
             assert failure is None
 
-    assert (peak["standard"], peak["vlm"], peak["both"]) == (1, 1, 2)
+    assert (peak["standard"], peak["vlm"], peak["both"]) == (standard, vlm, standard + vlm)
+
+
+def test_lanes_are_hardware_and_leave_the_generation_alone() -> None:
+    """! How many documents read at once never changes what one says, so a bigger box
+    can raise the lanes without re-extracting a corpus it already has."""
+    pdf = CorpusSpec.find("id_pdf")
+    wider = pdf.model_copy(deep=True)
+    wider.extract.docling.standard_lanes = 4
+    wider.extract.docling.vlm_lanes = 4
+    assert wider.extraction_hash == pdf.extraction_hash
