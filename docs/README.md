@@ -53,6 +53,7 @@ name alone (`PROFILES.md` §7) is unambiguous; this page says where it lives.
 | [`ADDING_A_SOURCE.md`](sources/ADDING_A_SOURCE.md) | the process every source follows | |
 | [`SOURCES_NEXT.md`](sources/SOURCES_NEXT.md) | the sources still to add, and their status | |
 | [`SOURCE_US_CFR.md`](sources/SOURCE_US_CFR.md) | `us_cfr`: the US CFR, official annual edition | `US_CFR_2611` |
+| [`SOURCE_US_FR.md`](sources/SOURCE_US_FR.md) | `us_fr`: the US Federal Register, daily issues, built beside `us_cfr` | — |
 | [`SOURCE_CA_LAWS.md`](sources/SOURCE_CA_LAWS.md) | `ca_laws`: Canada's federal Acts and regulations | `CA_LAWS_2611` |
 | [`SOURCE_JP_EGOV.md`](sources/SOURCE_JP_EGOV.md) | `jp_egov`: Japan's laws, e-Gov XML | `JP_LAWS_2611` |
 | [`SOURCE_DE_GII.md`](sources/SOURCE_DE_GII.md) | `de_gii`: Germany's federal laws, gesetze-im-internet | `DE_LAWS_2611` |
