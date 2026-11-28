@@ -21,6 +21,8 @@ extract:
 
 chunk:
   chunker: unit
+  # ! Stated here, so it wins over the profile's `max_tokens: 4096` (`ChunkSpec.to_config`).
+  # 512 is the measured one: p50 147, p90 507 tokens, no chunk past the model's 8,192.
   max_tokens: 512
   min_tokens: 24
 
