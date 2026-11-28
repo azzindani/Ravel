@@ -54,8 +54,10 @@ def estimate_tokens(text: str) -> int:
     models, collapsing the Phase B boundary this project is built around. The true
     count is recorded at embed time, where the tokenizer already exists.
 
-    It runs ~10% high on Indonesian legal text, which is the safe direction: chunks
-    come out slightly under budget rather than over it.
+    ! Wrong, and corrected 2026-11-28: it was believed to run ~10% high on Indonesian
+    legal text. Measured against Qwen3's tokenizer it reads 1.44x low there (p99 2.36x),
+    0.55x high on Japanese: every corpus with a real embedder now counts with its
+    tokenizer instead (`chunk.tokens`). This remains for embedders that have none.
     """
     return int(len(_WORD.findall(text)) * TOKENS_PER_WORD)
 
@@ -109,6 +111,11 @@ class ChunkConfig:
     include_tables: bool = True
     """Emit each table as its own chunk, with its caption and heading path."""
 
+    tokenizer: str = "estimate"
+    """What `max_tokens` and `min_tokens` count: `model@revision`, the embedder's own
+    tokenizer, or `estimate` for an embedder that has none (`chunk.tokens`). Set by the
+    chunking run from the corpus's embedder (`STANDARD.md` §2), and part of the hash."""
+
     params: dict[str, Any] = field(default_factory=dict)
     """Chunker-specific settings. Validated by the chunker, hashed like everything else."""
 
@@ -122,6 +129,9 @@ class ChunkConfig:
             "carry_parent_max_tokens": self.carry_parent_max_tokens,
             "include_tables": self.include_tables,
             "params": self.params,
+            # ! Only when it is a tokenizer: every config that counts by estimate keeps the
+            # hash it had, so its chunk ids are unchanged.
+            **({"tokenizer": self.tokenizer} if self.tokenizer != "estimate" else {}),
         }
         canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]

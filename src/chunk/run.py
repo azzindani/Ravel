@@ -17,7 +17,7 @@ import json
 import time
 from collections import Counter
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from canon import CanonicalDoc
@@ -25,6 +25,7 @@ from chunk.base import Builder, ChunkConfig, get
 from chunk.expect import Violation, check
 from chunk.models import Chunk
 from chunk.store import write_chunks
+from chunk.tokens import counter_for, tokenizer_ref
 from extract.run import iter_canon
 from runtime.ledger import Ledger, Status
 from runtime.shards import (
@@ -153,7 +154,11 @@ class Chunking:
         self.pinned = self._pinned()
         self.entry = get(chunker or corpus.chunk.resolved_chunker(self.pinned))
         self._fixed = config
-        self.config = config or corpus.chunk.to_config(self.pinned)
+        # ! Counted in the embedder's own tokens (`STANDARD.md` §2), whoever built the config.
+        self.tokenizer = tokenizer_ref(corpus.embed)
+        self.config = replace(
+            config or corpus.chunk.to_config(self.pinned), tokenizer=self.tokenizer
+        )
         self._configs: dict[str, ChunkConfig] = {}
 
         # ! Resolved once, here, to a concrete generation name — never left as a
@@ -211,7 +216,9 @@ class Chunking:
         if profile is None:
             return self.config
         if profile.ref not in self._configs:
-            self._configs[profile.ref] = self.corpus.chunk.to_config(profile)
+            self._configs[profile.ref] = replace(
+                self.corpus.chunk.to_config(profile), tokenizer=self.tokenizer
+            )
         return self._configs[profile.ref]
 
     def _profiles_hash(self) -> str:
@@ -259,12 +266,14 @@ class Chunking:
 
     def chunks_for(self, doc: CanonicalDoc) -> list[Chunk]:
         profile = self.profile_for(doc)
+        config = self.config_for(doc)
         builder = Builder(
             doc=doc,
             chunker=self.entry.id,
             version=self.entry.version,
-            config=self.config_for(doc),
+            config=config,
             profile=profile,
+            count_tokens=counter_for(config.tokenizer),
         )
         return list(self.entry.fn(doc, builder))
 
