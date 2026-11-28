@@ -30,6 +30,8 @@ fetch:
     - "2024/*/FR-2024-??-??.xml"
     - "2025/*/FR-2025-??-??.xml"
   delay_s: 1.0
+  # Four downloads at once, each still pausing delay_s: 4x the rate of one, resumable.
+  concurrency: 4
 
 provenance:
   # ! A file's path below sources.root is its path below this (fetch.files must equal it):

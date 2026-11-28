@@ -45,6 +45,11 @@ extract:
   # A docling document holds paragraphs, not lines, so far fewer blocks than native;
   # the cap stays, because this corpus has to run on an 8 GB box too.
   shard_max_blocks: 250000
+  # Seal every 5 documents: a docling document costs minutes, so a stop loses at most 5.
+  shard_max_docs: 5
+  # A clean PDF reads on this GPU, a scanned one on the VLM server: three workers keep
+  # one of each in flight (docling's lanes allow one per pipeline) instead of taking turns.
+  workers: 3
   failure_tolerance: 0.05
 
 chunk:

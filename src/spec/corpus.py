@@ -322,6 +322,16 @@ class ExtractSpec(Base):
     shard_max_docs: int = Field(default=MAX_DOCS, ge=0)
     """Documents buffered before sealing. 0 disables."""
 
+    workers: int = Field(default=1, ge=1, le=16)
+    """Documents read at once. Packaging, ✗ content: not in `extraction_hash`.
+
+    ! For a corpus whose documents wait on different hardware. Docling reads a clean
+    PDF on this machine's GPU and CPU and a scanned one on a VLM server; one at a time,
+    each sits idle while the other works. Docling reads one document per pipeline at a
+    time whatever this says (`DoclingExtractor` lanes), so a worker beyond two only
+    waits in line to keep both lanes full. Results are written in file order either way.
+    """
+
     failure_tolerance: float = Field(default=0.02, ge=0.0, le=1.0)
     """Share of documents that may fail before the run is considered broken.
 

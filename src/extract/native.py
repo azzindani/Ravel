@@ -12,8 +12,10 @@ that says how unreliable it is on a given corpus.
 
 from __future__ import annotations
 
+import functools
 import statistics
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +25,23 @@ from canon import BlockType, CanonicalDoc, Extraction, Source
 from extract.base import BlockBuilder, ExtractionFailed, Probe, registry
 from extract.quality import Thresholds, score_text
 from sources import guess_mime, sha256_file
+
+#: ! PyMuPDF is not thread-safe, even across separate documents. Every use of it goes
+#: through this when documents are read in parallel (`ExtractSpec.workers`). Re-entrant,
+#: because the run holds it around a probe that takes it again.
+PYMUPDF = threading.RLock()
+
+
+def serialised[F: Callable[..., Any]](fn: F) -> F:
+    """`fn` holding `PYMUPDF`."""
+
+    @functools.wraps(fn)
+    def held(*args: Any, **kwargs: Any) -> Any:
+        with PYMUPDF:
+            return fn(*args, **kwargs)
+
+    return held  # type: ignore[return-value]
+
 
 if TYPE_CHECKING:
     from spec.models import Profile
@@ -121,6 +140,7 @@ class NativeExtractor:
     def supports(self, path: Path, probe: Probe) -> bool:
         return probe.mime == "application/pdf" and probe.text_ratio >= 0.9
 
+    @serialised
     def extract(
         self, path: Path, *, title: str, url: str | None = None, profile: Profile | None = None
     ) -> CanonicalDoc:
@@ -206,6 +226,7 @@ class NativeExtractor:
         )
 
 
+@serialised
 def probe(path: Path, *, thresholds: Thresholds | None = None) -> Probe:
     """Cheap look: does this PDF have a usable text layer, and is it worth using?
 

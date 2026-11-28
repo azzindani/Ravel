@@ -13,14 +13,16 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections import deque
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from canon import CANON_VERSION, CanonicalDoc, Severity, validate
 from extract.base import ExtractionEmpty, ExtractionFailed, Extractor, Probe
 from extract.docling_pdf import DoclingExtractor
-from extract.native import NativeExtractor
+from extract.native import PYMUPDF, NativeExtractor
 from extract.native import probe as probe_pdf
 from extract.structure import Structurer
 from extract.text import TextExtractor, probe_text
@@ -262,11 +264,17 @@ class Extraction:
         return None
 
     # -- one document -------------------------------------------------------
-    def process(self, source: SourceFile, root: Path, corpus_hash: str) -> DocResult:
+    def process(
+        self,
+        source: SourceFile,
+        root: Path,
+        corpus_hash: str,
+        done: frozenset[str] | set[str] = frozenset(),
+    ) -> DocResult:
         path = root / source.path
-        probe = probe_any(path)
-
-        profile = self.profile_for(path, probe)
+        with PYMUPDF:
+            probe = probe_any(path)
+            profile = self.profile_for(path, probe)
         if profile is None:
             return DocResult(
                 key="",
@@ -289,6 +297,11 @@ class Extraction:
             profile=profile,
             corpus_hash=corpus_hash,
         )
+        if key in done:
+            # ! Known before reading, so a resumed run costs a probe per finished document,
+            # ✗ a second extraction: a restarted docling run re-read every PDF it had
+            # already sealed, minutes each, only to skip it.
+            return DocResult(key=key, path=source.path)
 
         try:
             doc = extractor.extract(
@@ -389,9 +402,7 @@ class Extraction:
                 on_seal=commit,
             ) as writer:
                 seen: set[str] = set()
-                for source in files:
-                    result = self.process(source, root, corpus_hash)
-
+                for result in self._results(files, root, corpus_hash, done):
                     if result.key and result.key in done:
                         report.skipped_done += 1
                         continue
@@ -439,6 +450,36 @@ class Extraction:
 
         report.seconds = time.time() - started
         return report
+
+    def _results(
+        self, files: list[SourceFile], root: Path, corpus_hash: str, done: set[str]
+    ) -> Iterator[DocResult]:
+        """Every file's result, in file order: one at a time, or `workers` at once.
+
+        ! In order, so a run writes the same shards whatever `workers` is. The window
+        is bounded (twice the workers), so finished documents waiting behind a slow one
+        cost a few documents of memory, ✗ the corpus.
+        """
+        workers = self.corpus.extract.workers
+        if workers <= 1:
+            for source in files:
+                yield self.process(source, root, corpus_hash, done)
+            return
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="extract") as pool:
+            pending: deque[Future[DocResult]] = deque()
+            queue = iter(files)
+
+            def submit() -> None:
+                source = next(queue, None)
+                if source is not None:
+                    pending.append(pool.submit(self.process, source, root, corpus_hash, done))
+
+            for _ in range(2 * workers):
+                submit()
+            while pending:
+                result = pending.popleft().result()
+                submit()
+                yield result
 
 
 def iter_canon(

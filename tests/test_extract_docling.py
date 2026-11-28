@@ -179,3 +179,42 @@ def test_a_captioned_table_survives_the_round_trip() -> None:
     assert [i for i in validate(canon) if i.severity is Severity.ERROR] == []
     assert tables[0].caption == "Tabel 1 Tarif Retribusi"
     assert next(b for b in builder.blocks if b.type is BlockType.TABLE_REF).text == ""
+
+
+def test_one_document_per_pipeline_at_a_time_and_the_two_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """! `extract.workers` overlaps a clean document (this machine's GPU) with a scanned
+    one (the VLM server), never two of a kind: two standard reads load the models twice
+    on an 8 GB card, two VLM documents double the queue that times a page out."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    base = pytest.importorskip("docling.datamodel.base_models")
+    ex = DoclingExtractor(DoclingSpec(vlm_workers=1))
+    running: dict[str, int] = {"standard": 0, "vlm": 0}
+    peak: dict[str, int] = {"standard": 0, "vlm": 0, "both": 0}
+    guard = threading.Lock()
+
+    class Fake:
+        def __init__(self, pipeline: str) -> None:
+            self.pipeline = pipeline
+
+        def convert(self, *_: object, **__: object) -> object:
+            with guard:
+                running[self.pipeline] += 1
+                peak[self.pipeline] = max(peak[self.pipeline], running[self.pipeline])
+                peak["both"] = max(peak["both"], sum(running.values()))
+            time.sleep(0.05)
+            with guard:
+                running[self.pipeline] -= 1
+            return type("R", (), {"status": base.ConversionStatus.SUCCESS, "errors": []})()
+
+    monkeypatch.setattr(ex, "converter", lambda pipeline, slot=0: Fake(pipeline))
+    jobs = ["standard", "standard", "vlm", "vlm", "standard", "vlm"]
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        for _, failure in pool.map(lambda p: ex._convert(Path("a.pdf"), p, 8), jobs):
+            assert failure is None
+
+    assert (peak["standard"], peak["vlm"], peak["both"]) == (1, 1, 2)

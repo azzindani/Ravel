@@ -21,6 +21,7 @@ every corpus that does not name `docling` must not pay for torch.
 
 from __future__ import annotations
 
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -64,13 +65,22 @@ class DoclingExtractor:
     def __init__(self, spec: DoclingSpec) -> None:
         self.spec = spec
         self._converters: dict[str, Any] = {}
-        self._probed: tuple[Path, Probe] | None = None
+        self._building = threading.Lock()
+        # ! Per thread: with `extract.workers` > 1 the router's probe for one document
+        # must never be read back by the thread extracting another.
+        self._local = threading.local()
+        # ! One document per pipeline at a time, whatever `extract.workers` is. Two
+        # standard reads would load the layout and table models twice on an 8 GB card
+        # already holding the VLM server, and two VLM documents double the requests
+        # queued behind one server's KV cache, which is what times a page out. One of
+        # each overlaps the two pieces of hardware, which is the point.
+        self._lanes = {"standard": threading.Lock(), "vlm": threading.Lock()}
 
     # -- routing ------------------------------------------------------------
     def supports(self, path: Path, probe: Probe) -> bool:
         # The router asks `supports` right before `extract`, with the probe it already
         # paid for; keeping it saves re-reading a 400-page PDF to choose a pipeline.
-        self._probed = (path, probe)
+        self._local.probed = (path, probe)
         return probe.mime == "application/pdf" and bool(probe.pages)
 
     # -- docling ------------------------------------------------------------
@@ -123,8 +133,12 @@ class DoclingExtractor:
         """One converter per pipeline and worker slot, built once: model weights load on
         first use. ! A slot each, because one converter is not shared between threads."""
         key = f"{pipeline}:{slot}"
-        if key in self._converters:
+        with self._building:
+            if key not in self._converters:
+                self._converters[key] = self._build(pipeline)
             return self._converters[key]
+
+    def _build(self, pipeline: str) -> Any:
 
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions, VlmPipelineOptions
@@ -153,8 +167,7 @@ class DoclingExtractor:
                     images_scale=self.spec.images_scale,
                 )
             )
-        self._converters[key] = DocumentConverter(format_options={InputFormat.PDF: fmt})
-        return self._converters[key]
+        return DocumentConverter(format_options={InputFormat.PDF: fmt})
 
     def _ranges(self, pipeline: str, pages: int) -> list[tuple[int, int] | None]:
         """The page ranges one document is read in: the whole of it, or for the VLM path
@@ -186,11 +199,12 @@ class DoclingExtractor:
             return converter.convert(path, raises_on_error=False, page_range=page_range)
 
         try:
-            if workers <= 1:
-                results = [one((0, r)) for r in ranges]
-            else:
-                with ThreadPoolExecutor(max_workers=workers) as pool:
-                    results = list(pool.map(one, enumerate(ranges)))
+            with self._lanes[pipeline]:
+                if workers <= 1:
+                    results = [one((0, r)) for r in ranges]
+                else:
+                    with ThreadPoolExecutor(max_workers=workers) as pool:
+                        results = list(pool.map(one, enumerate(ranges)))
         except Exception as exc:  # noqa: BLE001 — docling raises anything; recorded
             return [], f"{type(exc).__name__}: {exc}"
         failed = [r for r in results if r.status is ConversionStatus.FAILURE]
@@ -211,8 +225,9 @@ class DoclingExtractor:
     ) -> CanonicalDoc:
         from docling.datamodel.base_models import ConversionStatus
 
-        if probe is None and self._probed and self._probed[0] == path:
-            probe = self._probed[1]
+        probed: tuple[Path, Probe] | None = getattr(self._local, "probed", None)
+        if probe is None and probed and probed[0] == path:
+            probe = probed[1]
         if probe is None:
             from extract.native import probe as probe_pdf
 

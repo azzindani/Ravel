@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from extract import Extraction
-from extract.run import STAGE, stage_key
+from extract.run import STAGE, iter_canon, stage_key
 from runtime import Ledger
 from sources import scan
 from spec import CorpusSpec, default_registry
@@ -164,9 +164,42 @@ def test_repackaging_knobs_do_not_invalidate_extracted_documents(
     repackaged.extract.shard_target_mb = 512
     repackaged.extract.shard_max_blocks = 1000
     repackaged.extract.failure_tolerance = 0.5
+    repackaged.extract.workers = 4
 
     assert repackaged.config_hash != corpus.config_hash
     assert _key(repackaged) == _key(corpus)
+
+
+def test_workers_write_the_same_documents_in_the_same_order(
+    corpus: CorpusSpec, tmp_path: Path
+) -> None:
+    """! `extract.workers` reads documents at once and writes them in file order, so a
+    parallel run seals what a sequential one does: same documents, same order."""
+    parallel = corpus.model_copy(deep=True)
+    parallel.extract.workers = 3
+    one, many = run(corpus, tmp_path / "one"), run(parallel, tmp_path / "many")
+
+    assert (one.extracted, many.extracted) == (5, 5)
+    first, second = (
+        [d.source.path for d in iter_canon(tmp_path / ws, "fixture")] for ws in ("one", "many")
+    )
+    assert first == second
+
+
+def test_a_resumed_run_never_reads_a_finished_document_again(
+    corpus: CorpusSpec, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """! The skip comes before the extractor, ✗ after it: a restarted docling run spent
+    minutes per PDF re-reading what it had sealed, only to throw the result away."""
+    workspace = tmp_path / "ws"
+    run(corpus, workspace)
+    extraction = Extraction(corpus, workspace=workspace)
+
+    def never(*_: object, **__: object) -> None:
+        raise AssertionError("a finished document was extracted again")
+
+    monkeypatch.setattr(extraction.extractors["text"], "extract", never)
+    assert extraction.run().skipped_done == 5
 
 
 def _key(corpus: CorpusSpec) -> str:
