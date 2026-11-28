@@ -146,6 +146,44 @@ PDF, which `fallback: true` now reads once with the other pipeline, recorded in 
 > as empty (0 characters for 3 pages, against 7,219 in-process). The extractor sends
 > `skip_special_tokens: false`.
 
+**Documents in parallel, one per pipeline (2026-11-28).** A clean PDF reads on this GPU and
+CPU, a scanned one on the VLM server, and one at a time each sat idle while the other
+worked. `extract.workers` reads documents at once and writes them in file order (packaging,
+✗ in the hash), and `DoclingExtractor` lanes allow one document per pipeline: two standard
+reads would load the models twice on 8 GB, two VLM documents double the queue behind one
+KV cache. Right after the restart the server held 28 requests at 1,100 tokens/s while the
+standard lane read beside it. A resumed run now skips a sealed document before reading it
+(it used to re-extract every one, then discard the result), and `id_pdf` seals every 5
+documents.
+
+**What docling's own GPU guide suggests, measured here** (48 pages each, the two files above,
+server idle otherwise; scratch benchmarks, ✗ in the pipeline):
+
+| knob (docling docs, "GPU support") | pages/s | verdict |
+|---|---|---|
+| VLM, our 8 page ranges x 4 (current) | **1.68** | kept |
+| VLM, one converter, `settings.perf.page_batch_size` 32 / 64 (= concurrency) | 1.36 / 1.53 | slower: one converter renders and parses its pages serially |
+| standard, `layout_batch_size` 4 / 16 / 64 (`ThreadedPdfPipelineOptions`) | 4.50 / 4.62 / 4.51, identical text | no gain: already at the guide's RTX 5070 figure (4.2) |
+| vLLM `--max-num-seqs 64`, or `--enable-chunked-prefill --max-num-batched-tokens 8192` | did not start | at 0.40 of 8 GB no memory is left for the KV cache (-0.34 GiB); the guide's flags assume a card the server has to itself (`--gpu-memory-utilization 0.9`) |
+
+So on this laptop the VLM server is memory-bound: 0.40 of the card is 2.15 GiB of KV cache
+(100,368 tokens), and the extraction process's own docling models hold ~3.5 GB beside it.
+The next factor is a bigger GPU, where `VLLM_DOCLING_GPU_MEMORY` and the guide's flags apply
+(the guide reports 2.0-3.2 pages/s on an RTX 5070, 3.6-4.5 on a 5090).
+
+**Is granite-docling good enough for Indonesian?** Its model card lists English only. Measured
+against the born-digital text of 48 CLEAN pages of `PERBUP_NO._1_TAHUN_2023__1_.pdf` (pages
+5-52, 15,871 words; word-multiset precision and recall, lowercased):
+
+| reader | pages/s | precision | recall | F1 |
+|---|---|---|---|---|
+| granite-docling, vLLM server | 1.43 | 0.962 | 0.968 | **0.965** |
+| RapidOCR PP-OCRv6 small, `lang: [id]`, full-page OCR, CPU onnxruntime | 0.22 | 0.949 | 0.940 | 0.945 |
+
+granite-docling reads these Indonesian pages better than an OCR engine that lists Indonesian,
+and 6.5x faster, so scans stay on it. (A clean page is an easier image than a damaged scan;
+this bounds the model's language error, ✗ its error on bad scans.)
+
 ---
 
 ## 3. Throughput
