@@ -210,6 +210,44 @@ native PyMuPDF reader on the same files, judged per page by the word list
   re-routes only that one (96% of words in damaged pages, 3.1 s to judge); PERBUP 1 and the
   PERDA stay on the standard pipeline.
 
+**Loops are most of the work, and the server can stop them (2026-11-28).** vLLM's own counters
+(`/metrics`) over the top-50 run: 747 of 2,500 pages finished at the 4,096-token cap, and
+they wrote 3.06M of 3.99M generated tokens (77%); a page that ends normally averages ~530.
+vLLM 0.33 stops a request whose output ends in one n-gram repeated `min_count` times
+(`repetition_detection`, per request, no server restart): `docling.vlm_stop_repeats`. Measured
+with the top-50 run paused, `{min_pattern_size: 3, max_pattern_size: 64, min_count: 8}`:
+
+| | pages/s | pages at the cap | pages identical to a baseline run | word F1, 48 clean pages |
+|---|---|---|---|---|
+| baseline, `Perbup_Boyolali_Tahun_2011_No_41.pdf` (127 pages) | 1.02, 1.23 (two runs) | 40, 33 | 82 of 127 (run against run) | 0.965 |
+| `vlm_stop_repeats` | **2.06** | **1** | 78 of 127 | **0.965** |
+
+Two baseline runs agree on 82 pages, so 78 is batching noise, ✗ loss. The pages that shrank
+most are blank template forms whose baseline output was itself a loop (`Mmmmmm`, `Wuuuu`,
+`UNDANGAN` x 40).
+
+**Speed, first try to now** (pages per second on this laptop; each row adds to the one above):
+
+| scanned pages (VLM) | pages/s | x first |
+|---|---|---|
+| granite-docling in-process (transformers), the first try | 0.044 | 1 |
+| vLLM server, docling's defaults | 0.53 (1.9 s/page, 127 pages) | 12 |
+| 8 page ranges in parallel (`vlm_workers`) | 1.0 | 23 |
+| server stops loops (`vlm_stop_repeats`) | **2.06** | **47** |
+
+| clean pages (standard pipeline) | pages/s | x first |
+|---|---|---|
+| a born-digital file with few tables, end to end | 2.3 cold, 4.5 warm | 1 |
+| a table-heavy file, TableFormer accurate | 0.20 | 1 |
+| the same, TableFormer fast (`table_mode`) | 0.43 | 2.2 |
+| a "clean" layer that is old OCR, re-read by the VLM (`reread_unusable`) | 0.19 -> ~2 | ~10, ✗ measured in the run yet |
+
+| the top-50 run | pages/s | x first |
+|---|---|---|
+| first run (in-process VLM, then 1.9 s/page), stopped after 4 h | ~0.10 | 1 |
+| workers 3, one document per pipeline, accurate tables (first 5 files, 1,703 pages in 33 min) | 0.86 | 8.6 |
+| + fast tables, re-read of old OCR, loops stopped | ✗ measured yet (run from 15:19) | |
+
 **On bigger hardware, nothing is compiled in.** Each knob is read from the corpus YAML or the
 environment, and none of the ones that only change speed moves the generation:
 

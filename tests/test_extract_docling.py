@@ -262,3 +262,15 @@ def test_a_clean_layer_of_old_ocr_is_read_from_the_image(
     monkeypatch.setattr(native, "page_texts", lambda _: [clean] * 9 + [ocr])
     assert ex._unusable(Path("a.pdf")) is None
     assert DoclingExtractor(DoclingSpec())._unusable(Path("a.pdf")) is None
+
+
+def test_a_looping_page_is_stopped_by_the_server_only_when_the_corpus_asks() -> None:
+    """! `vlm_stop_repeats` rides in every request as vLLM's `repetition_detection`;
+    without it the request is what it was, so no other corpus moves."""
+    pytest.importorskip("docling.datamodel.vlm_engine_options")
+    api = {"vlm_engine": "api", "vlm_url": "http://localhost:8001/v1/chat/completions"}
+    stop = {"min_pattern_size": 3, "max_pattern_size": 64, "min_count": 8}
+    on = DoclingExtractor(DoclingSpec(**api, vlm_stop_repeats=stop))._vlm_options()
+    off = DoclingExtractor(DoclingSpec(**api))._vlm_options()
+    assert on.engine_options.params["repetition_detection"] == stop
+    assert "repetition_detection" not in off.engine_options.params

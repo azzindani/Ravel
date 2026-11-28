@@ -40,6 +40,9 @@ extract:
     vlm_batch: 4
     vlm_concurrency: 4
     vlm_max_tokens: 4096
+    # Stop a looping page when its output ends in the same 3-64-token pattern 8 times:
+    # 2.06 pages/s against 1.02 on a scan, same F1 on clean pages (EXTRACTION.md §2b).
+    vlm_stop_repeats: {min_pattern_size: 3, max_pattern_size: 64, min_count: 8}
     # A CLEAN layer that is somebody's old OCR: judged by the word list, page by page, and
     # re-read from the image when unusable (EXTRACTION.md §2b, QUALITY.md §2).
     reread_unusable:

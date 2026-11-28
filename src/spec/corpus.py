@@ -279,6 +279,18 @@ class DoclingSpec(Base):
     """The longest page the `api` server may write. A page that loops writes to this cap
     and holds its range back; 4,096 is docling's own vLLM preset."""
 
+    vlm_stop_repeats: dict[str, int] | None = None
+    """vLLM's `repetition_detection` (`min_pattern_size`, `max_pattern_size`,
+    `min_count`), sent with every `api` request: a page whose output ends in the same
+    n-gram `min_count` times over is stopped there instead of at `vlm_max_tokens`.
+
+    ! Not `repetition_penalty`, which reweights every token and cost a tenth of clean
+    pages (`EXTRACTION.md` §2b): this changes nothing until a loop has already happened.
+    The server's own counters on the top-50 run: 747 of 2,500 pages ran to the 4,096 cap
+    and wrote 77% of all generated tokens. With `{3, 64, 8}` the 127-page scan read at
+    2.06 pages/s against 1.02, pages at the cap 40 -> 1, and 48 clean pages scored the
+    same word F1 against their text layer (0.965)."""
+
     vlm_timeout_s: float = Field(default=180.0, gt=0)
     """Seconds one page may take on the `api` server before docling gives up on it."""
 

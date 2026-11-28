@@ -141,6 +141,11 @@ class DoclingExtractor:
                     params={
                         "skip_special_tokens": False,
                         "max_tokens": self.spec.vlm_max_tokens,
+                        **(
+                            {"repetition_detection": self.spec.vlm_stop_repeats}
+                            if self.spec.vlm_stop_repeats
+                            else {}
+                        ),
                     },
                 )
             elif self.spec.vlm_engine == "vllm":
