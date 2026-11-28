@@ -37,7 +37,8 @@ from chunk.labels import ExplanationRule
 from chunk.models import Chunk
 from spec import Facts, Profile, Unit
 
-VERSION = "1.2"
+#: 1.3: a part is counted as the body it becomes, separators included (`Builder._by_budget`).
+VERSION = "1.3"
 
 #: Blocks scanned for the document's own citation. The identity of a regulation is in
 #: its title block; reading further invites matching a cross-reference to a *different*

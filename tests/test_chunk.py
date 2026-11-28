@@ -334,3 +334,40 @@ def test_nested_sub_units_produce_an_unambiguous_locator(regulation: CanonicalDo
     assert "Pasal 2 angka 1 huruf a" in sections
     assert "Pasal 2 angka 2 huruf a" in sections
     assert "Pasal 2 huruf a" not in sections
+
+
+# ===========================================================================
+# The budget is the body's, separators included (`STANDARD.md` §2)
+# ===========================================================================
+def test_a_part_is_counted_as_the_body_it_becomes(doc: CanonicalDoc) -> None:
+    """! Parts whose blocks summed to 4,096 were 5,600 tokens of body: each `\n\n`
+    between 1,500 one-cell blocks is a token (`jp_egov`, 2026-11-28). Counting one
+    token per character makes every separator visible."""
+    built = doc.model_copy(deep=True)
+    built.tables = []
+    built.blocks = [
+        Block(
+            id=f"b{i:05d}",
+            type=BlockType.PARAGRAPH,
+            text="ab",
+            heading_path=[],
+            page=1,
+            reading_order=i,
+        )
+        for i in range(300)
+    ]
+    builder = Builder(
+        doc=built,
+        chunker="test",
+        version="0",
+        config=ChunkConfig(max_tokens=64),
+        profile=None,
+        count_tokens=len,
+    )
+    parts = list(builder.split(built.blocks))
+    assert len(parts) > 1
+    assert all(len(p.body) <= 64 for p in parts)
+    assert all(p.token_count == len(p.body) for p in parts)
+    assert sum(len(p.block_ids) for p in parts) == 300
+    # Full parts, not one block each: the budget is used, only not exceeded.
+    assert max(len(p.body) for p in parts) >= 60

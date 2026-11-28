@@ -282,22 +282,67 @@ class Builder:
                 yield chunk
 
     def _by_budget(self, blocks: Sequence[Block], *, lead: str = "") -> list[list[Block]]:
+        """Block groups whose body, as `split` writes it, is at most `max_tokens`.
+
+        ! A part is measured as the text it becomes, not as the sum of its blocks. The
+        `\\n\\n` that `body_of` puts between blocks is a token of its own: Japanese
+        appendix tables are 1,500 one-cell blocks, and parts whose blocks summed to
+        exactly 4,096 were 5,600 tokens long (`jp_egov`, 2026-11-28). Each block is
+        charged its separator, and a group the sum puts near the budget is counted whole
+        and gives its last blocks to the next group until it fits. A single block larger
+        than the budget still goes in alone rather than being dropped or cut.
+        """
         budget = self.config.max_tokens
+        sep = self.count_tokens("\n\n")
         spent = self.count_tokens(lead) if lead else 0
         groups: list[list[Block]] = [[]]
+        sums: list[int] = [spent]
         for block in blocks:
-            cost = self.count_tokens(block.text)
-            # A single oversized block goes in alone rather than being dropped or cut.
-            if groups[-1] and spent + cost > budget:
+            text = block.text.strip()
+            cost = self.count_tokens(text) if text else 0
+            if groups[-1] and spent + cost + sep > budget:
                 groups.append([])
                 spent = 0
                 if self.config.overlap_tokens:
                     carried = self._overlap(groups[-2])
                     groups[-1].extend(carried)
-                    spent += sum(self.count_tokens(b.text) for b in carried)
+                    spent += sum(self.count_tokens(b.text) + sep for b in carried)
+                sums.append(spent)
+            spent += cost + (sep if spent and text else 0)
             groups[-1].append(block)
-            spent += cost
-        return [g for g in groups if g]
+            sums[-1] = spent
+        near = budget - budget // 8
+        pairs = [(g, s) for g, s in zip(groups, sums, strict=True) if g]
+        return self._fit(pairs, lead=lead, near=near)
+
+    def _fit(
+        self, pairs: list[tuple[list[Block], int]], *, lead: str, near: int
+    ) -> list[list[Block]]:
+        """Count each group that may be over as the body it becomes, and move its last
+        blocks to the next group until it fits. A group that received blocks is counted
+        again; one of a single block may stay over."""
+        budget = self.config.max_tokens
+        out: list[list[Block]] = []
+        queue = [(g, s < near) for g, s in pairs]
+        while queue:
+            group, small = queue.pop(0)
+            prefix = lead if not out else ""
+            spill: list[Block] = []
+            while not small and len(group) > 1 and self._body_tokens(group, prefix) > budget:
+                spill.insert(0, group.pop())
+            if spill:
+                if queue:
+                    queue[0] = (spill + queue[0][0], False)
+                else:
+                    queue.append((spill, False))
+            out.append(group)
+        return out
+
+    def _body_tokens(self, group: Sequence[Block], lead: str) -> int:
+        body = self.body_of(group)
+        if lead:
+            body = f"{lead}\n\n{body}" if body else lead
+        return self.count_tokens(body)
 
     def _overlap(self, previous: Sequence[Block]) -> list[Block]:
         carried: list[Block] = []

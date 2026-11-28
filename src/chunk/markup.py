@@ -39,7 +39,8 @@ from spec import Facts, Profile
 from spec.models import MarkupIdentity
 
 #: 1.1: a table longer than `max_tokens` is split by rows, its header repeated.
-VERSION = "1.1"
+#: 1.2: a part is counted as the body it becomes, separators included (`Builder._by_budget`).
+VERSION = "1.2"
 
 
 @dataclass(slots=True)
