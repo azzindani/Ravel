@@ -1,0 +1,124 @@
+id: gpo_fr
+version: "1.0"
+title: GPO Federal Register (govinfo bulk XML, one file per daily issue)
+description: >
+  The daily Federal Register: FEDREG > RULES / PRORULES / NOTICES / PRESDOC > RULE / PRORULE /
+  NOTICE / PRESDOCU, each document opening with its PREAMB (AGENCY, SUBJECT, CFR, DEPDOC, RIN,
+  ACT, SUM, DATES, ADD, FURINF) and carrying its SUPLINF, REGTEXT amendments, SIG and FRDOC
+  (docs/sources/SOURCE_US_FR.md). The markup family is the CFR's (`gpo_cfr@1.0`): GPOTABLE,
+  PRTPAGE, E T="03". Read by the `xml` extractor; an element not named here is still read
+  for its text and named in `extraction.warnings`.
+
+document:
+  detect: {root: '^FEDREG$'}
+  # The issue is the outermost unit: the root itself (`units.tags`), dated by its first DATE.
+  date: [DATE]                          # `Tuesday, March 5, 2024`
+  dated_unit: issue
+
+units:
+  # ! One unit name for the four kinds of document, because identity is read per document
+  # (`identity.markup.scope`). The kind a document is stays in its ACT and its section.
+  tags:
+    FEDREG: issue
+    RULE: document
+    PRORULE: document
+    NOTICE: document
+    PRESDOCU: document
+  attrs:
+    issue:
+      number: [VOL]                     # the volume: `89 FR 15725`
+      issue_number: ['NO']   # quoted: a bare NO is YAML's false
+    document:
+      # `[FR Doc. 2024-04579 Filed 2-29-24; 11:15 am]`; a presidential document prints it
+      # inside its proclamation, and splits the filing line off into FILED.
+      number: ['.//FRDOC~FR\s*Doc\.?\s*(?P<value>[A-Z]?\d{2,4}-\d+)']
+      # The page the document opens on, which is the page it is cited at. ! ✗ its first
+      # PRTPAGE: a notice opening mid-page prints none before its text, and the first one
+      # inside it is the next page (68 of 357 documents in three sample issues).
+      page: ['@page']
+      agency: [PREAMB/AGENCY, './/PRES']
+      subagency: [PREAMB/SUBAGY]
+      cfr: [PREAMB/CFR]
+      docket: [PREAMB/DEPDOC]
+      rin: ['PREAMB/RIN~RIN\s*(?P<value>\S+)']
+      action: [PREAMB/ACT/P]
+
+headings:
+  default: &hd
+    first: [HD]
+    skip: [PRTPAGE]
+  issue:
+    path: DATE
+  document:
+    # A presidential document has no preamble: its title is its proclamation's or order's HD.
+    path: [PREAMB/SUBJECT, './*/HD']
+
+labels:
+  default:
+    pattern: '^(?P<marker>)(?P<name>.*)$'
+  document:
+    # The subject is the name; the number is the FR Doc number the markup states.
+    pattern: '^(?P<marker>)(?P<name>.*)$'
+
+page: {tag: PRTPAGE, attr: P}
+
+# The issue's repeated running matter: VOL, NO, DATE and UNITNAME are printed again before
+# every section of the issue. Its table of contents (CNTNTS) lists the documents it holds.
+skip: [CNTNTS, CONTENTS, SECHD, VOL, 'NO', DATE, UNITNAME, BILCOD, PTITLE, STARS, EAR, LRH,
+       RRH]
+graphics: [GPH, GID, MATH, MID]
+leaves: [P, FP, FP-1, FP-2, FP-DASH, FL-2, PSPACE, HD, HED, AMDPAR, SECTNO, SUBJECT, AGENCY,
+         SUBAGY, CFR, DEPDOC, RIN, DATED, NAME, TITLE, FRDOC, FILED, PRES, PROC, TITLE3, PLACE,
+         PSIG, EXECORDR, PRNOTICE-NO, PARTNO, TNOTE, TDESC, CITA, POSITION, PREAMHD,
+         PNOTICE, PRIACT]
+containers:
+  RULES: ""
+  PRORULES: ""
+  NOTICES: ""
+  PRESDOCS: ""
+  PRESDOC: ""
+  NEWPART: ""
+  PREAMB: ""
+  SUPLINF: supplementary_information
+  AGY: agency
+  ACT: action
+  SUM: summary
+  DATES: dates
+  EFFDATE: dates
+  ADD: addresses
+  FURINF: contact
+  SIG: signature
+  REGTEXT: regulatory_text
+  EXTRACT: extract
+  LSTSUB: list_of_subjects
+  AUTH: authority
+  SECAUTH: section_authority
+  APPENDIX: ""
+  PART: ""
+  SUBPART: ""
+  SECTION: ""
+  NOTE: note
+  FTNT: footnote
+  PROCLA: ""
+  EXECORD: ""
+  PRMEMO: ""
+  PRNOTICE: ""
+  PRORDER: ""
+  DETERM: ""
+  ADMINORD: ""
+inline: [E, B, SU, FR, AC, FTREF, XREF, LI, SUB, SUP]
+
+text:
+  superscript: [SU]
+  breaks: [LI]
+emphasis:
+  elements: {E: ["03"]}
+  attr: T
+label:
+  # `AGENCY:`, `SUMMARY:`, `DATES:` open the paragraph after them.
+  tags: [HD, HED]
+  suffix: ":"
+  max_chars: 40
+tables:
+  elements: {GPOTABLE: gpo}
+  notes: [TNOTE]

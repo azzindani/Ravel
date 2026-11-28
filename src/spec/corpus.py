@@ -77,7 +77,15 @@ class FetchSpec(Base):
     whose `files` is not its `provenance.base_url`.
     """
 
-    kind: Literal["govinfo_cfr", "ecfr", "github", "archive_index", "archive_url", "listing"]
+    kind: Literal[
+        "govinfo_cfr",
+        "ecfr",
+        "github",
+        "archive_index",
+        "archive_url",
+        "listing",
+        "govinfo_tree",
+    ]
     listing: str
     """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
     `github`: the repository's API URL (`https://api.github.com/repos/owner/name`).
@@ -95,7 +103,8 @@ class FetchSpec(Base):
     paths: list[str] = Field(default_factory=list)
     """`github`: the repository paths that make the corpus, as globs (`eng/acts/*.xml`).
     `archive_index`: the archive members unpacked, as globs
-    (`legi/global/code_et_TNC_en_vigueur/*`)."""
+    (`legi/global/code_et_TNC_en_vigueur/*`). `govinfo_tree`: the files, as globs on their
+    path below `files` (`2025/*/FR-*.xml`), which is also the edition."""
     archive: str | None = None
     """`archive_index`: the archive's file name, as a regex whose `edition` group dates it
     (`^Freemium_legi_global_(?P<edition>\\d{8}-\\d{6})\\.tar\\.gz$`). `edition: latest` takes
@@ -496,6 +505,10 @@ class CorpusSpec(Base):
             raise ValueError("a corpus with fetch: needs sources.snapshot, the list it writes")
         if self.fetch and self.fetch.kind == "github" and not self.fetch.paths:
             raise ValueError("fetch.kind github needs fetch.paths, the files that make it")
+        if self.fetch and self.fetch.kind == "govinfo_tree" and not self.fetch.paths:
+            raise ValueError(
+                "fetch.kind govinfo_tree needs fetch.paths, the files that make it"
+            )
         if self.fetch and self.fetch.kind == "archive_index":
             if not (self.fetch.archive and "(?P<edition>" in self.fetch.archive):
                 raise ValueError(

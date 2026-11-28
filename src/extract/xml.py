@@ -162,6 +162,10 @@ class _Walk:
     #: The quotes being read, innermost last (`_body`).
     quotes: list[_Quote] = field(default_factory=list)
     quotes_ended: int = 0
+    #: Unit element -> the page in force where it starts, in document order, for `@page`.
+    #: ! ✗ `page`: a break printed inside a paragraph never reaches it (`PRTPAGE` in `P`,
+    #: 534 of 785 in three Federal Register issues), so it lags the page actually in force.
+    page_at: dict[int, int | None] = field(default_factory=dict)
 
 
 @dataclass
@@ -280,6 +284,12 @@ class XmlExtractor:
     def _document(self, root: ET.Element, state: _Walk) -> None:
         d = state.d
         rule = d.dialect.document
+        if d.dialect.page is not None and any(
+            "@page" in sources
+            for attrs in d.dialect.units.attrs.values()
+            for sources in attrs.values()
+        ):
+            state.page_at = _pages_in_force(root, d)
         date = next((v for s in rule.date if (v := iso_date(_source(root, s, d)))), None)
         dated = {"date": date, "year": date[:4]} if date else {}
 
@@ -355,7 +365,9 @@ class XmlExtractor:
             if d.is_page(child):
                 self._child(child, state, dated)
                 consumed.add(index)
-        attrs = self._attrs(unit, heading, element, d) | (extra or {})
+        attrs = self._attrs(unit, heading, element, d, page=state.page_at.get(id(element))) | (
+            extra or {}
+        )
         state.open_units.append((unit, attrs["number"]))
         if heading:
             self._flush_label(state)
@@ -425,14 +437,32 @@ class XmlExtractor:
         return "", set()
 
     def _attrs(
-        self, unit: str, heading: str, element: ET.Element, d: _Compiled
+        self,
+        unit: str,
+        heading: str,
+        element: ET.Element,
+        d: _Compiled,
+        *,
+        page: int | None = None,
     ) -> dict[str, str]:
-        """What the markup states about a unit: its number, its name, its marker."""
+        """What the markup states about a unit: its number, its name, its marker.
+
+        The source `@page` is the page the unit opens on: its own first page break when that
+        comes before any of its text, else the page in force where it starts (`page`). A
+        Federal Register notice that opens mid-page prints no break of its own, and the first
+        break inside it is the *next* page.
+        """
         units = d.dialect.units
+
+        def value_of(source: str) -> str | None:
+            if source == "@page":
+                return _opening_page(element, d, page)
+            return _source(element, source, d)
+
         stated = {
             key: value
             for key, sources in units.attrs.get(unit, {}).items()
-            if (value := next((v for s in sources if (v := _source(element, s, d))), None))
+            if (value := next((v for s in sources if (v := value_of(s))), None))
         }
         own = stated.pop("number", None)
         if own is None and units.number_attr:
@@ -812,11 +842,40 @@ def _compiled_dialects(profile: Profile) -> tuple[_Compiled, ...]:
     return _COMPILED[key]
 
 
+def _pages_in_force(root: ET.Element, d: _Compiled) -> dict[int, int | None]:
+    """Every unit element -> the page in force where it starts: the last page break before
+    it in document order."""
+    assert d.dialect.page is not None
+    attr = d.dialect.page.attr
+    pages: dict[int, int | None] = {}
+    current: int | None = None
+    for node in root.iter():
+        if d.is_page(node):
+            found = node.get(attr, "")
+            current = int(found) if found.isdigit() and int(found) > 0 else current
+        elif d.unit_of(node):
+            pages[id(node)] = current
+    return pages
+
+
+def _opening_page(element: ET.Element, d: _Compiled, in_force: int | None) -> str | None:
+    """The page `element` opens on: a page break before any of its text, else `in_force`."""
+    for node in element.iter():
+        if node is not element and d.is_page(node):
+            assert d.dialect.page is not None
+            found = node.get(d.dialect.page.attr, "")
+            return found if found.isdigit() and int(found) > 0 else None
+        if node.text and node.text.strip():
+            break
+    return str(in_force) if in_force else None
+
+
 def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
     """`path` -> the element's text; `path@attr` -> the attribute; `=text` -> the text
     itself, the last resort of a list (`['.@regulation-type', '=Act']`). `path~pattern`
     takes the text only where `pattern` is found in it: Germany's outline label `Art 97`,
-    never the bare `-` a law prints for an outline with no label."""
+    never the bare `-` a law prints for an outline with no label; a `(?P<value>...)` group
+    in the pattern takes that group only."""
     if source.startswith("="):
         return source[1:] or None
     source, _, pattern = source.partition("~")
@@ -825,8 +884,14 @@ def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
     if found is None:
         return None
     value = found.get(attr) if attr else XmlExtractor()._text(found, d)
-    if value and pattern and not re.search(pattern, value):
-        return None
+    if value and pattern:
+        match = re.search(pattern, value)
+        if not match:
+            return None
+        # A `value` group takes the part the publisher prints inside other text: the
+        # Federal Register's `[FR Doc. 2024-04579 Filed 2-29-24; 11:15 am]` -> 2024-04579.
+        if "value" in match.re.groupindex:
+            value = match["value"]
     return value or None
 
 

@@ -1,0 +1,39 @@
+id: us_fr
+title: US Federal Register (govinfo bulk XML, daily issues)
+description: >
+  The Federal Register as GPO publishes it on govinfo: one XML per daily issue, every final
+  rule, proposed rule, notice and presidential document in it (docs/sources/SOURCE_US_FR.md).
+  Built to sit beside us_cfr in one Vera domain: the rulemaking behind the CFR, on the same
+  subjects in the same words, is the distractor that measures how Recall falls as a domain
+  grows. Fetched by `ravel sources fetch us_fr`; sources are read-only and not in git.
+
+sources:
+  root: sources/US_FR
+  include: ["**/FR-*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: govinfo_tree
+  listing: https://www.govinfo.gov/bulkdata/json/FR
+  files: https://www.govinfo.gov/bulkdata/FR/
+  # ! The edition is the globs: daily issues never change once listed, so a year is a
+  # fixed set of files. Widen one year at a time; each step is a measured size.
+  paths: ["2025/*/FR-2025-??-??.xml"]
+  delay_s: 1.0
+
+provenance:
+  # ! A file's path below sources.root is its path below this (fetch.files must equal it):
+  # every chunk cites the exact govinfo issue it was read from.
+  base_url: https://www.govinfo.gov/bulkdata/FR/
+  note: GPO govinfo Federal Register bulk data, one XML per daily issue. Public domain (17 U.S.C. 105).
+
+extract:
+  profile: us_fr@1.0
+  extractors: [xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup
+
+embed:
+  use: qwen3-embedding-0.6b@1.0

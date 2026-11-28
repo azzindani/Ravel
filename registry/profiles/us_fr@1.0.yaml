@@ -1,0 +1,79 @@
+id: us_fr
+version: "1.0"
+title: US Federal Register (govinfo bulk XML, one file per daily issue)
+description: >
+  The daily Federal Register: final rules, proposed rules, notices and presidential
+  documents, read by the `xml` extractor in the `gpo_fr` dialect and chunked by `markup`
+  (docs/sources/SOURCE_US_FR.md). Each document is cited as the volume and the page it opens
+  at (`89 FR 15725`), as the CFR's own source notes cite it, and carries its FR Doc number,
+  agency, docket and CFR parts. A final rule's REGTEXT is the CFR text it puts in force, so
+  the Federal Register beside the CFR is the hardest company the CFR can keep.
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<FEDREG\b']
+  min_hits: 1
+
+extract:
+  xml:
+    dialects: [gpo_fr@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here.
+  from_markup: true
+  units:
+    - {name: issue, level: 1, pattern: '^.'}
+    - {name: document, level: 2, pattern: '^.', role: article}
+
+identity:
+  markup:
+    scope: document
+    facts:
+      regulation_type: "Federal Register"
+      regulation_number: "FR Doc. {document.number}"
+      enacting_body: "{document.agency}"
+      about: "{document.name}"
+      year: "{issue.year}"
+      effective_date: "{issue.date}"
+    identifier:
+      document: "{issue.number} FR {document.page}"
+      issue: "{issue.number} FR"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per document; a longer one splits into `part n of m` on paragraph
+    # boundaries, as the CFR's sections do. ! Determined, ✗ measured.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    # What the embedder sees before the body, the CFR's three lines (us_cfr@1.1):
+    #
+    #   Citation: 89 FR 15725
+    #   Agency: DEPARTMENT OF TRANSPORTATION
+    #   Location: Tuesday, March 5, 2024 › Airworthiness Directives; Austro Engine GmbH Engines
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Agency: {enacting_body}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.95
+      regulation_number: 0.95
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    cfr_references:
+      - {pattern: '\b(?P<title>\d{1,2})\s+CFR\s+(?P<ref>\d+\.\d+[a-z]?(?:-\d+[a-z]?)?)', format: '{title} CFR {ref}'}
+      - {pattern: '\b(?P<title>\d{1,2})\s+CFR\s+[Pp]arts?\s+(?P<ref>\d+)', format: '{title} CFR Part {ref}'}
+    usc_references:
+      - {pattern: '\b(?P<title>\d{1,2})\s+U\.\s?S\.\s?C\.\s+(?:§+\s*)?(?P<sec>\d+[a-z]*(?:-\d+[a-z]?)?)', format: '{title} U.S.C. {sec}'}
+    public_laws:
+      - {pattern: '\bPub(?:lic|\.)?\s*L(?:aw|\.)?\s*(?:No\.\s*)?(?P<n>\d{2,3}-\d{1,4})', format: 'Pub. L. {n}'}
+    fr_references:
+      - {pattern: '\b(?P<vol>\d{1,3})\s+FR\s+(?P<page>\d{1,6})\b', format: '{vol} FR {page}'}

@@ -181,7 +181,7 @@ needs its own profile (a judgment is not chunked like a statute).
 | C26 | **Indonesia**, Mahkamah Konstitusi | constitutional review decisions; case statistics | mkri.id/perkara/persidangan/putusan; data.go.id statistics (JSON, XLSX) | PDF, JSON | public | Indonesian like id_reg |
 | C27 | **Malaysia**, court judgments | Malaysian Judgments Portal (limited) + Federal Court grounds of judgment | judgments.my; kehakiman.gov.my | HTML, PDF | | |
 | B1 | **US**, GovInfo bulk BILLS / BILLSTATUS | bills, status, public laws, Statutes at Large | govinfo.gov/bulkdata, by Congress | USLM XML | public domain | enrolled bills from the 113th |
-| B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | the rulemaking behind us_cfr |
+| B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | **building** as `us_fr` (`SOURCE_US_FR.md`), beside us_cfr in one domain |
 | B3 | **UK**, Parliament | bills, divisions, questions, SIs, treaties | developer.parliament.uk REST + SPARQL | JSON, RDF | Open Parliament Licence | |
 | B4 | **EU**, Parliament open data | adopted texts, votes, documents | data.europarl.europa.eu API v2 (500 / 5 min) | JSON-LD | CC BY 4.0 | |
 | B5 | **US**, Congress.gov API | bills, amendments, actions, text | api.congress.gov v3, api.data.gov key | JSON, XML | public domain | |

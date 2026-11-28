@@ -171,6 +171,8 @@ class Fetcher:
         """Every file the snapshot needs, and the edition each group came from."""
         if self.spec.kind == "govinfo_cfr":
             return self._plan_govinfo()
+        if self.spec.kind == "govinfo_tree":
+            return self._plan_govinfo_tree()
         if self.spec.kind == "github":
             return self._plan_github()
         if self.spec.kind == "archive_index":
@@ -256,6 +258,59 @@ class Fetcher:
                     )
                 )
         return wanted, taken
+
+    def _plan_govinfo_tree(self) -> tuple[list[Wanted], dict[str, str]]:
+        """Every file below a govinfo bulk JSON folder whose path matches `paths`.
+
+        For a collection published as files that never change once listed (the Federal
+        Register: one XML per daily issue, `FR/<yyyy>/<mm>/FR-<date>.xml`). `paths` are globs
+        on the path below `files`, and pick the edition: `2025/*/FR-*.xml` is the year 2025.
+
+        ! A folder is opened only when some glob can match below it, so a year of the Federal
+        Register costs 13 listings, ✗ the 400 of the whole tree.
+        """
+        if not self.spec.paths:
+            raise ValueError("fetch.kind govinfo_tree needs fetch.paths (globs below files)")
+        globs = [g.strip("/") for g in self.spec.paths]
+
+        def may_hold(folder: str) -> bool:
+            depth = len(folder.split("/"))
+            return any(
+                fnmatch.fnmatchcase(folder, "/".join(g.split("/")[:depth]))
+                for g in globs
+                if len(g.split("/")) > depth
+            )
+
+        wanted: list[Wanted] = []
+        groups: dict[str, int] = {}
+        pending = [("", self.spec.listing)]
+        while pending:
+            folder, link = pending.pop()
+            for entry in self.get_json(link).get("files", []):
+                name = str(entry.get("name", ""))
+                relative = f"{folder}/{name}" if folder else name
+                if entry.get("folder"):
+                    if may_hold(relative):
+                        pending.append((relative, str(entry["link"])))
+                    continue
+                if not any(fnmatch.fnmatchcase(relative, g) for g in globs):
+                    continue
+                url = f"{self.spec.files.rstrip('/')}/{relative}"
+                size = entry.get("size") or entry.get("fileSize")
+                group = relative.split("/")[0]
+                groups[group] = groups.get(group, 0) + 1
+                wanted.append(
+                    Wanted(
+                        path=self._relative(url),
+                        url=url,
+                        size=int(size) if size else None,
+                        group=group,
+                    )
+                )
+        if not wanted:
+            raise ValueError(f"{self.spec.listing}: no file matches {globs}")
+        wanted.sort(key=lambda w: w.path)
+        return wanted, {group: f"{n} files" for group, n in sorted(groups.items())}
 
     def _plan_ecfr(self) -> tuple[list[Wanted], dict[str, str]]:
         listing = self.get_json(self.spec.listing)
