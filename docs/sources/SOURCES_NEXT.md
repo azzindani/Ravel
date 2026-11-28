@@ -77,6 +77,18 @@ says so.
 | 67 | **Indonesia**, community regulation sets | 250K+ PDFs from ~350K URLs; 3.5M article rows; 90,588 norm units from 378 regulations | HF `horelulus/ID_Regulations`, `horelulus/ID_REG_Parsed`; Mendeley 8wpjvhh7g2 | PDF, Parquet | to confirm | cross-check id_reg coverage |
 | 68 | **South Africa + region**, SAFLII | legislation, judgments, journals; also 10 southern African LIIs | saflii.org web | HTML | free access | crawl only; same LII family as row 19 |
 | 69 | **Belgium**, Justel / Moniteur belge | consolidated acts since 1994; gazette since 1997 | ejustice.just.fgov.be web | HTML, PDF | | weak; no API found |
+| 70 | **Slovakia**, Slov-Lex (Ministry of Justice) | legislation + court archives | obcan.justice.sk/opendata archives | to confirm | open data | candidate; API to confirm |
+| 71 | **Malta**, Laws of Malta | national legislation, ELI adopted | legislation.mt | to confirm | | candidate |
+| 72 | **Israel**, Open Book of Laws (Wikisource) | Israeli laws in Hebrew | HF `gkour/israeli_law` | NDJSON | CC BY-SA (Wikisource) | ✗ official; better than row 52 for bulk |
+| 73 | **US, Virginia**, Code of Virginia | state statutes | LIS data API, no key | JSON, XML, CSV | public | strong; state statutes |
+| 74 | **US states**, statutes with bulk files | Utah (XML), New York (JSON API, free key), Michigan + Iowa (XML per chapter), California (yearly DB package) | per-state legislature sites | XML, JSON | per state | candidates; one profile each |
+| 75 | **Georgia**, Matsne (Legislative Herald) | consolidated laws free; subordinate acts paid | matsne.gov.ge web + RSS feed of new documents | HTML, PDF | | candidate; crawl, English versions exist |
+| 76 | **Bulgaria**, State Gazette | gazette PDFs, last 7 years; amendments, ✗ consolidated | dv.parliament.bg | PDF | free | weak |
+| 77 | **US, San Francisco**, municipal codes (OpenLaw) | SF municipal codes, unofficial | github SFMOCI/openlaw; bulk + API at SanFranciscoCode.org | XML, JSON | public | first municipal code |
+| 78 | **Armenia**, ARLIS legislation database | metadata + text of all Armenian legal acts, ~23 GB uncompressed | data.opendata.am `arlis-db` download | to confirm | not specified, no copyright | strong bulk; Armenian |
+| 79 | **Russia**, RusLawOD / Russian Legislative Corpus | 281,413 federal legal acts, 176M tokens, from pravo.gov.ru (2017-2024 snapshot) | HF `irlspbru/RusLawOD`; github irlcode/RusLawOD | XML, Parquet | to confirm | ready dataset; Russian |
+| 80 | **Central Asia**, Kazakhstan Adilet, Uzbekistan Lex.uz, Kyrgyzstan CBD | national legislation databases | ministry open-data sections; data.egov.kz, data.gov.uz APIs | to confirm | | weak; no legislation API found |
+| 81 | **US**, IRS Internal Revenue Manual | the IRS's internal procedures, per section | irs.gov/downloads/irm, zip per section | XML/HTML in zip | public domain | guidance, ✗ regulation; sits beside 26 CFR |
 
 **Candidates (rows 7-52, surveyed 2026-11-28 by web search, ✗ fetched).** Ranked for
 Ravel by bulk access and structure: Spain, Finland, Taiwan and Norway have keyless bulk or
@@ -134,6 +146,14 @@ needs its own profile (a judgment is not chunked like a statute).
 | C28 | **Tanzania**, TanzLII | judgments + legislation | website + APIs; bulk by email request | HTML, JSON | terms of use | bulk on request |
 | C29 | **Inter-American Court of HR** | 201 cases coded: proceedings, content, compliance | research database (Cambridge J. Law & Courts); CEJIL Summa | to confirm | | |
 | C30 | **International courts**, iCourts database | ECtHR, IACtHR and other international court decisions | jura.ku.dk/icourts | to confirm | research | |
+| C31 | **US**, GAO Comptroller General decisions | bid protests, appropriations law, 1989-2008 | GovInfo bulk; later on gao.gov | XML, PDF | public domain | |
+| C32 | **US**, AG/BIA precedent decisions (EOIR) | immigration precedent decisions, by volume | justice.gov/open data.gov entry | PDF + listing | public domain | |
+| C33 | **US**, NLRB Board decisions | every Board decision, searchable index | nlrb.gov; FOIA E-Library | PDF, HTML | public domain | no bulk found |
+| C34 | **Pakistan**, Supreme Court judgments | 1K-10K judgments | HF `Ibtehaj10/supreme-court-of-pak-judgments` | Parquet | to confirm | |
+| C35 | **US**, COLD Cases (Harvard LIL) | 8.3M US court decisions, text + metadata | HF `harvard-lil/cold-cases` | Parquet | CC0 | ready dataset; largest US set |
+| C36 | **Canada**, A2AJ Canadian case law | ~184K decisions: SCC, FC, FCA, Tax Court, tribunals, BC + Ontario appeal | HF `a2aj/canadian-case-law`, API, MCP | Parquet | per court, see card | sibling of row 53 |
+| C37 | **Germany**, Fobbe corpora (CE-BGH, CE-BVerfG, CE-BAG, ...) | e.g. CE-BGH 79,708 decisions 2000-2025; BGH criminal 1950-1999 | Zenodo, versioned, with codebooks | PDF, TXT, CSV | CC0 (reported) | ready datasets; German like de_gii |
+| C38 | **France**, Conseil d'État + administrative courts open data | all CE, CAA, TA decisions; CE daily since 2021 | opendata.justice-administrative.fr; data.gouv.fr monthly zip; JADE (DILA) | XML | Licence Ouverte | French like fr_legi |
 | B1 | **US**, GovInfo bulk BILLS / BILLSTATUS | bills, status, public laws, Statutes at Large | govinfo.gov/bulkdata, by Congress | USLM XML | public domain | enrolled bills from the 113th |
 | B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | the rulemaking behind us_cfr |
 | B3 | **UK**, Parliament | bills, divisions, questions, SIs, treaties | developer.parliament.uk REST + SPARQL | JSON, RDF | Open Parliament Licence | |
@@ -144,6 +164,7 @@ needs its own profile (a judgment is not chunked like a statute).
 | B8 | **US**, United States Code (OLRC) | the whole Code per release point | uscode.house.gov zip per title or whole | USLM XML, XHTML, PDF | public domain | strong bulk |
 | B9 | **Japan**, Diet minutes (国会会議録) | every Diet session since 1947 | NDL API (kokkai.ndl.go.jp/api.html) | XML, JSON | to confirm | |
 | B10 | **Hong Kong**, LegCo Bills Database | bills by session | OData API | XML, JSON | data.gov.hk terms | |
+| B11 | **Israel**, Knesset open data | 44 tables, ~1.5M records: bills, votes, committees | Knesset OData API; HF `ZeAlenu/knesset-data` | JSONL | CC BY-SA 4.0 | |
 | G1 | **FAO**, FAOLEX | national legislation on food, agriculture, environment, ~200 countries; constitutions | open data CSV downloads | CSV + links | CC BY-NC-SA 3.0 IGO | metadata + summaries, multilingual |
 | G2 | **WIPO Lex** | > 50,000 IP laws and treaties, 200 jurisdictions | search only, no bulk found | HTML, PDF | | |
 | G3 | **UN Treaty Collection** | UNTS, League of Nations, MTDSG | search only | HTML, PDF | open access | |
@@ -156,6 +177,10 @@ needs its own profile (a judgment is not chunked like a statute).
 | G10 | **MultiLegalPile** | 689 GB, 24 languages, 17 jurisdictions: native legal, EUR-Lex, Legal mC4, Pile of Law (292 GB) | HF `joelniklaus/Multi_Legal_Pile`; `_Commercial` subset CC BY-SA 4.0 | JSONL | mixed per subset | pretraining corpus; mines new sources |
 | G11 | **QuantGov / RegData** | word and restriction counts per part, US federal + state admin codes, Canada | quantgov.org bulk CSV | CSV | free | statistics, ✗ text |
 | G12 | **US SEC**, EDGAR full-text search | filings + exhibits since 2001 | efts.sec.gov (10,000 hits per query); bulk submissions API | JSON | public | disclosures, ✗ regulation; low priority |
+| G13 | **OECD**, Compendium of Legal Instruments | every OECD Decision, Recommendation, Declaration, in force or abrogated | legalinstruments.oecd.org, PDF per instrument | PDF | OECD terms | ~ 270 instruments; crawl |
+| G14 | **MultiEURLEX** | 65K EU laws in 23 languages, EUROVOC labels | HF `coastalcph/multi_eurlex` | JSON | CC BY-SA 4.0 | parallel; classification + retrieval |
+| G15 | **EU DG Competition**, case data | antitrust, cartels, mergers, state aid, DMA, FSR cases | data.europa.eu, JSON updated daily | JSON | Commission reuse notice (commercial ok) | metadata + decisions links |
+| G16 | **OECD**, tax treaty statistics + MLI matching database | > 5,300 bilateral treaties; MLI effect per treaty | oecd.org/tax/treaties | XLSX | OECD terms | metadata, ✗ treaty text |
 
 Sources: open.canada.ca dataset ff56de85-f8b9-4719-8dff-ecf362adf0af ·
 laws-lois.justice.gc.ca/eng/FAQ · research.legislation.gov.uk/data ·
