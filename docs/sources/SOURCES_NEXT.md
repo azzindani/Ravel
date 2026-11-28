@@ -48,6 +48,33 @@ UK statutory instruments about 6 days. Resume when bulk access is granted.
 Not bulk: Australia's Federal Register of Legislation has a free OpenAPI, no bulk
 download confirmed.
 
+
+## Beyond regulations: courts, bills, rulemaking, governance
+
+Surveyed 2026-11-28 by web search, ✗ fetched. A different document kind each, so each
+needs its own profile (a judgment is not chunked like a statute).
+
+| # | Source | Content | Access | Format | Licence | Note |
+|---|---|---|---|---|---|---|
+| C1 | **US**, CourtListener (Free Law Project) | US federal + state case law, judges, dockets | bulk CSV, regenerated quarterly; REST API | CSV, JSON | free of known copyright restrictions | the largest open case-law set |
+| C2 | **US**, Caselaw Access Project (Harvard) | 360 years of US reported case law | bulk downloads (case.law); paths now linked from CourtListener | JSON | open since 2024 | to confirm current path |
+| C3 | **India**, Supreme Court judgments | judgments since 1950, ~35K, 52 GB | public AWS S3, `--no-sign-request`; sibling set for 25 High Courts | JSON + Parquet metadata, PDF | CC BY 4.0 | ready bulk |
+| C4 | **France**, Judilibre (Cour de cassation) | ~534K Cassation rulings + appeal/first-instance courts | PISTE API (free key); HF mirror `antoinejeannot/jurisprudence` | JSON | Licence Ouverte 2.0 | same language as fr_legi |
+| C5 | **Germany**, rechtsprechung-im-internet | 7 federal courts (BVerfG, BGH, BVerwG, BFH, BAG, BSG, BPatG) | per-decision XML zip, XML from 2010 | XML | free reuse | portal to be replaced by the new federal system |
+| C6 | **Canada**, Supreme Court (Refugee Law Lab) | SCC 1877-present, ~15,500 decisions; FC and others | HF `refugee-law-lab/canadian-legal-data` | JSON, Parquet | CC BY-NC 4.0 | non-commercial |
+| C7 | **EU**, CJEU via Cellar | judgments, orders, AG opinions | Cellar SPARQL + REST | XHTML, Formex | free reuse | no CURIA bulk |
+| C8 | **ECHR**, HUDOC derivatives | ~20K judgments | Poznań ECHR-OD (json/csv/sqlite), HF `ecthr_cases` | JSON | to confirm | no official bulk |
+| C9 | **UK**, Find Case Law (TNA) | judgments + tribunal decisions | API + Atom feeds; bulk on request | LegalDocML XML | Open Justice Licence; computational use needs a licence | |
+| C10 | **Indonesia**, Direktori Putusan MA | ~10.4M decisions | search portal only; topic datasets (indo-law, 22,630 criminal) | HTML, PDF | to confirm | no bulk; Indonesian like id_reg |
+| C11 | **Japan**, 裁判所 判例検索 | Supreme Court + lower courts | search portal, PDF only | PDF | | national civil-judgment DB planned (Act No. 49 of 2025) |
+| B1 | **US**, GovInfo bulk BILLS / BILLSTATUS | bills, status, public laws, Statutes at Large | govinfo.gov/bulkdata, by Congress | USLM XML | public domain | enrolled bills from the 113th |
+| B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | the rulemaking behind us_cfr |
+| B3 | **UK**, Parliament | bills, divisions, questions, SIs, treaties | developer.parliament.uk REST + SPARQL | JSON, RDF | Open Parliament Licence | |
+| B4 | **EU**, Parliament open data | adopted texts, votes, documents | data.europarl.europa.eu API v2 (500 / 5 min) | JSON-LD | CC BY 4.0 | Parltrack for bulk |
+| G1 | **FAO**, FAOLEX | national legislation on food, agriculture, environment, ~200 countries; constitutions | open data CSV downloads | CSV + links | CC BY-NC-SA 3.0 IGO | metadata + summaries, multilingual |
+| G2 | **WIPO Lex** | > 50,000 IP laws and treaties, 200 jurisdictions | search only, no bulk found | HTML, PDF | | |
+| G3 | **UN Treaty Collection** | UNTS, League of Nations, MTDSG | search only | HTML, PDF | open access | |
+
 Sources: open.canada.ca dataset ff56de85-f8b9-4719-8dff-ecf362adf0af ·
 laws-lois.justice.gc.ca/eng/FAQ · research.legislation.gov.uk/data ·
 data.gouv.fr/datasets/legi-codes-lois-et-reglements-consolides ·
