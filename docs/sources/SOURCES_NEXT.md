@@ -97,6 +97,44 @@ Ravel by bulk access and structure: Spain, Finland, Taiwan and Norway have keyle
 list-all endpoints and structured XML; Austria, Switzerland, Italy and the Netherlands
 are structured but need per-document crawling; Poland's text is mostly PDF.
 
+## Probed 2026-11-28: API and bulk sources whose text is not PDF
+
+Every keyless API or bulk row above, and the court, bill and governance rows below, was hit
+live (one listing or count request each, `curl`, a generic User-Agent). Rows whose text is
+only PDF or DOCX were left out: their throughput is the VLM path's (`EXTRACTION.md` §2b).
+Ranked by size. "Items" is what the publisher's own count says, so its unit differs by
+source.
+
+| rank | source (row) | items, as counted by the publisher | text format | access | note |
+|---|---|---|---|---|---|
+| 1 | Japan, Diet minutes (B7) | 11,263,964 speeches in 109,243 meetings | JSON | `kokkai.ndl.go.jp/api/speech`, keyless | debate, ✗ regulation; Japanese like jp_egov |
+| 2 | Austria, RIS (11, C18) | Bundesrecht 442,345 · Landesrecht 282,531 · VwGH 358,176 · BVwG 293,108 · OGH/Justiz 138,550 · LVwG 78,931 · VfGH 24,199 | JSON metadata, XML/HTML text | OGD API v2.6, keyless | ~1.6M documents; German like de_gii |
+| 3 | US, Federal Register (B2) | 22,854 daily issues | XML | govinfo bulkdata, keyless | the rulemaking behind us_cfr |
+| 4 | Netherlands, Rechtspraak (C9) | 944,985 rulings (979,306 ECLIs) | XML | `data.rechtspraak.nl`, keyless | |
+| 5 | France, DILA JORF · JADE · INCA · CAPP · CASS · KALI · CNIL · CONSTIT | dumps of 1.6 GB · 1.2 GB · 664 MB · 279 MB · 251 MB · 184 MB · 19 MB · 13 MB | XML, the LEGI family | `echanges.dila.gouv.fr/OPENDATA`, Freemium tar.gz | **closest to built**: fr_legi's dialect family |
+| 6 | UK, Parliament written questions + statements (B3) | 715,572 questions · 18,347 statements | JSON | questions-statements API, keyless | answers are ministers' text |
+| 7 | US, bills + committee reports + Congressional Record (B1) | 292,495 bill versions · 162,851 reports · 6,051 daily Records | USLM XML, HTML/TXT | govinfo, `DEMO_KEY` for counts | |
+| 8 | Netherlands, BWB (15) | 149,117 records | BWB XML | SRU `zoekservice.overheid.nl`, keyless | the SRU index takes `cql.allRecords` |
+| 9 | Australia, Federal Register of Legislation (31) | 132,961 titles | JSON metadata; text as Word/EPUB | keyless OData API | text ✗ XML |
+| 10 | UK, HMRC internal manuals (72) | 85,734 sections (+ 10,514 GOV.UK detailed guides) | JSON | GOV.UK search + content API, keyless | guidance |
+| 11 | Switzerland, Fedlex (12) | 69,603 consolidations | Akoma Ntoso XML (from 2022), HTML | SPARQL, keyless | |
+| 12 | EU, Cellar (17) | 65,019 acts in force | Formex XML, XHTML | SPARQL, keyless | the row 6 alternative without EU Login |
+| 13 | Germany, rechtsprechung-im-internet (C3) | 61,148 decisions | XML zip per decision | `rii-toc.xml`, keyless | German like de_gii |
+| 14 | Spain, BOE consolidated (7) | 12,498 laws | XML/JSON per block | REST, keyless; `limit=-1` caps at 10,000, page by `offset` | |
+| 15 | Sweden, SFS (25) | 11,573 statutes | HTML/text | `data.riksdagen.se`, keyless | |
+| 16 | Hong Kong, e-Legislation (34) · LegCo bills (B8) | 12 ZIPs by cap range · 6,896 bills | XML | data.gov.hk, OData | |
+| 17 | Taiwan, laws + orders (9) | ZIPs of 6.1 MB + 25.8 MB | JSON | `law.moj.gov.tw/api/Ch/{Law,Order}/JSON`, keyless | |
+| 18 | Norway, Lovdata (10) | 6 tar.bz2, 125 MB | XML | `api.lovdata.no/v1/publicData`, keyless | |
+| 19 | Finland (8) · Ireland (33) · BC (35) · EU Parliament adopted texts (B4) · InforMEA (G4, 68 treaties) | answered; totals not given by the listing | AKN XML · XML · XML · HTML/DOC · JSON | keyless | size to count by paging |
+
+**Did not answer as documented (2026-11-28).** Italy Normattiva (the portal is a web app;
+API path to find) · Brazil LexML (bot check) and STJ (403) · Argentina InfoLEG (CKAN 500) ·
+Ukraine Rada (timeout) · NSW (403) · Vietnam vbpl (anti-bot page) · Virginia LIS (no DNS
+for the documented host) · Korea (OC key and a registered IP) · Estonia (web app, no
+dump link found) · Denmark (answers; the `date` parameter takes `yyyy-MM-dd`, retry).
+**Text is PDF, so out of this list:** Greece Diavgeia (3,135,037 decisions in the last
+six months alone; text is the attached PDF) and US court opinions (2,191,822 packages).
+
 **UK, deferred (2026-11-21).** research.legislation.gov.uk answers 401: the bulk sets need
 an account from The National Archives. The public API (`/data.xml` per document, Atom
 `data.feed` listings) is open but `robots.txt` sets `Crawl-delay: 5`. The fair-use policy
