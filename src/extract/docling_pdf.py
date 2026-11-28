@@ -57,7 +57,9 @@ def pipeline_for(layer: TextLayer, spec: DoclingSpec) -> str:
 
 class DoclingExtractor:
     id = "docling"
-    version = "1.0"
+    # 1.1: table and figure ref blocks carry no caption text (1.0's failed the round trip),
+    # and the VLM path reads page ranges in parallel. Every 1.0 document is superseded.
+    version = "1.1"
 
     def __init__(self, spec: DoclingSpec) -> None:
         self.spec = spec
