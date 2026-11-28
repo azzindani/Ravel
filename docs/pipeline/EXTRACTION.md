@@ -201,8 +201,13 @@ native PyMuPDF reader on the same files, judged per page by the word list
 - **Docling's own PDF parser reads a font PyMuPDF cannot:** the PERDA's native text is 63%
   unknown words, docling's 1.0%, with 21 BAB and 482 Pasal against none.
 - **Structure.** On PERBUP 1 the native reader finds 177 Pasal headings, 94 distinct: its text
-  layer carries the regulation twice. Docling finds 88 distinct and no repeats; the 6 missing
-  are ✗ checked yet.
+  layer carries the regulation twice. Docling finds 88 distinct and no repeats. The 6 it does
+  not find as headings (4, 6, 30, 34, 63, 88) lose no text. Each is in the explanation
+  (PENJELASAN) only, and each says nothing but `Cukup Jelas` ("self-explanatory").
+  Docling reads those pages as paragraphs with the label inline (`Pasal 6 Ayat (1) ...
+  Cukup Jelas.`), where the native layer prints it on a line of its own, in reverse order
+  (`Ayat (7)` before `Ayat (6)`). Checked against the native text of the same file; the
+  body's Pasal headings are the same set in both.
 - **One clean layer was old OCR** (`Nornor`, `Lingkw1gan`, annex pages of symbol soup): the
   probe judges characters, never words, so it went to the standard pipeline, kept that text
   and spent 1,766 s on its tables. `docling.reread_unusable` now judges a CLEAN layer page by
