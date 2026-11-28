@@ -20,6 +20,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from runtime.shards import MAX_BLOCKS, MAX_DOCS
+from spec.models import QualitySpec
 
 
 def _digest(payload: Any) -> str:
@@ -300,6 +301,17 @@ class DoclingSpec(Base):
     fallback: bool = True
     """When one pipeline fails on a document, read it once with the other, and say so in
     its warnings."""
+
+    reread_unusable: QualitySpec | None = None
+    """When set, a text layer the probe calls CLEAN is judged page by page with this word
+    list and these thresholds, and read with the `damaged` pipeline if they call it
+    unusable (`QUALITY.md` §2: damaged pages hold half its words or more).
+
+    ! The probe judges characters, never words: control characters, U+FFFD, lost
+    spaces. Somebody's old OCR passes all three. `Perbup_Sleman_Nomor_42_Tahun_2023.pdf`
+    went to the standard pipeline as CLEAN with `Nornor`, `Lingkw1gan` and annex pages of
+    symbol soup, 296 of its 339 pages damaged to the word list, and took 1,766 s on
+    TableFormer to keep that text (`EXTRACTION.md` §2b)."""
 
     standard_lanes: int = Field(default=1, ge=1, le=16)
     """Documents the standard pipeline reads at once, each with its own models.

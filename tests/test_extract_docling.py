@@ -234,3 +234,31 @@ def test_lanes_are_hardware_and_leave_the_generation_alone() -> None:
     wider.extract.docling.standard_lanes = 4
     wider.extract.docling.vlm_lanes = 4
     assert wider.extraction_hash == pdf.extraction_hash
+
+
+def test_a_clean_layer_of_old_ocr_is_read_from_the_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """! The probe judges characters; somebody's old OCR passes it as CLEAN. With
+    `reread_unusable`, the word list judges each page, and an unusable layer goes to the
+    damaged pipeline. A clean one stays, and without the setting nothing is judged."""
+    from extract import native
+    from spec.models import QualitySpec
+
+    clean = (
+        "Peraturan Bupati ini mulai berlaku pada tanggal diundangkan. Agar setiap orang "
+        "mengetahuinya, memerintahkan pengundangan Peraturan Bupati ini dengan "
+        "penempatannya dalam Berita Daerah Kabupaten."
+    )
+    ocr = (
+        "Penlturan Pernerintah Nornor tcntang Pcnetapan Lingkw1gan Daerah lslimewa "
+        "Rcpublik dacrah Kabupaten Barel Bcrlakunya Pembenlukan lentang Ta.hun Da.en "
+        "sebagairnana telab diubab beberapa kali tcrakhir dcngan Undaug-Undaug"
+    )
+    spec = QualitySpec(lexicon="lexicons/id_regulation_md@1.txt")
+    ex = DoclingExtractor(DoclingSpec(reread_unusable=spec))
+    monkeypatch.setattr(native, "page_texts", lambda _: [ocr] * 9 + [clean])
+    assert ex._unusable(Path("a.pdf"))
+    monkeypatch.setattr(native, "page_texts", lambda _: [clean] * 9 + [ocr])
+    assert ex._unusable(Path("a.pdf")) is None
+    assert DoclingExtractor(DoclingSpec())._unusable(Path("a.pdf")) is None

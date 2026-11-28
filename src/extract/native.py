@@ -227,6 +227,15 @@ class NativeExtractor:
 
 
 @serialised
+def page_texts(path: Path) -> list[str]:
+    """Each page's text layer, as PyMuPDF reads it: what a word-list judge is given."""
+    import pymupdf
+
+    with pymupdf.open(path) as pdf:
+        return [page.get_text("text") for page in pdf]
+
+
+@serialised
 def probe(path: Path, *, thresholds: Thresholds | None = None) -> Probe:
     """Cheap look: does this PDF have a usable text layer, and is it worth using?
 

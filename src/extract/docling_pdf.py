@@ -68,6 +68,7 @@ class DoclingExtractor:
         self.spec = spec
         self._converters: dict[str, Any] = {}
         self._building = threading.Lock()
+        self._gate: Any = None
         # ! Per thread: with `extract.workers` > 1 the router's probe for one document
         # must never be read back by the thread extracting another.
         self._local = threading.local()
@@ -89,6 +90,21 @@ class DoclingExtractor:
         # paid for; keeping it saves re-reading a 400-page PDF to choose a pipeline.
         self._local.probed = (path, probe)
         return probe.mime == "application/pdf" and bool(probe.pages)
+
+    def _unusable(self, path: Path) -> str | None:
+        """Why a CLEAN layer is no better than a damaged one, or None (`reread_unusable`)."""
+        if self.spec.reread_unusable is None:
+            return None
+        from enrich.quality import QualityGate
+        from extract.native import page_texts
+
+        with self._building:
+            if self._gate is None:
+                self._gate = QualityGate.of(
+                    self.spec.reread_unusable, "docling.reread_unusable"
+                )
+        verdict = self._gate.score(path.name, page_texts(path))
+        return "; ".join(verdict.reasons) if verdict.verdict == "unusable" else None
 
     # -- docling ------------------------------------------------------------
     def _device(self) -> Any:
@@ -250,10 +266,17 @@ class DoclingExtractor:
             probe = probe_pdf(path)
         pipeline = pipeline_for(probe.layer, self.spec)
         pages = probe.pages or 0
+        warnings: list[str] = []
+        reread = self._unusable(path) if pipeline != self.spec.damaged else None
+        if reread:
+            warnings.append(
+                f"text layer unusable to the word list ({reread}); "
+                f"read with {self.spec.damaged}"
+            )
+            pipeline = self.spec.damaged
 
         started = time.monotonic()
         results, failure = self._convert(path, pipeline, pages)
-        warnings: list[str] = []
         other = "vlm" if pipeline == "standard" else "standard"
         if failure and self.spec.fallback and other != pipeline:
             # ! A docling fault on one pipeline is a fault of that pipeline, ✗ of the PDF:
@@ -299,6 +322,7 @@ class DoclingExtractor:
                 params={
                     "pipeline": pipeline,
                     "text_layer": probe.layer.value,
+                    "reread": reread,
                     "docling": _version(),
                     "seconds": round(elapsed, 1),
                     "seconds_per_page": round(elapsed / pages, 3) if pages else None,

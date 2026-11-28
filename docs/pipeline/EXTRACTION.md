@@ -183,6 +183,33 @@ more tables; on a page range with no tables the two are equal (4.59 / 4.45 pages
 accuracy between the modes is ✗ measured. The overlap of the two lanes was not the cause:
 the same pages read at 0.20 pages/s with the GPU to themselves.
 
+**Evaluated on the first five of the top 50 (2026-11-28, 1,703 pages).** Docling against the
+native PyMuPDF reader on the same files, judged per page by the word list
+(`lexicons/id_regulation_md@1.txt`, `QUALITY.md` §2):
+
+| file | layer, pipeline | verdict docling / native | damaged pages docling / native | unknown words docling / native | tables docling / native |
+|---|---|---|---|---|---|
+| PERBUP_NO._1_TAHUN_2023__1_ | clean, standard | degraded / degraded | 1 of 204 / 4 of 270 | 2.5% / 3.1% | 27 / 0 |
+| Perbup_Sleman_Nomor_42_Tahun_2023 | clean, standard | unusable / unusable | 143 of 222 / 296 of 339 | 81.5% / 84.2% | 130 / 0 |
+| Perbup_Boyolali_Tahun_2011_No_41 | damaged, vlm | degraded / degraded | 10 of 124 / 33 of 127 | 5.6% / 24.6% | 46 / 0 |
+| PERBUP_Sleman_No_46_Tahun_2023_part_1 | damaged, vlm | degraded / degraded | 100 of 775 / 316 of 800 | 23.6% / 16.3% | 445 / 0 |
+| Salinan_2022_PERDA_KAB._BOYOLALI_16 | clean, standard | clean / unusable | 0 of 165 / 152 of 165 | 1.0% / 63.3% | 0 / 0 |
+
+- **The VLM cuts damaged pages by a factor of 3** on both scans (33 -> 10, 316 -> 100). The
+  800-page scan's higher unknown share is its short lines, names and list items, ✗ damage:
+  1 of its 583 judged blocks is damaged (a formula).
+- **Docling's own PDF parser reads a font PyMuPDF cannot:** the PERDA's native text is 63%
+  unknown words, docling's 1.0%, with 21 BAB and 482 Pasal against none.
+- **Structure.** On PERBUP 1 the native reader finds 177 Pasal headings, 94 distinct: its text
+  layer carries the regulation twice. Docling finds 88 distinct and no repeats; the 6 missing
+  are ✗ checked yet.
+- **One clean layer was old OCR** (`Nornor`, `Lingkw1gan`, annex pages of symbol soup): the
+  probe judges characters, never words, so it went to the standard pipeline, kept that text
+  and spent 1,766 s on its tables. `docling.reread_unusable` now judges a CLEAN layer page by
+  page with the word list first: unusable goes to the VLM. On the three clean files above it
+  re-routes only that one (96% of words in damaged pages, 3.1 s to judge); PERBUP 1 and the
+  PERDA stay on the standard pipeline.
+
 **On bigger hardware, nothing is compiled in.** Each knob is read from the corpus YAML or the
 environment, and none of the ones that only change speed moves the generation:
 

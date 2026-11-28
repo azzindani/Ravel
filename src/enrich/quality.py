@@ -29,6 +29,7 @@ from typing import Literal
 
 from spec import Profile
 from spec.loader import registry_root
+from spec.models import QualitySpec
 
 __all__ = ["DocQuality", "Lexicon", "QualityGate", "Verdict"]
 
@@ -87,13 +88,25 @@ class QualityGate:
     """Scores a document's chunks. Pure: the same chunks and profile give the same verdict."""
 
     def __init__(self, profile: Profile, registry: Path | str | None = None) -> None:
-        self.spec = profile.spec.quality
+        self._setup(profile.spec.quality, profile.ref, registry)
+
+    @classmethod
+    def of(
+        cls, spec: QualitySpec, where: str, registry: Path | str | None = None
+    ) -> QualityGate:
+        """A gate from a quality spec stated somewhere other than a profile."""
+        gate = cls.__new__(cls)
+        gate._setup(spec, where, registry)
+        return gate
+
+    def _setup(self, spec: QualitySpec, where: str, registry: Path | str | None) -> None:
+        self.spec = spec
         self.lexicon = Lexicon.empty()
         if self.spec.lexicon:
             path = registry_root(registry) / self.spec.lexicon
             if not path.is_file():
                 raise FileNotFoundError(
-                    f"{profile.ref}: quality.lexicon {self.spec.lexicon!r} not found at {path}"
+                    f"{where}: quality.lexicon {self.spec.lexicon!r} not found at {path}"
                 )
             self.lexicon = Lexicon.load(path)
 
