@@ -198,6 +198,45 @@ def _url_map(path: Path) -> dict[str, str]:
     return _URL_MAPS[key]
 
 
+class DoclingSpec(Base):
+    """How the `docling` extractor reads a PDF (`EXTRACTION.md` §2b).
+
+    ! Every field here reaches the extractor, so every field is in
+    `CorpusSpec.extraction_hash`: change one and the generation changes with it.
+    """
+
+    clean: Literal["standard", "vlm"] = "standard"
+    """Pipeline for a PDF whose text layer the probe scores CLEAN. `standard` keeps the
+    born-digital text and adds docling's layout model and TableFormer: reading order,
+    tables, headers and footers, at a fraction of a VLM's cost."""
+
+    damaged: Literal["standard", "vlm"] = "vlm"
+    """Pipeline for a DAMAGED or ABSENT text layer. `vlm` re-reads the rendered page with
+    a vision-language model, so a baked-in OCR layer full of typos is never trusted."""
+
+    vlm_preset: str = "granite_docling"
+    """A docling VLM preset (`VlmConvertOptions.from_preset`). granite_docling is the
+    successor of SmolDocling, the model ID_REG_Markdown was extracted with."""
+
+    vlm_engine: Literal["auto", "transformers", "vllm", "api"] = "auto"
+    """`api` sends pages to an OpenAI-compatible server (`vlm_url`): a vLLM container on
+    a rented GPU, the same arrangement as the embedder."""
+
+    vlm_url: str | None = None
+    vlm_batch: int = Field(default=1, ge=1)
+    """Pages per VLM call. A latency knob, measured per device, never assumed."""
+
+    tables: bool = True
+    """TableFormer on the standard pipeline: cells with spans, not flattened text."""
+
+    device: Literal["auto", "cuda", "cpu"] = "auto"
+    slow_page_s: float = Field(default=30.0, gt=0)
+    """Seconds per page past which a document is flagged `slow` in its warnings. Scaled
+    by the page count, so a 400-page regulation is not held to a 10-page budget."""
+
+    images_scale: float = Field(default=2.0, gt=0)
+
+
 class ExtractSpec(Base):
     profile: str = "generic"
     """Profile ref, or `auto` to let the router choose per document."""
@@ -207,6 +246,9 @@ class ExtractSpec(Base):
 
     native_text_ratio: float = Field(default=0.9, ge=0.0, le=1.0)
     """Below this share of pages carrying text, a PDF goes to the OCR/VLM path."""
+
+    docling: DoclingSpec = Field(default_factory=DoclingSpec)
+    """Read only when `extractors` names `docling`."""
 
     shard_target_mb: int = Field(default=256, ge=1)
     """Estimated size of a sealed shard on disk. Shapes the artifact, not the run."""
@@ -531,6 +573,13 @@ class CorpusSpec(Base):
                     "profile": self.extract.profile,
                     "extractors": self.extract.extractors,
                     "native_text_ratio": self.extract.native_text_ratio,
+                    # Only when it can reach a document: a corpus that never names
+                    # docling keeps the hash, and so the generation, it already had.
+                    **(
+                        {"docling": self.extract.docling.model_dump(mode="json")}
+                        if "docling" in self.extract.extractors
+                        else {}
+                    ),
                 },
             }
         )

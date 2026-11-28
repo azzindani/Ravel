@@ -91,7 +91,7 @@ strict = true
 # worth more than a silenced one.
 [[tool.mypy.overrides]]
 module = [
-    "fsspec.*", "pyarrow.*", "pymupdf.*", "docling.*", "psycopg.*",
+    "fsspec.*", "pyarrow.*", "pymupdf.*", "docling.*", "docling_core.*", "psycopg.*",
     "torch.*", "transformers.*", "openai.*", "huggingface_hub.*",
 ]
 ignore_missing_imports = true

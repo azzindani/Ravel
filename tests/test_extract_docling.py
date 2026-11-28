@@ -1,0 +1,140 @@
+"""The docling extractor: routing by text layer, the hash it joins, and the mapping.
+
+The mapping tests build a `DoclingDocument` in code, so they need `docling_core` (the
+`extract` extra) but never a model, a GPU or a PDF.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from canon import BlockType
+from extract.base import Probe
+from extract.docling_pdf import DoclingExtractor, pipeline_for
+from extract.quality import TextLayer
+from spec.corpus import CorpusSpec, DoclingSpec
+
+
+def test_a_clean_layer_keeps_its_text_and_a_damaged_one_is_reread() -> None:
+    """! A damaged layer is somebody else's OCR, baked in (`ABSORPTION.md` §16): the
+    standard pipeline would keep its typos, so it goes to the VLM like an absent one."""
+    spec = DoclingSpec()
+    assert pipeline_for(TextLayer.CLEAN, spec) == "standard"
+    assert pipeline_for(TextLayer.DAMAGED, spec) == "vlm"
+    assert pipeline_for(TextLayer.ABSENT, spec) == "vlm"
+    assert pipeline_for(TextLayer.CLEAN, DoclingSpec(clean="vlm")) == "vlm"
+
+
+def test_supports_any_pdf_with_pages_and_nothing_else() -> None:
+    ex = DoclingExtractor(DoclingSpec())
+    pdf, md = Path("a.pdf"), Path("a.md")
+
+    def probe(mime: str, pages: int | None) -> Probe:
+        return Probe(mime=mime, pages=pages, text_ratio=0.0, chars=0)
+
+    assert ex.supports(pdf, probe("application/pdf", 3))
+    assert not ex.supports(pdf, probe("application/pdf", 0))
+    assert not ex.supports(md, probe("text/markdown", None))
+
+
+def test_docling_settings_change_the_hash_only_where_docling_runs() -> None:
+    """! Every docling knob reaches a document, so it is in the extraction hash
+    (`LOOPHOLES.md` §1) — but only for a corpus that names docling, or every existing
+    generation would be invalidated by a field it never reads."""
+    pdf = CorpusSpec.find("id_pdf")
+    changed = pdf.model_copy(deep=True)
+    changed.extract.docling.vlm_preset = "smoldocling"
+    assert changed.extraction_hash != pdf.extraction_hash
+
+    native = CorpusSpec.find("id_legal")
+    moved = native.model_copy(deep=True)
+    moved.extract.docling.vlm_preset = "smoldocling"
+    assert moved.extraction_hash == native.extraction_hash
+
+
+def _document():  # type: ignore[no-untyped-def]
+    dc = pytest.importorskip("docling_core.types.doc")
+    doc = dc.DoclingDocument(name="t")
+    doc.add_page(page_no=1, size=dc.Size(width=600, height=800))
+
+    def prov(t: float, b: float):  # type: ignore[no-untyped-def]
+        box = dc.BoundingBox(l=50, t=t, r=550, b=b, coord_origin=dc.CoordOrigin.BOTTOMLEFT)
+        return dc.ProvenanceItem(page_no=1, bbox=box, charspan=(0, 0))
+
+    doc.add_text(
+        dc.DocItemLabel.PAGE_HEADER,
+        "BERITA DAERAH",
+        prov=prov(790, 780),
+        content_layer=dc.ContentLayer.FURNITURE,
+    )
+    doc.add_title("PERATURAN BUPATI SLEMAN", prov=prov(760, 740))
+    doc.add_heading("BAB I", level=1, prov=prov(700, 690))
+    doc.add_heading("Pasal 1", level=2, prov=prov(680, 670))
+    doc.add_text(dc.DocItemLabel.TEXT, "Ayat satu.\n\nAyat dua.", prov=prov(660, 640))
+    cells = [
+        dc.TableCell(
+            text="No",
+            start_row_offset_idx=0,
+            end_row_offset_idx=1,
+            start_col_offset_idx=0,
+            end_col_offset_idx=1,
+            column_header=True,
+        ),
+        dc.TableCell(
+            text="Tarif",
+            start_row_offset_idx=0,
+            end_row_offset_idx=1,
+            start_col_offset_idx=1,
+            end_col_offset_idx=2,
+            column_header=True,
+        ),
+        dc.TableCell(
+            text="1",
+            start_row_offset_idx=1,
+            end_row_offset_idx=2,
+            start_col_offset_idx=0,
+            end_col_offset_idx=1,
+        ),
+        dc.TableCell(
+            text="Rp 5.000",
+            start_row_offset_idx=1,
+            end_row_offset_idx=2,
+            start_col_offset_idx=1,
+            end_col_offset_idx=2,
+        ),
+    ]
+    doc.add_table(dc.TableData(table_cells=cells, num_rows=2, num_cols=2), prov=prov(600, 500))
+    return doc
+
+
+def test_mapping_keeps_furniture_headings_and_tables_in_reading_order() -> None:
+    from extract.docling_pdf import to_canon
+
+    builder, tables, _ = to_canon(_document())
+    kinds = [(b.type, b.text) for b in builder.blocks]
+    assert kinds[0] == (BlockType.PAGE_HEADER, "BERITA DAERAH")
+    assert kinds[1] == (BlockType.HEADING, "PERATURAN BUPATI SLEMAN")
+    # ! A blank line is the canonical block separator: one docling item, two blocks.
+    assert (BlockType.PARAGRAPH, "Ayat satu.") in kinds
+    assert (BlockType.PARAGRAPH, "Ayat dua.") in kinds
+    assert kinds[-1][0] is BlockType.TABLE_REF
+
+    title, bab, pasal = builder.blocks[1], builder.blocks[2], builder.blocks[3]
+    assert (title.level, bab.level, pasal.level) == (1, 2, 3)
+    assert builder.blocks[4].heading_path == ["PERATURAN BUPATI SLEMAN", "BAB I", "Pasal 1"]
+
+    (table,) = tables
+    assert (table.n_rows, table.n_cols, table.header_rows) == (2, 2, 1)
+    assert builder.blocks[-1].ref == table.id
+    assert "Rp 5.000" in table.markdown
+
+
+def test_bbox_is_top_left_like_the_native_extractor() -> None:
+    from extract.docling_pdf import to_canon
+
+    builder, _, _ = to_canon(_document())
+    title = builder.blocks[1]
+    assert title.page == 1
+    assert title.bbox == (50.0, 40.0, 550.0, 60.0)

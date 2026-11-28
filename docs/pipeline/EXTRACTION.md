@@ -73,6 +73,49 @@ the affected subset.
 
 ---
 
+## 2b. The docling extractor: built
+
+`src/extract/docling_pdf.py`, named `docling` in a corpus's `extract.extractors`, and
+configured by `extract.docling` (`DoclingSpec`) in the corpus YAML, never in code. It
+reads a PDF with one of two docling pipelines, chosen per document by the probe's
+text-layer verdict:
+
+| text layer (`Probe.layer`) | pipeline (default) | what reads the page |
+|---|---|---|
+| CLEAN | `standard` | the born-digital text, placed by docling's layout model (Heron); tables by TableFormer; OCR off |
+| DAMAGED, ABSENT | `vlm` | a vision-language model on the rendered page: `granite_docling` (SmolDocling's successor) |
+
+- **Why a damaged layer goes to the VLM.** It is somebody else's old OCR, baked in
+  (13.3% of PDFs, §2). The standard pipeline keeps those bytes, so it keeps their typos;
+  the VLM reads the image and never sees them.
+- **What it emits.** Docling's items, in its reading order: titles and section headers
+  as headings at docling's level, body text, list items, captions, footnotes, formulas,
+  page headers and footers as furniture, tables as `Table` cells with spans plus a
+  `table_ref` block, and figures as `Asset` recipes (page + bbox, no bytes). Bboxes are
+  top-left origin, as the native extractor records them.
+- **Structure stays with the profile (§4b).** Docling's headings are a guess about
+  layout. With `id_regulation` the structurer demotes those that are not `BAB`, `Pasal`
+  and the rest, exactly as it does with native's typographic guesses.
+- **The hash.** Every `DoclingSpec` field is in `CorpusSpec.extraction_hash`, but only for
+  a corpus that names `docling`, so no existing generation moved.
+- **Where it runs.** `device: auto` takes CUDA when torch has it. `vlm_engine: api` with
+  `vlm_url` sends pages to an OpenAI-compatible server, such as a vLLM container on a
+  rented GPU: the same arrangement as the embedder. Docling is imported on first use, so
+  the hermetic suite and every other corpus never load torch.
+- **Hardest first.** `ravel extract <corpus> --limit N --largest-first` takes the N
+  largest files, which have the most pages and the most scans, so a trial meets the worst
+  case before the average one.
+
+Measured on an RTX 3070 Ti Laptop (8 GB), `sources/ID_PDF`, docling 2.154:
+
+| pipeline | pages/s | how measured |
+|---|---|---|
+| standard (layout + TableFormer, no OCR) | 11.8 warm (20 pages in 1.7 s); first call 18.5 s for 5 pages, model load included | docling `convert(page_range=…)` on `PERBUP_NO._1_TAHUN_2023__1_.pdf` |
+
+Probe of the 50 largest files (2.0 GB, 14,652 pages): 34 CLEAN, 14 DAMAGED, 2 ABSENT.
+
+---
+
 ## 3. Throughput
 
 The pipeline is a staged queue, not a loop, because CPU and GPU stages have different

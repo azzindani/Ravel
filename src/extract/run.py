@@ -19,6 +19,7 @@ from pathlib import Path
 
 from canon import CANON_VERSION, CanonicalDoc, Severity, validate
 from extract.base import ExtractionEmpty, ExtractionFailed, Extractor, Probe
+from extract.docling_pdf import DoclingExtractor
 from extract.native import NativeExtractor
 from extract.native import probe as probe_pdf
 from extract.structure import Structurer
@@ -192,6 +193,9 @@ class Extraction:
             "native": NativeExtractor(),
             "text": TextExtractor(),
             "xml": XmlExtractor(),
+            # Built from the corpus, because its pipelines are the corpus's choice;
+            # cheap to construct, since docling itself is imported only on first use.
+            "docling": DoclingExtractor(corpus.extract.docling),
         }
         self._structurers: dict[str, Structurer] = {}
 
@@ -335,6 +339,7 @@ class Extraction:
         *,
         limit: int = 0,
         force: bool = False,
+        largest_first: bool = False,
         on_progress: Callable[[RunReport], None] | None = None,
     ) -> RunReport:
         root = Path(self.corpus.sources.root)
@@ -353,6 +358,11 @@ class Extraction:
         for problem in scanned.unreadable:
             report.failed += 1
             report.errors.append((problem, "unreadable source"))
+        if largest_first:
+            # The largest files are the hardest — the most pages, the most scans — so a
+            # trial that takes them first meets the worst case before the average one.
+            # Ordering decides which files a `limit` keeps, never what a document says.
+            files = sorted(files, key=lambda f: (-f.bytes, f.path))
         if limit:
             files = files[:limit]
         report.considered = len(files)

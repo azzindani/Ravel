@@ -1,0 +1,44 @@
+id: id_pdf
+title: Indonesian regulations (PDF, read by docling)
+description: >
+  sources/ID_PDF: 991 regulation PDFs (PERBUP, PERGUB, PERMEN, SE, ...), read by the
+  docling extractor rather than PyMuPDF (EXTRACTION.md §2b). A born-digital PDF keeps
+  its text and gains docling's layout and tables; a damaged or absent text layer is
+  re-read from the page image by a vision-language model. Output goes to the workspace
+  (canon/id_pdf/<generation>/), never beside the sources.
+
+sources:
+  root: sources/ID_PDF
+  include: ["*.[pP][dD][fF]"]
+
+provenance:
+  # ! A local URI, and deliberately so. These files were collected by hand and no
+  # publisher URL has been verified for any of them; the HF dataset ID_REG holds zips,
+  # so a per-file hf:// path would not resolve (checked 2026-11-28: 404). Until a
+  # url_map names each file's publisher page, the sha256 recorded on every chunk is the
+  # citation, and a link is never made up (CHUNKING.md §4).
+  base_url: file:///sources/ID_PDF/
+  note: >
+    Hand-collected regulation PDFs. Each document carries the sha256 of the exact file
+    it came from; no publisher URL has been verified yet.
+
+extract:
+  profile: id_regulation
+  extractors: [docling]
+  docling:
+    clean: standard       # keep the born-digital text; add layout and TableFormer
+    damaged: vlm          # damaged or absent layer: re-read the page with the VLM
+    vlm_preset: granite_docling
+    vlm_engine: auto      # `api` + vlm_url for a vLLM container on a rented GPU
+    tables: true
+    device: auto
+  # A docling document holds paragraphs, not lines, so far fewer blocks than native;
+  # the cap stays, because this corpus has to run on an 8 GB box too.
+  shard_max_blocks: 250000
+  failure_tolerance: 0.05
+
+chunk:
+  chunker: unit
+  max_tokens: 512
+  min_tokens: 24
+  carry_parent: true

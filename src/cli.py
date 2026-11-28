@@ -314,6 +314,10 @@ def extract(
     workspace: WORKSPACE = Path("."),
     limit: Annotated[int, typer.Option("--limit", help="Stop after N documents.")] = 0,
     force: Annotated[bool, typer.Option("--force", help="Ignore the ledger.")] = False,
+    largest_first: Annotated[
+        bool,
+        typer.Option("--largest-first", help="Take the largest files first (with --limit)."),
+    ] = False,
     remote: REMOTE = "",
 ) -> None:
     """Phase A: source documents into canonical parquet shards.
@@ -324,7 +328,7 @@ def extract(
     spec = CorpusSpec.find(corpus_id)
     run = Extraction(spec, workspace=workspace)
     with _mirrored(workspace, remote, spec.id):
-        report = run.run(limit=limit, force=force)
+        report = run.run(limit=limit, force=force, largest_first=largest_first)
 
     summary = RichTable(show_header=False, box=None)
     summary.add_row("corpus", f"{spec.id}  [dim]{spec.config_hash}[/dim]")
