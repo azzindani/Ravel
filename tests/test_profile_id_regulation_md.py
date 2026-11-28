@@ -45,7 +45,7 @@ SAMPLE = (
 
 
 def test_a_markdown_regulation_routes_to_the_markdown_profile(registry: Registry) -> None:
-    assert registry.route(mime="text/markdown", sample=SAMPLE).ref == "id_regulation_md@1.4"
+    assert registry.route(mime="text/markdown", sample=SAMPLE).ref == "id_regulation_md@1.0"
 
 
 # ===========================================================================

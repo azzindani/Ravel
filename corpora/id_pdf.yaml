@@ -63,6 +63,12 @@ extract:
 
 chunk:
   chunker: unit
-  max_tokens: 512
-  min_tokens: 24
+  # The standard's budget (docs/pipeline/STANDARD.md §2), in the embedder's tokens.
+  max_tokens: 4096
+  min_tokens: 8
   carry_parent: true
+
+embed:
+  # The one vector space every regulation corpus shares, declared once
+  # (registry/embedders/): one Vera build and one index serve them all.
+  use: qwen3-embedding-0.6b@1.0

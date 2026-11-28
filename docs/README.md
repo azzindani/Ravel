@@ -14,6 +14,7 @@ name alone (`PROFILES.md` §7) is unambiguous; this page says where it lives.
 |---|---|
 | [`../CLAUDE.md`](../CLAUDE.md) | the rules: what Ravel is, its principles, what it must never do |
 | [`design/ARCHITECTURE.md`](design/ARCHITECTURE.md) | the stage graph, artifact boundaries, the phase split |
+| [`pipeline/STANDARD.md`](pipeline/STANDARD.md) | **the one chunking and embedding standard every corpus is built to** |
 | [`pipeline/PIPELINE.md`](pipeline/PIPELINE.md) | what each layer does and may write, where the profile takes over |
 | [`sources/ADDING_A_SOURCE.md`](sources/ADDING_A_SOURCE.md) | how a new source becomes a corpus, a dataset and a database |
 | [`project/PROGRESS.md`](project/PROGRESS.md) | what is built, what is not |
@@ -34,6 +35,7 @@ name alone (`PROFILES.md` §7) is unambiguous; this page says where it lives.
 | doc | stage |
 |---|---|
 | [`PIPELINE.md`](pipeline/PIPELINE.md) | the layers, end to end |
+| [`STANDARD.md`](pipeline/STANDARD.md) | chunk 4,096 / embed 8,192, in the embedder's tokens, for every corpus |
 | [`EXTRACTION.md`](pipeline/EXTRACTION.md) | Phase A: sources → canonical documents (native, XML, OCR) |
 | [`PROFILES.md`](pipeline/PROFILES.md) | profiles and dialects: corpus knowledge as YAML; versioning and freezing (§7) |
 | [`QUALITY.md`](pipeline/QUALITY.md) | per-document verdict: clean / degraded / unusable / absent |

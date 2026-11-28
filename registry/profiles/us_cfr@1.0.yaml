@@ -1,5 +1,5 @@
 id: us_cfr
-version: "1.1"
+version: "1.0"
 title: US Code of Federal Regulations (CFR and eCFR XML)
 description: >
   The annual CFR (govinfo bulk, one XML per printed volume) and the eCFR (versioner API, one
@@ -60,10 +60,11 @@ identity:
 pipeline:
   chunk:
     chunker: markup
-    # One chunk per section or appendix; longer ones split into `part n of m` on paragraph
-    # boundaries. ! Determined, ✗ measured: no CFR eval set exists yet.
-    max_tokens: 1024
-    min_tokens: 0
+    # One chunk per section or appendix; a longer one splits into `part n of m` on paragraph
+    # boundaries. The budget is the standard's, in the embedder's own tokens
+    # (docs/pipeline/STANDARD.md §2); a profile states it and never another.
+    max_tokens: 4096
+    min_tokens: 8
   derive:
     # What the embedder sees before the body:
     #

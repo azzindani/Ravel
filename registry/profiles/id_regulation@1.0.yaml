@@ -358,3 +358,9 @@ extract:
     heading_size_ratio: 1.12
     heading_max_chars: 120
     running_page_share: 0.5
+
+pipeline:
+  chunk:
+    # The standard budget, in the embedder's tokens (docs/pipeline/STANDARD.md §2).
+    max_tokens: 4096
+    min_tokens: 8

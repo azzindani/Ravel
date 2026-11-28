@@ -1,5 +1,5 @@
 id: id_regulation_md
-version: "1.3"
+version: "1.0"
 title: Indonesian laws and regulations · Docling markdown export
 description: >
   The same kind of document as `id_regulation` -- Undang-Undang, Peraturan Pemerintah,
@@ -443,15 +443,67 @@ pipeline:
       subunits: false
 
   derive:
-    # What the embedder is shown: the law, its subject, the chapter and the pasal, then the
-    # body. A 30-token pasal means little alone; this is what places it. `body` is untouched.
+    # What the embedder is shown: the law, its subject and where in it the chunk sits, then
+    # the body. A 30-token pasal means little alone; this is what places it. `body` is
+    # untouched. One labelled line per field, in the language the questions are asked in:
+    #
+    #   Peraturan: PERATURAN DAERAH KABUPATEN SAMPANG
+    #   Nomor: 1 Tahun 2016
+    #   Rujukan: Perda Kab. 1/2016 Pasal 15
+    #   Tentang: PERLINDUNGAN DAN PEMBERDAYAAN PETAMBAK GARAM
+    #   Bab: BAB IV - ORGAN PERUSAHAAN DAERAH
+    #   Letak: BAB IV › Bagian Kedua Direksi › Paragraf 3 Penghasilan › Pasal 15
+    #   Isi:
+    #
+    #   <body>
+    #
+    # 1.4 against 1.3 (`TYPE 1/2016 › about › chapter › article`):
+    # * the REGION. ~70% of this corpus is regional and hundreds of regions enact the same
+    #   clause; under 1.3 nothing in a regional chunk's vector said whose clause it was.
+    # * the full `heading_path`: Bagian and Paragraf titles, which 1.3 dropped. `chapter`
+    #   stays too, because the path often keeps a BAB's number without its title.
+    # * labels, so the model can tell the law from its subject from its place.
+    # * `Rujukan`, the identifier in the short form people cite (`Perda Kota 2/2014 Pasal 7`):
+    #   questions and agents write `Perda`, `Perbup`, `UU`, the header otherwise only the
+    #   long `PERATURAN DAERAH KOTA`.
+    # * `Berkas`, the filename, ONLY when type, number and year were all not extracted:
+    #   301K indexable chunks (18%), 152K with no region either, whose filename is often the
+    #   only identity left (`PERBUP_NO_2_TAHUN_2013_TENTANG_PEDOMAN_...`, `PP_7_TAHUN_2017`).
+    #   On any other chunk it repeats the header as noise.
+    # * `Tentang` cut where the extractor read on past the title: 60,598 indexable chunks carry
+    #   `... BISMILLAHIRRAHMANIRRAHIM DENGAN RAHMAT ALLAH ...`, `... Diundangkan dalam
+    #   Lembaran Daerah ...` or a `MENIMBANG` in `about`. In the embedded copy only: the
+    #   chunk's `about` stays as extracted.
+    # ✗ status or effective date: they change after a vector is written, and Vera scores
+    #   revocation itself. ✗ `locator_section`: the path again.
+    # `enacting_body` values that name no region are empty: the generic words and two-letter
+    # artefacts Vera's region scope excludes (migration 0007), so a line never reads
+    # `PERATURAN DAERAH KABUPATEN KABUPATEN`. `REPUBLIK INDONESIA` stays: for a national
+    # instrument it is the issuer. A line whose fields are all empty is dropped, which is
+    # why the number and year have their own: type, number and year are extracted together
+    # (1,389,868 of 1,691,419 indexable chunks carry all three), so `Nomor:` is whole or gone.
+    # ! Determined, ✗ measured: chosen 2026-11-21 before any re-embed scored it.
     embed_text:
       context:
-        - "{regulation_type} {regulation_number}/{year}"
-        - "{about}"
-        - "{chapter}"
-        - "{article}"
-      separator: " › "
+        - "Peraturan: {regulation_type} {enacting_body}"
+        - "Nomor: {regulation_number} Tahun {year}"
+        - "Rujukan: {identifier}"
+        - "Tentang: {about}"
+        - "Bab: {chapter}"
+        - "Letak: {heading_path}"
+        - part: "Berkas: {source_title}"
+          when_empty: [regulation_type, regulation_number, year]
+        - "Isi:"
+      separator: "\n"
+      skip_values: ["N/A", "INDONESIA", "KABUPATEN", "KOTA", "PROVINSI", "DAERAH",
+                    "PEMERINTAH", "NEGARA", "MA", "RI"]
+      rewrite:
+        about:
+          # ! Only AFTER a title. 9 of 32,405 distinct values open with the preamble and put
+          # the title after it; cutting there would empty the line, so they are kept whole.
+          # Measured on the 1.7M corpus: 1,002 distinct values cut, 60,598 indexable chunks,
+          # none left empty.
+          - {pattern: '(?is)(?<=\S)\s+\b(?:BISMILLAH\w*|DENGAN\s+RAHMAT|DIUNDANGKAN|MENIMBANG)\b.*$', replace: ''}
     # Damage OCR does to tokens a query will contain, repaired in the copy that is MATCHED.
     search_normalize:
       - {pattern: '\b(Pasal|PASAL|BAB|Bab)(?=\d)', replace: '\1 '}

@@ -26,7 +26,7 @@ provenance:
   note: GPO govinfo CFR bulk data, annual edition XML per volume.
 
 extract:
-  profile: us_cfr@1.1
+  profile: us_cfr@1.0
   extractors: [xml]
   failure_tolerance: 0.0
 

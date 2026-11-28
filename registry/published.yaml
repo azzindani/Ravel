@@ -8,37 +8,37 @@
 #
 # The digest is sha256 of the file with CRLF read as LF, so a Windows checkout agrees.
 # Add the files of every bundle at the moment it is published.
+#
+# ! 2026-11-28: every profile was collapsed to one file at 1.0, built to
+# docs/pipeline/STANDARD.md, and every dataset below is rebuilt from its canon and
+# republished. The profiles the 2611 datasets were made with are in git history only
+# (commit 5550035 and earlier); each dataset's new profile file is added here when it
+# is republished. The dialects, lexicon and embedder did not change and stay frozen.
 
 published:
   - dataset: Azzindani/CA_LAWS_2611
     commit: b022cb0
     files:
-      registry/profiles/ca_laws@1.0.yaml: 082d3a5c9fc45dd8764af2e59eeb20cf3795b981a332b545e32acacc711d038c
       registry/dialects/justice_ca@1.0.yaml: 114ae38409b848440be3a72ff644bc9a9d9ed3b86c9832ed5d3c5e61826652e0
   - dataset: Azzindani/ID_REG_RAG_2611
     commit: da36f37
     files:
-      registry/profiles/id_regulation_md@1.4.yaml: 2ee5ca397cfc9728581d2c54ebc7dba9346c7e816faaf345081f545e5c8d9bb4
       registry/lexicons/id_regulation_md@1.txt: 38802aed20494670403ad8fbd371d6677db1a170d0a7dddb0ccdf8b5687ac569
   - dataset: Azzindani/US_CFR_2611
     commit: 378d697
     files:
-      registry/profiles/us_cfr@1.1.yaml: d8a7a368e2f3cca7043e1bf3762288cf4a2920a41a98b7655e8c7d399c86ef40
       registry/dialects/gpo_cfr@1.0.yaml: bea9713bebb77107f6a54c70ae631c9be62e7269c59c6a9ed59d4ec7796b04cb
   - dataset: Azzindani/JP_LAWS_2611
     commit: 72455ac
     files:
-      registry/profiles/jp_law@1.0.yaml: e8a9b5d9318fbeac529c7c9fb36a791060447657b4562cc4f8f9f1c5231fbad7
       registry/dialects/jp_law@1.0.yaml: f85906c74cfec976cd2e9311f95cb71721fcbe737b04885a18db5aeef67802f3
   - dataset: Azzindani/DE_LAWS_2611
     commit: 45dd2ec
     files:
-      registry/profiles/de_gii@1.0.yaml: f5e99ab22d34b97da1a21cd908e7b0829c80c48d1da67766da438a9b0f11885f
       registry/dialects/de_gii@1.0.yaml: 93f5e97a10c82da3217c216d94310bdfb1fe9fb46ac13bd1040448c5f7f8e652
   - dataset: Azzindani/FR_LAWS_2611
     commit: f63dd55
     files:
-      registry/profiles/fr_legi@1.0.yaml: 3d41e89c703d9edb23be2e1ede538e441d7dc56d09023f5acd265f3bcb851f7d
       registry/dialects/legi@1.0.yaml: 6e9b4262369258f8f22cd84aec62063e30820aac78ed5f083e637fd8caca0c60
   # The vector space of every dataset above, declared once since 2026-11-22: the copied
   # `embed:` blocks it replaced resolved to exactly these fields (fingerprint

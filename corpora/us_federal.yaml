@@ -21,7 +21,7 @@ provenance:
     Register (one XML per daily issue). Public domain.
 
 extract:
-  # Each file is read by the profile its root element names: CFRDOC -> us_cfr@1.1,
+  # Each file is read by the profile its root element names: CFRDOC -> us_cfr@1.0,
   # FEDREG -> us_fr@1.0.
   profile: auto
   extractors: [xml]
@@ -29,6 +29,10 @@ extract:
 
 chunk:
   chunker: markup
+  # ! Stated, as the standard's own values (docs/pipeline/STANDARD.md §2): a corpus that
+  # routes has no one profile to take them from, so it states them itself.
+  max_tokens: 4096
+  min_tokens: 8
 
 embed:
   use: qwen3-embedding-0.6b@1.0

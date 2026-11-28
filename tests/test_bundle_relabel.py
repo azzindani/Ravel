@@ -22,7 +22,7 @@ from chunk.labels import ExplanationRule
 from load.preflight import check_checksums
 from spec import default_registry
 
-PROFILE = default_registry().get("id_regulation_md@1.3")
+PROFILE = default_registry().get("id_regulation_md@1.0")
 DIM = 8
 
 
@@ -66,7 +66,7 @@ def make_bundle(root: Path) -> None:
                 "regulation_number": "1",
                 "year": 2020,
                 "about": "IZIN",
-                "profile": "id_regulation_md@1.2",
+                "profile": "id_regulation_md@0.9",
             }
             for i, c, a, b in part
         ]
@@ -120,12 +120,12 @@ def test_relabel_rewrites_labels_and_vectors_and_nothing_else(tmp_path: Path) ->
     ).to_pylist()
     by = {r["id"]: r for r in chunks}
     assert [r["id"] for r in chunks] == [r[0] for r in ROWS]  # ids and order unchanged
-    assert by["a2"]["chapter"] == "PENJELASAN" and by["a2"]["profile"] == "id_regulation_md@1.3"
+    assert by["a2"]["chapter"] == "PENJELASAN" and by["a2"]["profile"] == "id_regulation_md@1.0"
     assert by["a1"]["chapter"] == "BAB I - KETENTUAN UMUM"
-    assert by["a1"]["profile"] == "id_regulation_md@1.2"
+    assert by["a1"]["profile"] == "id_regulation_md@0.9"
     doc = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert doc["relabel"]["parent_manifest_sha256"] == "p" * 64
-    assert doc["manifest_sha256"] != "p" * 64 and doc["profile_ref"] == "id_regulation_md@1.3"
+    assert doc["manifest_sha256"] != "p" * 64 and doc["profile_ref"] == "id_regulation_md@1.0"
     assert check_checksums(out, doc).status.value == "ok"
     plan = pq.read_table(out / "relabel.parquet").to_pydict()
     assert plan == {

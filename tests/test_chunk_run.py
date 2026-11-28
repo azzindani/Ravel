@@ -311,9 +311,10 @@ def test_a_routing_corpus_chunks_each_document_by_its_own_profile(tmp_path: Path
         return SimpleNamespace(extraction=SimpleNamespace(params={"profile": profile}))
 
     routed = Chunking(CorpusSpec.find("us_federal"), workspace=tmp_path)
-    assert routed.config.max_tokens == 512
-    assert routed.config_for(doc("us_fr@1.0")).max_tokens == 1024
-    assert routed.config_for(doc("us_cfr@1.1")).max_tokens == 1024
+    # The standard's 4,096 (`STANDARD.md` §2), whichever profile read the document.
+    assert routed.config.max_tokens == 4096
+    assert routed.config_for(doc("us_fr@1.0")).max_tokens == 4096
+    assert routed.config_for(doc("us_cfr@1.0")).max_tokens == 4096
 
     pinned = Chunking(CorpusSpec.find("us_fr"), workspace=tmp_path)
-    assert pinned.config_for(doc("us_cfr@1.1")) is pinned.config
+    assert pinned.config_for(doc("us_cfr@1.0")) is pinned.config

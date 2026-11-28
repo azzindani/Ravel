@@ -18,7 +18,7 @@ from chunk import SCHEMA, Builder, ChunkConfig, get, read_chunks, write_chunks
 from load.plan import CHUNK_COLUMNS
 from spec import Profile, default_registry
 
-REF = "id_regulation_md@1.2"
+REF = "id_regulation_md@1.0"
 
 TITLE = (
     "PERATURAN BUPATI BANYUWANGI\n"

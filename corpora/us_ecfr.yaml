@@ -22,9 +22,14 @@ provenance:
   note: eCFR versioner API, full title XML on the date in the path.
 
 extract:
-  profile: us_cfr@1.1
+  profile: us_cfr@1.0
   extractors: [xml]
   failure_tolerance: 0.0
 
 chunk:
   chunker: markup
+
+embed:
+  # The one vector space every regulation corpus shares, declared once
+  # (registry/embedders/): one Vera build and one index serve them all.
+  use: qwen3-embedding-0.6b@1.0

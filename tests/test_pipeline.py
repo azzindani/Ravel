@@ -38,7 +38,7 @@ from spec import (
 )
 from spec.corpus import ChunkSpec
 
-MD = "id_regulation_md@1.2"
+MD = "id_regulation_md@1.0"
 
 
 @pytest.fixture(scope="module")
@@ -119,20 +119,22 @@ def test_the_embedder_is_shown_the_context_then_the_body(md: Profile) -> None:
     )
     text = embed_text(c, md)
     assert text == (
-        "PERATURAN BUPATI 26/2011 › PENJABARAN ANGGARAN › BAB I - KETENTUAN UMUM › Pasal 5"
-        f"\n\n{c.body}"
+        "Peraturan: PERATURAN BUPATI\nNomor: 26 Tahun 2011\nTentang: PENJABARAN ANGGARAN\n"
+        f"Bab: BAB I - KETENTUAN UMUM\nIsi:\n\n{c.body}"
     )
     assert c.body == "Peraturan ini mulai berlaku pada tanggal diundangkan."
 
 
 def test_a_part_with_no_information_is_dropped_not_left_as_a_hole(md: Profile) -> None:
     c = chunk(chapter="N/A", article="Pasal 5")  # no type, no subject, and N/A is a label
-    assert embed_text(c, md) == f"Pasal 5\n\n{c.body}"
+    # `Bab: N/A` is dropped, never shown; with nothing else read, the file name stands in.
+    assert embed_text(c, md) == f"Berkas: t\nIsi:\n\n{c.body}"
 
 
 def test_with_nothing_to_say_the_body_is_returned_unchanged(md: Profile) -> None:
     c = chunk()
-    assert embed_text(c, md) == c.body
+    # The profile stands in the file name for what it could not read (`when_empty`).
+    assert embed_text(c, md) == f"Berkas: t\nIsi:\n\n{c.body}"
     assert embed_text(c, None) == c.body
 
 
@@ -261,7 +263,7 @@ def test_routing_considers_only_the_newest_version_of_each_id() -> None:
     registry = default_registry()
     new = registry.get(MD)
     older = new.spec.model_dump(mode="json")
-    older["version"] = "1.0"
+    older["version"] = "0.9"
     old = Profile.compile(ProfileSpec.model_validate(older))
     sample = "PERATURAN BUPATI X NOMOR 1 TAHUN 2010\nDENGAN RAHMAT TUHAN YANG MAHA ESA"
     for order in ([old, new], [new, old]):

@@ -123,7 +123,7 @@ def cfr_file(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def profile():  # type: ignore[no-untyped-def]
-    return default_registry().get("us_cfr@1.1")
+    return default_registry().get("us_cfr@1.0")
 
 
 def extracted(path: Path, profile: Any):  # type: ignore[no-untyped-def]
@@ -253,17 +253,17 @@ def _registry_copy(tmp_path: Path) -> Path:
     root = Path(__file__).resolve().parents[1] / "registry"
     shutil.copytree(root / "dialects", tmp_path / "dialects")
     (tmp_path / "profiles").mkdir()
-    shutil.copy(root / "profiles" / "us_cfr@1.1.yaml", tmp_path / "profiles")
+    shutil.copy(root / "profiles" / "us_cfr@1.0.yaml", tmp_path / "profiles")
     return tmp_path
 
 
 def test_a_corrected_dialect_re_extracts(tmp_path: Path) -> None:
     """The hash covers the dialect's rules, not its name."""
     root = _registry_copy(tmp_path)
-    before = Registry.load(root).get("us_cfr@1.1").structure_hash
+    before = Registry.load(root).get("us_cfr@1.0").structure_hash
     path = root / "dialects" / "gpo_cfr@1.0.yaml"
     path.write_text(path.read_text(encoding="utf-8").replace("CHAPTI, ", ""), encoding="utf-8")
-    assert Registry.load(root).get("us_cfr@1.1").structure_hash != before
+    assert Registry.load(root).get("us_cfr@1.0").structure_hash != before
 
 
 def test_a_dialect_unit_the_profile_does_not_declare_is_refused(tmp_path: Path) -> None:
@@ -272,14 +272,14 @@ def test_a_dialect_unit_the_profile_does_not_declare_is_refused(tmp_path: Path) 
     text = path.read_text(encoding="utf-8").replace("SUBJGRP: subjgrp", "SUBJGRP: annex")
     path.write_text(text, encoding="utf-8")
     with pytest.raises(RegistryError, match="annex"):
-        load_spec(root / "profiles" / "us_cfr@1.1.yaml")
+        load_spec(root / "profiles" / "us_cfr@1.0.yaml")
 
 
 def test_a_missing_dialect_is_named(tmp_path: Path) -> None:
     root = _registry_copy(tmp_path)
     (root / "dialects" / "ecfr@1.0.yaml").unlink()
     with pytest.raises(RegistryError, match="no dialect ecfr@1.0"):
-        load_spec(root / "profiles" / "us_cfr@1.1.yaml")
+        load_spec(root / "profiles" / "us_cfr@1.0.yaml")
 
 
 def test_an_element_in_two_roles_is_refused() -> None:
