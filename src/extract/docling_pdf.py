@@ -166,14 +166,21 @@ class DoclingExtractor:
         else:
             # ! OCR off: the standard pipeline is chosen only for a CLEAN layer, and a
             # clean layer is the text. OCR on top would replace good bytes with guesses.
-            fmt = PdfFormatOption(
-                pipeline_options=PdfPipelineOptions(
-                    do_ocr=False,
-                    do_table_structure=self.spec.tables,
-                    accelerator_options=self._device(),
-                    images_scale=self.spec.images_scale,
-                )
+            from docling.datamodel.pipeline_options import (
+                TableFormerMode,
+                TableStructureOptions,
             )
+
+            options = PdfPipelineOptions(
+                do_ocr=False,
+                do_table_structure=self.spec.tables,
+                accelerator_options=self._device(),
+                images_scale=self.spec.images_scale,
+            )
+            options.table_structure_options = TableStructureOptions(
+                mode=TableFormerMode(self.spec.table_mode)
+            )
+            fmt = PdfFormatOption(pipeline_options=options)
         return DocumentConverter(format_options={InputFormat.PDF: fmt})
 
     def _ranges(self, pipeline: str, pages: int) -> list[tuple[int, int] | None]:

@@ -166,6 +166,23 @@ server idle otherwise; scratch benchmarks, ✗ in the pipeline):
 | standard, `layout_batch_size` 4 / 16 / 64 (`ThreadedPdfPipelineOptions`) | 4.50 / 4.62 / 4.51, identical text | no gain: already at the guide's RTX 5070 figure (4.2) |
 | vLLM `--max-num-seqs 64`, or `--enable-chunked-prefill --max-num-batched-tokens 8192` | did not start | at 0.40 of 8 GB no memory is left for the KV cache (-0.34 GiB); the guide's flags assume a card the server has to itself (`--gpu-memory-utilization 0.9`) |
 
+**Tables are the standard pipeline's real cost.** The first five documents of the restarted
+top-50 run (1,703 pages) took 33 minutes, and one clean file took 1,766 s for 340 pages.
+Alone on an idle GPU, 48 of its pages (42 tables) measured:
+
+| TableFormer | pages/s | tables structured (of 42) |
+|---|---|---|
+| accurate (default) | 0.20 | 31 |
+| accurate, decode limit 512 instead of 1,024 | 0.20 | 31 |
+| **fast** (`docling.table_mode`, `id_pdf`) | **0.43** | **36** |
+| off | 7.01 | 0 |
+
+The time is not in the long decodes that get discarded (55 tables hit the 1,024-step limit in
+the run's log): halving the limit saved nothing. Fast mode halves the cost and structures
+more tables; on a page range with no tables the two are equal (4.59 / 4.45 pages/s). Cell
+accuracy between the modes is ✗ measured. The overlap of the two lanes was not the cause:
+the same pages read at 0.20 pages/s with the GPU to themselves.
+
 **On bigger hardware, nothing is compiled in.** Each knob is read from the corpus YAML or the
 environment, and none of the ones that only change speed moves the generation:
 

@@ -284,6 +284,12 @@ class DoclingSpec(Base):
     tables: bool = True
     """TableFormer on the standard pipeline: cells with spans, not flattened text."""
 
+    table_mode: Literal["accurate", "fast"] = "accurate"
+    """TableFormer's mode. ! Measured on `Perbup_Sleman_Nomor_42_Tahun_2023.pdf`, 48 pages
+    with 42 tables: accurate 0.20 pages/s and 31 tables structured, fast 0.43 and 36; on
+    pages without tables the two are equal (`EXTRACTION.md` §2b). Cell accuracy between
+    the two is ✗ measured."""
+
     device: Literal["auto", "cuda", "cpu"] = "auto"
     slow_page_s: float = Field(default=30.0, gt=0)
     """Seconds per page past which a document is flagged `slow` in its warnings. Scaled

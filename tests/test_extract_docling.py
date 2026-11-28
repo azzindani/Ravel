@@ -47,6 +47,11 @@ def test_docling_settings_change_the_hash_only_where_docling_runs() -> None:
     changed = pdf.model_copy(deep=True)
     changed.extract.docling.vlm_preset = "smoldocling"
     assert changed.extraction_hash != pdf.extraction_hash
+    tables = pdf.model_copy(deep=True)
+    tables.extract.docling.table_mode = (
+        "accurate" if pdf.extract.docling.table_mode == "fast" else "fast"
+    )
+    assert tables.extraction_hash != pdf.extraction_hash
 
     native = CorpusSpec.find("id_legal")
     moved = native.model_copy(deep=True)
