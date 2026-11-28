@@ -29,8 +29,22 @@ says so.
 | 19 | **Africa**, Laws.Africa | legislation of many African jurisdictions (count to confirm) | Content API v3, free non-commercial | Akoma Ntoso XML | CC licences | candidate; rate-limited |
 | 20 | **Brazil**, LexML / Normas.leg.br | federal norms since the Empire | Senate open data, LexML sitemap | LexML XML | open | candidate; bulk text to confirm |
 | 21 | **New Zealand**, PCO | Acts, regulations | developer API (key), `.xml` per item | NZ legislation XML | API terms of use, to confirm | candidate |
+| 22 | **Argentina**, InfoLEG | national laws, decrees, resolutions, dispositions | datos.gob.ar "Base Infoleg Normativa Nacional", zip + CSV; provincial norms in SAIJ set | CSV + text | open data | candidate; bulk zip |
+| 23 | **Chile**, LeyChile (BCN) | all norms, versions since 1998 | web services (XML) + datos.bcn.cl SPARQL, JSON/RDF | XML, RDF | open data | candidate; XML export reported 401, to confirm |
+| 24 | **Colombia**, SUIN-Juriscol | legislation 1821-present + case law | search portal; ✗ bulk found | HTML | free to consult | candidate; crawl only |
+| 25 | **Estonia**, Riigi Teataja | gazette + consolidated acts, XML from 2010-11 | `riigiteataja.ee/avaandmed/` open-data directory; the Act requires API + bulk | XML | open data by law | candidate |
+| 26 | **Czechia**, e-Sbírka | consolidated acts, legally binding e-edition since 2024 | open data + public API (vendor-stated) | to confirm | | candidate; docs to find |
+| 27 | **Sweden**, Riksdagen SFS | consolidated statutes (SFS) + parliamentary documents | data.riksdagen.se API, per-document `sfs-YYYY-NNN`; dataset catalogue | XML, JSON | open data | candidate |
+| 28 | **Denmark**, Retsinformation | acts, executive orders, circulars | XML since 2007; API (unofficial listing) | XML | free reuse (2014) | candidate; bulk to confirm |
+| 29 | **Ukraine**, Verkhovna Rada | legislation + draft laws, > 110 parliament data sets | data.rada.gov.ua | CSV, JSON, XML | open data | candidate |
+| 30 | **China**, NPC national law database | national laws and regulations | flk.npc.gov.cn, Word download per document | DOCX | | candidate; crawl only |
+| 31 | **Australia (NSW)** | in-force and repealed legislation | per-title XML, `/export/day` and `/export/week` | XML (ExchangeXml) | | candidate; run outside NSW business hours |
+| 32 | **Australia (Queensland)** | legislation | free API, registration | | | candidate |
+| 33 | **Australia (Commonwealth)**, Federal Register of Legislation | federal legislation | keyless REST API, JSON + documents | JSON, DOCX | | candidate; replaces "not bulk" note above |
+| 34 | **Singapore**, Statutes Online | Acts, subsidiary legislation | ✗ API; scrape only | HTML | | weak candidate |
+| 35 | **Constitutions**, Constitute Project | ~200 national constitutions, topic-tagged | linked data + API | RDF, JSON | some translations restricted | candidate |
 
-**Candidates (rows 7-21, surveyed 2026-11-28 by web search, ✗ fetched).** Ranked for
+**Candidates (rows 7-35, surveyed 2026-11-28 by web search, ✗ fetched).** Ranked for
 Ravel by bulk access and structure: Spain, Finland, Taiwan and Norway have keyless bulk or
 list-all endpoints and structured XML; Austria, Switzerland, Italy and the Netherlands
 are structured but need per-document crawling; Poland's text is mostly PDF. Not
@@ -71,6 +85,8 @@ needs its own profile (a judgment is not chunked like a statute).
 | B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | the rulemaking behind us_cfr |
 | B3 | **UK**, Parliament | bills, divisions, questions, SIs, treaties | developer.parliament.uk REST + SPARQL | JSON, RDF | Open Parliament Licence | |
 | B4 | **EU**, Parliament open data | adopted texts, votes, documents | data.europarl.europa.eu API v2 (500 / 5 min) | JSON-LD | CC BY 4.0 | Parltrack for bulk |
+| B5 | **US states**, Open States (Plural) | bills + votes, 50 states + DC + PR, full bill text in JSON | monthly CSV/JSON per session, PostgreSQL dump | CSV, JSON, SQL | public domain | scraped from state sites |
+| B6 | **US states**, LegiScan | bills, votes, legislators, all states + Congress | weekly dataset snapshots, API key (free) | CSV, JSON | CC BY 4.0 | |
 | G1 | **FAO**, FAOLEX | national legislation on food, agriculture, environment, ~200 countries; constitutions | open data CSV downloads | CSV + links | CC BY-NC-SA 3.0 IGO | metadata + summaries, multilingual |
 | G2 | **WIPO Lex** | > 50,000 IP laws and treaties, 200 jurisdictions | search only, no bulk found | HTML, PDF | | |
 | G3 | **UN Treaty Collection** | UNTS, League of Nations, MTDSG | search only | HTML, PDF | open access | |
