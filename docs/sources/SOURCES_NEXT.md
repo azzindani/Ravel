@@ -60,6 +60,23 @@ says so.
 | 50 | **Saudi Arabia**, Bureau of Experts | laws in English translation | Word downloads per law | DOCX | | weak candidate |
 | 51 | **Turkey**, mevzuat.gov.tr | consolidated legislation | site only; HF scrapes | HTML | | weak candidate |
 | 52 | **Israel**, National Legislation Database | laws in force since the Mandate, Hebrew | portal | HTML | | weak candidate |
+| 53 | **Canada, provinces**, A2AJ Canadian Laws | federal + 11 provinces/territories, Acts and regulations full text | HF `a2aj/canadian-laws` | Parquet | to confirm | candidate; extends ca_laws to Ontario, Alberta, Québec |
+| 54 | **US**, CFR annual editions (GovInfo) | every CFR title per year, 1996-present | govinfo.gov/bulkdata/CFR/<year>, zip per title | XML | public domain | point-in-time us_cfr |
+| 55 | **Pakistan**, community law sets | Penal Code, CrPC, family + property Acts; 1K-10K rows | HF `mwz/Pak-Law`; Zenodo 20509007 | Parquet, CSV | to confirm | ✗ official; check provenance |
+| 56 | **Kenya**, Kenya Law corpus | 546 Acts (all Laws of Kenya) + judgments, 62K chunks | HF `Daudipdg/kenya-law-corpus` (id to confirm) | text | CC BY-NC 4.0 | non-commercial |
+| 57 | **Egypt**, active laws | 479 active laws, Arabic full text | HF `Sukuna404/egyptian_laws_dataset` | Parquet | to confirm | first Arabic corpus |
+| 58 | **Philippines**, Lawphil (Arellano Law Foundation) | Constitutions, Republic Acts, PDs, EOs; SC decisions from 1901 | lawphil.net HTML; 59,905 decisions inside HF `NLPinas/ph_en_text_detoxed` (Apache-2.0) | HTML, text | to confirm | candidate; crawl, English |
+| 59 | **India**, NyayKosh (law as code) | provisions, rules, penalties | open JSON APIs, no registration | JSON | to confirm | structured, ✗ full Acts |
+| 60 | **Romania**, legislatie.just.ro (Ministry of Justice) | national legislation, consolidated | web + SOAP API that allows bulk (2015 report) | XML | no copyright, free reuse | candidate; API status to confirm |
+| 61 | **Thailand**, central law system (DGA) | Thai legislation data | data.go.th dataset `law-portal-01` | to confirm | CC BY | candidate; contents to confirm |
+| 62 | **Malaysia**, Laws of Malaysia | federal Acts, English | lom.agc.gov.my (PDF); CommonLII mirror | PDF, HTML | | weak; crawl only |
+| 63 | **Uruguay**, IMPO (Centro de Información Oficial) | national legislation, decrees | JSON per norm (unofficial client found) | JSON (ISO-8859-1) | open data, attribution | candidate; API to confirm |
+| 64 | **US, Arkansas**, administrative rules | the state's whole rules database | sos.arkansas.gov bulk download, by agency/chapter | to confirm | public | first state admin code with bulk |
+| 65 | **US, New York**, NYCRR (unofficial) | state codes, rules and regulations | data.gov entry links to the online version | HTML | | weak; crawl only |
+| 66 | **Vietnam**, thuvienphapluat.vn sets | ~574K legal documents (vbpl subset) + QA, terms | HF `tmquan/thuvienphapluat-vn-*`, `tmquan/vbpl-vn` | Parquet | to confirm | ready dataset; alternative to row 42 |
+| 67 | **Indonesia**, community regulation sets | 250K+ PDFs from ~350K URLs; 3.5M article rows; 90,588 norm units from 378 regulations | HF `horelulus/ID_Regulations`, `horelulus/ID_REG_Parsed`; Mendeley 8wpjvhh7g2 | PDF, Parquet | to confirm | cross-check id_reg coverage |
+| 68 | **South Africa + region**, SAFLII | legislation, judgments, journals; also 10 southern African LIIs | saflii.org web | HTML | free access | crawl only; same LII family as row 19 |
+| 69 | **Belgium**, Justel / Moniteur belge | consolidated acts since 1994; gazette since 1997 | ejustice.just.fgov.be web | HTML, PDF | | weak; no API found |
 
 **Candidates (rows 7-52, surveyed 2026-11-28 by web search, ✗ fetched).** Ranked for
 Ravel by bulk access and structure: Spain, Finland, Taiwan and Norway have keyless bulk or
@@ -110,6 +127,13 @@ needs its own profile (a judgment is not chunked like a statute).
 | C21 | **Spain**, CENDOJ | Supreme Court + higher courts | search, PDF; reuse by agreement | PDF | | no bulk |
 | C22 | **ICJ**, CD-ICJ corpus | every published ICJ decision | Zenodo | PDF, TXT, CSV | CC0 | ready dataset |
 | C23 | **WTO**, dispute settlement documents | every DSU dispute since 1995 | data.wto.org | HTML, XLSX, DOCX | | |
+| C24 | **Austria**, RIS Judikatur | VfGH, VwGH, OGH, BVwG (from 2014), Landesverwaltungsgerichte | same OGD API as row 11 | XML/JSON | CC BY 4.0 | German like de_gii |
+| C25 | **Finland**, Finlex case law | KKO + KHO precedents, courts of appeal | opendata.finlex.fi (row 8) | XML | to confirm | |
+| C26 | **US**, Supreme Court Database (SCDB) | every SCOTUS case 1791-present, ~250 coded variables | scdb.la.psu.edu releases, by citation or docket; CAP link set on Zenodo 4344917 | CSV, SAV | free | metadata; text via CAP/CourtListener |
+| C27 | **China**, CAIL2018 | > 2.6M criminal cases (SPC), facts + articles + charges | HF `china-ai-law-challenge/cail2018` | JSON | unknown | Chinese |
+| C28 | **Tanzania**, TanzLII | judgments + legislation | website + APIs; bulk by email request | HTML, JSON | terms of use | bulk on request |
+| C29 | **Inter-American Court of HR** | 201 cases coded: proceedings, content, compliance | research database (Cambridge J. Law & Courts); CEJIL Summa | to confirm | | |
+| C30 | **International courts**, iCourts database | ECtHR, IACtHR and other international court decisions | jura.ku.dk/icourts | to confirm | research | |
 | B1 | **US**, GovInfo bulk BILLS / BILLSTATUS | bills, status, public laws, Statutes at Large | govinfo.gov/bulkdata, by Congress | USLM XML | public domain | enrolled bills from the 113th |
 | B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | the rulemaking behind us_cfr |
 | B3 | **UK**, Parliament | bills, divisions, questions, SIs, treaties | developer.parliament.uk REST + SPARQL | JSON, RDF | Open Parliament Licence | |
@@ -125,6 +149,13 @@ needs its own profile (a judgment is not chunked like a statute).
 | G3 | **UN Treaty Collection** | UNTS, League of Nations, MTDSG | search only | HTML, PDF | open access | |
 | G4 | **InforMEA** | environmental treaties, decisions, national reports | OData API | JSON | GPL toolkit; harvest by agreement | |
 | G5 | **EUR-Lex-Sum** | 1,500 act/summary pairs per language, 24 languages | Hugging Face `dennlinger/eur-lex-sum` | JSON | CC BY 4.0 | ready dataset |
+| G6 | **UN General Assembly** resolutions | every GA resolution to the 80th session; 916,554 recorded votes | UN Digital Library CSV (record 4060945) | CSV | open | metadata; text via ODS |
+| G7 | **UN Security Council**, CR-UNSC | every UNSC resolution, full text + metadata | Zenodo DOI 10.5281/zenodo.7319780 | CSV, TXT, PDF | open (to confirm) | ready dataset |
+| G8 | **Comparative Constitutions Project** | Characteristics of National Constitutions v5.0, > 13,000 country-years; chronology v6.0 | comparativeconstitutionsproject.org/download | CSV, DTA + codebook | free for research | coded data, ✗ text (text is row 35) |
+| G9 | **LexGLUE** benchmark | 7 English legal tasks (ECtHR, EUR-LEX, CaseHOLD, ...) | HF `lex_glue`; github coastalcph/lex-glue | JSON | per task | evaluation, ✗ corpus |
+| G10 | **MultiLegalPile** | 689 GB, 24 languages, 17 jurisdictions: native legal, EUR-Lex, Legal mC4, Pile of Law (292 GB) | HF `joelniklaus/Multi_Legal_Pile`; `_Commercial` subset CC BY-SA 4.0 | JSONL | mixed per subset | pretraining corpus; mines new sources |
+| G11 | **QuantGov / RegData** | word and restriction counts per part, US federal + state admin codes, Canada | quantgov.org bulk CSV | CSV | free | statistics, ✗ text |
+| G12 | **US SEC**, EDGAR full-text search | filings + exhibits since 2001 | efts.sec.gov (10,000 hits per query); bulk submissions API | JSON | public | disclosures, ✗ regulation; low priority |
 
 Sources: open.canada.ca dataset ff56de85-f8b9-4719-8dff-ecf362adf0af ·
 laws-lois.justice.gc.ca/eng/FAQ · research.legislation.gov.uk/data ·
