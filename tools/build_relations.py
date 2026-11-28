@@ -1,6 +1,6 @@
 """Build the relation sidecars for a Markdown corpus and measure them.
 
-    uv run python tools/build_relations.py id_regulation_md@1.2 work/id_reg_markdown \
+    uv run python tools/build_relations.py id_regulation_md@1.0 work/id_reg_markdown \
         --out work/relations --workers 16 [--every N] [--show 6]
 
 Runs the layers up to chunking (the sealed knowledge base), reads each document's relations

@@ -1,7 +1,7 @@
 # SOURCE_ID_REG_MARKDOWN.md — Ravel
 
 A measured reading of `Azzindani/ID_REG_Markdown` and the profile written from it,
-`registry/profiles/id_regulation_md@1.2.yaml`. (Measured with 1.0; 1.1 and 1.2 add the repairs in `PIPELINE.md` §8.2, and the superseded files were removed.) Everything below was counted, not recalled;
+`registry/profiles/id_regulation_md@1.0.yaml`. (Measured with the first version; the repairs in `PIPELINE.md` §8.2 followed, and on 2026-11-28 every version was collapsed into one file at 1.0, built to `docs/pipeline/STANDARD.md`. Measurements below name the version they were taken on, which git history holds.) Everything below was counted, not recalled;
 the commands that reproduce it are in §8. Nothing here has been run through
 `ravel extract` / `ravel chunk` yet — the profile is tested against lines, not against a
 build (§7).
@@ -106,7 +106,7 @@ repetition: `<!-- image -->` 1,890 files / 22,431 lines; `PRESIDEN REPUBLIK INDO
 
 ---
 
-## 4. The profile · `id_regulation_md@1.2`
+## 4. The profile · `id_regulation_md@1.0`
 
 A **separate profile, not `id_regulation@1.1`**: the family is the same, the noise model is
 not, and `id_regulation@1.0` is named explicitly by `test_chunk_run`, `test_extract_run` and
@@ -248,9 +248,10 @@ under a chapter or section heading that is not itself citable). Chapters: `N/A` 
 `LAMPIRAN` 5,835, `PENUTUP` 3,723, `PENJELASAN` 3,229, `BAB R ...` the rest. 2,438 chunks sit
 under a `BAB R` with no title, where the title is longer than `max_title_chars` or two lines.
 
-`id_regulation_md@1.2` adds the `pipeline:` section (`PIPELINE.md`): one chunk per pasal,
-`max_tokens` 4096 (! declared only: the corpus file states 512, which wins, and the published
-build is chunked at 512, `config_hash` `82ce5caa077e68c7`; see `EMBED_VERIFICATION.md` §6), a
+The profile's `pipeline:` section (`PIPELINE.md`): one chunk per pasal, `max_tokens` 4096 in
+the embedder's tokens (`STANDARD.md` §2; ! the published `ID_REG_RAG_2611` build was chunked at
+512 estimated tokens, because the corpus file stated 512 and won, `config_hash`
+`82ce5caa077e68c7`; see `EMBED_VERIFICATION.md` §6. It is rebuilt to the standard), a
 context header for the embedder, and floors measured per chunk on the
 same sample. On the sample that is 26,576 chunks (the default 1.0 build gives 90,052), 12.9%
 of them under 8 tokens before chapter titles were consumed as labels and 6.2% after.
@@ -288,10 +289,10 @@ for z in sorted(src.glob("*.zip")):
 EOF
 
 uv run python tools/probe_markdown_corpus.py structure id_regulation@1.0    work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py structure id_regulation_md@1.2 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py cite      id_regulation_md@1.2 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.2 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py facts    id_regulation_md@1.2 work/id_reg_markdown
-uv run python tools/probe_markdown_corpus.py labels   id_regulation_md@1.2 work/id_reg_markdown --every 48
+uv run python tools/probe_markdown_corpus.py structure id_regulation_md@1.0 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py cite      id_regulation_md@1.0 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py cleanup   id_regulation_md@1.0 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py facts    id_regulation_md@1.0 work/id_reg_markdown
+uv run python tools/probe_markdown_corpus.py labels   id_regulation_md@1.0 work/id_reg_markdown --every 48
 uv run pytest tests/test_profile_id_regulation_md.py tests/test_document_facts.py
 ```

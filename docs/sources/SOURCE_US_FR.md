@@ -107,5 +107,5 @@ vocabulary, so the two corpora are read as one: root `sources/GOVINFO` with `CFR
 `FR/` (govinfo's own layout; on Windows, junctions to `sources/US_CFR` and
 `sources/US_FR`), `snapshots: [CFR/current.txt, FR/current.txt]` so each keeps the
 edition its own fetch chose, provenance the govinfo bulk root, and `profile: auto`
-(`CFRDOC` -> `us_cfr@1.1`, `FEDREG` -> `us_fr@1.0`). `ravel embed --reuse` takes the
+(`CFRDOC` -> `us_cfr@1.0`, `FEDREG` -> `us_fr@1.0`). `ravel embed --reuse` takes the
 CFR's vectors from its own build instead of embedding them again.

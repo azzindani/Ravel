@@ -1,6 +1,6 @@
 """Verify a knowledge-base build against the documents it came from · read-only, measured.
 
-    python tools/verify_kb.py id_regulation_md@1.2 work/id_reg_markdown --every 23 --workers 8
+    python tools/verify_kb.py id_regulation_md@1.0 work/id_reg_markdown --every 23 --workers 8
 
 Runs the real pipeline in memory (`TextExtractor` -> `Structurer` -> the profile's chunker and
 config) and answers one question per document: **did anything the document says fail to
@@ -540,7 +540,7 @@ def report(s: dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", maxsplit=1)[0])
-    parser.add_argument("profile", help="a registry ref, e.g. id_regulation_md@1.2")
+    parser.add_argument("profile", help="a registry ref, e.g. id_regulation_md@1.0")
     parser.add_argument("directory", type=Path, help="a directory of .md files")
     parser.add_argument(
         "--every", type=int, default=23, help="read every Nth file (default 23)"

@@ -117,7 +117,7 @@ A stand-in carries context that would otherwise be missing (the filename, for a 
 identity was not extracted) without repeating context that is there. A rewrite trims a
 value the extractor over-read before the model sees it; the chunk keeps the value as it was
 extracted. Field names in `when_empty` and `rewrite`, and every pattern, are checked when the
-profile loads. `id_regulation_md@1.4` uses both.
+profile loads. `id_regulation_md@1.0` uses both.
 Names in templates and in `expected.coverage` are checked against the chunk's fields when
 the profile loads; a typo is an error there, not a silently empty header at embed time.
 

@@ -202,7 +202,8 @@ own count. Spot checks cite as a lawyer would: `40 CFR 52.21` (EPA, 39 parts, p.
 vol 3), `21 CFR 101.9` (FDA), `26 CFR 1.61-1` (IRS), `29 CFR 1910.134` (OSHA),
 `45 CFR 164.502` (HHS), `12 CFR 1026.18` (CFPB).
 
-**Rebuilt with us_cfr@1.1** (`xml` + `gpo_cfr@1.0`), in a fresh workspace:
+**Rebuilt with us_cfr@1.1** (`xml` + `gpo_cfr@1.0`), in a fresh workspace (2026-11-21; that
+profile is now `us_cfr@1.0`, chunked to `docs/pipeline/STANDARD.md`):
 
 | | |
 |---|---|
