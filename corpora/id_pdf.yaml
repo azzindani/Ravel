@@ -33,7 +33,13 @@ extract:
     # in-process engine read ~23 s/page on the 8 GB laptop (EXTRACTION.md §2b).
     vlm_engine: api
     vlm_url: http://localhost:8001/v1/chat/completions
-    vlm_concurrency: 8
+    # 8 ranges of 4 pages in flight, each sent as one batch: docling alone keeps 3-4
+    # pages in flight and read 1.9 s a page; this read 1.0 (EXTRACTION.md §2b).
+    vlm_workers: 8
+    vlm_pages_per_call: 4
+    vlm_batch: 4
+    vlm_concurrency: 4
+    vlm_max_tokens: 4096
     tables: true
     device: auto
   # A docling document holds paragraphs, not lines, so far fewer blocks than native;

@@ -266,6 +266,17 @@ class DoclingSpec(Base):
     vlm_concurrency: int = Field(default=8, ge=1)
     """Pages in flight to the `api` server at once: what lets vLLM batch them."""
 
+    vlm_workers: int = Field(default=8, ge=1)
+    """Page ranges of one document read at once on the VLM path. 1 reads it whole."""
+
+    vlm_pages_per_call: int = Field(default=4, ge=1)
+    """Pages in each range. Measured on the 8 GB laptop with vLLM: 8 workers x 4 pages read
+    1.0 s a page, against 1.9 s for docling alone (EXTRACTION.md §2b)."""
+
+    vlm_max_tokens: int = Field(default=4096, ge=256)
+    """The longest page the `api` server may write. A page that loops writes to this cap
+    and holds its range back; 4,096 is docling's own vLLM preset."""
+
     vlm_timeout_s: float = Field(default=180.0, gt=0)
     """Seconds one page may take on the `api` server before docling gives up on it."""
 
@@ -278,6 +289,10 @@ class DoclingSpec(Base):
     by the page count, so a 400-page regulation is not held to a 10-page budget."""
 
     images_scale: float = Field(default=2.0, gt=0)
+
+    fallback: bool = True
+    """When one pipeline fails on a document, read it once with the other, and say so in
+    its warnings."""
 
 
 class ExtractSpec(Base):

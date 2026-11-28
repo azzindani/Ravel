@@ -118,6 +118,29 @@ Measured on an RTX 3070 Ti Laptop (8 GB), `sources/ID_PDF`, docling 2.154:
 Probe of the 50 largest files (2.0 GB, 14,652 pages): 34 CLEAN (9,791 pages), 14 DAMAGED
 (4,619), 2 ABSENT (242). So the VLM reads a third of the pages and takes nearly all the time.
 
+**Making it fast (2026-11-28).** The first top-50 run read ~1,500 VLM pages in four hours
+and was stopped. Measured on `Perbup_Boyolali_Tahun_2011_No_41.pdf` (127 pages, DAMAGED):
+
+| change | s/page | why |
+|---|---|---|
+| docling alone, `vlm_batch` 1, 8 or 16 | 1.9 | docling keeps 3-4 pages in flight and waits on each batch: vLLM idled at `Running: 0` |
+| 8 page ranges x 4 pages in parallel (`vlm_workers`, `vlm_pages_per_call`) | **1.0** end to end, 127 pages in 127.9 s | the server batches up to 19 requests, 2,100 tokens/s |
+| `vlm_max_tokens` 8,192 instead of 4,096 | 2.3 | the same 36-37 pages hit either cap: they loop, so a higher cap only writes more repetition |
+| `repetition_penalty` 1.05 | rejected | loops 36 -> 29, but a tenth of clean pages under 0.70 similar and 30% of the text gone |
+
+! **36 of 127 pages loop**, mostly tables: the model repeats a cell and leaks its location
+tokens. Each such page keeps what it read before the loop, and says so in
+`extraction.warnings` (`VLM output incomplete (stop_reason=length)`). ✗ solved.
+
+The standard pipeline, warm, on the 271-page CLEAN file: 54.1 s with TableFormer accurate,
+55.8 s fast, 17.5 s with no table structure. 27 tables cost ~37 s, ~1.4 s each, whatever
+the mode; layout alone runs 15-17 pages/s. The 2.3 pages/s above counted the cold start.
+
+! Two faults the first run quarantined, both fixed: a `table_ref` / `figure_ref` block that
+carried its caption as text failed the render/parse round trip, and with it the document
+(5 of the first 50); and docling's standard pipeline raised `list index out of range` on one
+PDF, which `fallback: true` now reads once with the other pipeline, recorded in warnings.
+
 > ! **vLLM strips DocTags unless told not to.** DocTags are special tokens; with vLLM's
 > default `skip_special_tokens` every request returned 200 and docling parsed every page
 > as empty (0 characters for 3 pages, against 7,219 in-process). The extractor sends

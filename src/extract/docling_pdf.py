@@ -103,7 +103,10 @@ class DoclingExtractor:
                     # docling then parses every page as empty while every request
                     # returns 200: measured 0 characters for 3 pages, against 7,219
                     # from the in-process engine. Kept, the two agree at 0.9992.
-                    params={"skip_special_tokens": False, "max_tokens": 8192},
+                    params={
+                        "skip_special_tokens": False,
+                        "max_tokens": self.spec.vlm_max_tokens,
+                    },
                 )
             elif self.spec.vlm_engine == "vllm":
                 engine = eng.VllmVlmEngineOptions()
@@ -114,10 +117,12 @@ class DoclingExtractor:
         options.scale = self.spec.images_scale
         return options
 
-    def converter(self, pipeline: str) -> Any:
-        """One converter per pipeline, built once: model weights load on first use."""
-        if pipeline in self._converters:
-            return self._converters[pipeline]
+    def converter(self, pipeline: str, *, slot: int = 0) -> Any:
+        """One converter per pipeline and worker slot, built once: model weights load on
+        first use. ! A slot each, because one converter is not shared between threads."""
+        key = f"{pipeline}:{slot}"
+        if key in self._converters:
+            return self._converters[key]
 
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions, VlmPipelineOptions
@@ -146,8 +151,51 @@ class DoclingExtractor:
                     images_scale=self.spec.images_scale,
                 )
             )
-        self._converters[pipeline] = DocumentConverter(format_options={InputFormat.PDF: fmt})
-        return self._converters[pipeline]
+        self._converters[key] = DocumentConverter(format_options={InputFormat.PDF: fmt})
+        return self._converters[key]
+
+    def _ranges(self, pipeline: str, pages: int) -> list[tuple[int, int] | None]:
+        """The page ranges one document is read in: the whole of it, or for the VLM path
+        `vlm_pages_per_call` pages at a time, so `vlm_workers` ranges are in flight at once.
+
+        ! Docling keeps at most 3-4 pages in flight on its own and waits for each batch to
+        finish, so the server idled between pages: 1.9 s a page at any `vlm_batch`
+        (EXTRACTION.md §2b). Ranges in parallel brought it to 1.0 s on the same pages.
+        """
+        span = self.spec.vlm_pages_per_call
+        if pipeline != "vlm" or self.spec.vlm_workers <= 1 or pages <= span:
+            return [None]
+        return [(start, min(start + span - 1, pages)) for start in range(1, pages + 1, span)]
+
+    def _convert(self, path: Path, pipeline: str, pages: int) -> tuple[list[Any], str | None]:
+        """Docling's results, in page order, and, when any range failed, why."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from docling.datamodel.base_models import ConversionStatus
+
+        ranges = self._ranges(pipeline, pages)
+        workers = min(self.spec.vlm_workers, len(ranges))
+
+        def one(index_range: tuple[int, tuple[int, int] | None]) -> Any:
+            index, page_range = index_range
+            converter = self.converter(pipeline, slot=index % workers)
+            if page_range is None:
+                return converter.convert(path, raises_on_error=False)
+            return converter.convert(path, raises_on_error=False, page_range=page_range)
+
+        try:
+            if workers <= 1:
+                results = [one((0, r)) for r in ranges]
+            else:
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    results = list(pool.map(one, enumerate(ranges)))
+        except Exception as exc:  # noqa: BLE001 — docling raises anything; recorded
+            return [], f"{type(exc).__name__}: {exc}"
+        failed = [r for r in results if r.status is ConversionStatus.FAILURE]
+        if failed:
+            errors = "; ".join(str(e.error_message) for r in failed for e in r.errors[:2])
+            return results, f"{len(failed)} of {len(results)} ranges: {errors or 'no reason'}"
+        return results, None
 
     # -- the extractor ------------------------------------------------------
     def extract(
@@ -171,23 +219,28 @@ class DoclingExtractor:
         pages = probe.pages or 0
 
         started = time.monotonic()
-        try:
-            result = self.converter(pipeline).convert(path, raises_on_error=False)
-        except Exception as exc:  # noqa: BLE001 — a parse failure is deterministic
-            raise ExtractionFailed(f"{path.name}: docling cannot read it · {exc}") from exc
+        results, failure = self._convert(path, pipeline, pages)
+        warnings: list[str] = []
+        other = "vlm" if pipeline == "standard" else "standard"
+        if failure and self.spec.fallback and other != pipeline:
+            # ! A docling fault on one pipeline is a fault of that pipeline, ✗ of the PDF:
+            # the standard pipeline's layout stage raised `list index out of range` on a
+            # 2026-11-28 regulation the VLM reads. Tried once, recorded, never silent.
+            warnings.append(f"docling {pipeline} failed ({failure}); read with {other}")
+            pipeline = other
+            results, failure = self._convert(path, pipeline, pages)
+        if failure or not results:
+            raise ExtractionFailed(f"{path.name}: docling failed · {failure or 'no result'}")
         elapsed = time.monotonic() - started
 
-        if result.status is ConversionStatus.FAILURE:
-            errors = "; ".join(str(e.error_message) for e in result.errors[:3])
-            raise ExtractionFailed(f"{path.name}: docling failed · {errors or 'no reason'}")
-
-        warnings = [f"docling: {e.error_message}" for e in result.errors[:20]]
-        if result.status is not ConversionStatus.SUCCESS:
-            warnings.insert(0, f"docling status {result.status.value}")
+        warnings += [f"docling: {e.error_message}" for r in results for e in r.errors][:20]
+        statuses = {r.status for r in results}
+        if statuses != {ConversionStatus.SUCCESS}:
+            warnings.insert(0, "docling status " + ", ".join(sorted(x.value for x in statuses)))
         if pages and elapsed > self.spec.slow_page_s * pages:
             warnings.append(f"slow: {elapsed:.0f}s for {pages} pages")
 
-        builder, tables, assets = to_canon(result.document)
+        builder, tables, assets = to_canon(*(r.document for r in results))
         if not any(b.text.strip() for b in builder.blocks) and not tables:
             # ! Never an empty success (LOOPHOLES.md §2).
             raise ExtractionFailed(f"{path.name}: docling read {pages} pages and found no text")
@@ -282,8 +335,10 @@ def _table(item: Any, table_id: str, page: int | None, bbox: Any, doc: Any) -> T
     )
 
 
-def to_canon(doc: Any) -> tuple[BlockBuilder, list[Table], list[Asset]]:
-    """A `DoclingDocument` as canonical blocks, tables and assets, in reading order."""
+def to_canon(*docs: Any) -> tuple[BlockBuilder, list[Table], list[Asset]]:
+    """`DoclingDocument`s as one document's canonical blocks, tables and assets, in reading
+    order: the page ranges of one PDF, read apart, joined in page order through one builder,
+    so the heading stack runs on across them."""
     from docling_core.types.doc.common.content_layer import ContentLayer
     from docling_core.types.doc.items.picture.picture import PictureItem
     from docling_core.types.doc.items.table.table import TableItem
@@ -293,7 +348,12 @@ def to_canon(doc: Any) -> tuple[BlockBuilder, list[Table], list[Asset]]:
     assets: list[Asset] = []
     layers = {ContentLayer.BODY, ContentLayer.FURNITURE}
 
-    for item, _depth in doc.iterate_items(included_content_layers=layers):
+    walked = (
+        (part, item)
+        for part in docs
+        for item, _depth in part.iterate_items(included_content_layers=layers)
+    )
+    for doc, item in walked:
         label = str(getattr(item.label, "value", item.label))
         page, bbox = _bbox(item, doc)
 
@@ -302,7 +362,11 @@ def to_canon(doc: Any) -> tuple[BlockBuilder, list[Table], list[Asset]]:
             tables.append(table)
             builder.add(
                 BlockType.TABLE_REF,
-                table.caption or "",
+                # ! Empty: a reference block renders as its ref alone, so text here fails the
+                # render/parse round trip and the whole document with it (5 of the first 50
+                # large PDFs). The caption is `table.caption`, and docling yields it again as
+                # its own caption item.
+                "",
                 page=page,
                 bbox=bbox,
                 ref=table.id,
@@ -320,7 +384,7 @@ def to_canon(doc: Any) -> tuple[BlockBuilder, list[Table], list[Asset]]:
             assets.append(asset)
             builder.add(
                 BlockType.FIGURE_REF,
-                item.caption_text(doc) or "",
+                "",
                 page=page,
                 bbox=bbox,
                 ref=asset.id,

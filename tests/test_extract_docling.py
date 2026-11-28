@@ -138,3 +138,44 @@ def test_bbox_is_top_left_like_the_native_extractor() -> None:
     title = builder.blocks[1]
     assert title.page == 1
     assert title.bbox == (50.0, 40.0, 550.0, 60.0)
+
+
+def test_a_captioned_table_survives_the_round_trip() -> None:
+    """! A reference block renders as its ref alone, so a caption put in its text failed
+    the render/parse round trip and the whole document with it (5 of the first 50 large
+    PDFs). The caption lives on the table, and docling yields it again as its own item."""
+    from datetime import UTC, datetime
+
+    from canon import CanonicalDoc, Extraction, Severity, Source, validate
+    from extract.docling_pdf import to_canon
+
+    dc = pytest.importorskip("docling_core.types.doc")
+    doc = dc.DoclingDocument(name="t")
+    doc.add_page(page_no=1, size=dc.Size(width=600, height=800))
+    caption = doc.add_text(dc.DocItemLabel.CAPTION, "Tabel 1 Tarif Retribusi")
+    cell = dc.TableCell(
+        text="Rp 5.000",
+        start_row_offset_idx=0,
+        end_row_offset_idx=1,
+        start_col_offset_idx=0,
+        end_col_offset_idx=1,
+    )
+    doc.add_table(dc.TableData(table_cells=[cell], num_rows=1, num_cols=1), caption=caption)
+    doc.add_text(dc.DocItemLabel.TEXT, "Pasal 2")
+
+    builder, tables, assets = to_canon(doc)
+    canon = CanonicalDoc(
+        doc_id="sha256:" + "0" * 64,
+        source=Source(
+            path="a.pdf", title="a", mime="application/pdf", bytes=1, sha256="0" * 64
+        ),
+        extraction=Extraction(
+            extractor="docling", extractor_version="1.0", extracted_at=datetime.now(UTC)
+        ),
+        blocks=builder.blocks,
+        tables=tables,
+        assets=assets,
+    )
+    assert [i for i in validate(canon) if i.severity is Severity.ERROR] == []
+    assert tables[0].caption == "Tabel 1 Tarif Retribusi"
+    assert next(b for b in builder.blocks if b.type is BlockType.TABLE_REF).text == ""
