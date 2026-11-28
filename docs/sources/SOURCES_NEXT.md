@@ -43,8 +43,25 @@ says so.
 | 33 | **Australia (Commonwealth)**, Federal Register of Legislation | federal legislation | keyless REST API, JSON + documents | JSON, DOCX | | candidate; replaces "not bulk" note above |
 | 34 | **Singapore**, Statutes Online | Acts, subsidiary legislation | ✗ API; scrape only | HTML | | weak candidate |
 | 35 | **Constitutions**, Constitute Project | ~200 national constitutions, topic-tagged | linked data + API | RDF, JSON | some translations restricted | candidate |
+| 36 | **Ireland**, eISB | Acts 1922-present (SIs too) | ELI URI with `xml` suffix per Act; data.gov.ie listing | XML | Oireachtas PSI Licence (CC BY 4.0) | candidate |
+| 37 | **Hong Kong**, e-Legislation (DoJ) | all current + past (from 1997) legislation, EN + Traditional Chinese | data.gov.hk ZIP packages by cap range; weekly XML list | XML in ZIP | data.gov.hk terms | candidate; strong bulk |
+| 38 | **Canada (BC)**, BC Laws | all B.C. provincial legislation | CiviX API (XML, XPath) + REST API | XML | OGL-BC | candidate |
+| 39 | **Lithuania**, TAR (Seimas) | Register of Legal Acts: objects, adopters, chronologies, texts | data.gov.lt dataset 2613 | open data formats | open data | candidate |
+| 40 | **Luxembourg**, Legilux | national legislation | SPARQL endpoint (data.public.lu, Casemates) | RDF | CC BY 4.0 | candidate |
+| 41 | **Portugal**, Diário da República | gazette from 1910, ELI URIs | `data.dre.pt/eli/...` | to confirm | | candidate; bulk to confirm |
+| 42 | **Vietnam**, vbpl.vn | national legal documents, article-level since 2026 | MoJ web service `ws.vbpl.vn` (documented API) | XML/JSON | reported open | candidate |
+| 43 | **Bangladesh**, BLAD | 1,484 Acts 1799-2025 | Kaggle `sakhadib/bangladesh-legal-acts-dataset`; source bdlaws.minlaw.gov.bd | JSON | CC BY-SA 4.0 | candidate; ready dataset |
+| 44 | **Switzerland**, `rcds/swiss_legislation` | federal + cantonal legislation | Hugging Face | Parquet | to confirm | candidate; ready dataset |
+| 45 | **Germany**, Open Legal Data (laws) | 113,537 laws | Hugging Face `openlegaldata/laws-germany` | Parquet | ODbL | overlaps de_gii |
+| 46 | **Hungary**, Nemzeti Jogszabálytár | legislation in force | web only | HTML | | weak candidate |
+| 47 | **Greece**, Diavgeia | every administrative act of the public sector | open API, no key for reading | XML/JSON | open | candidate; acts, ✗ statutes |
+| 48 | **UAE**, UAE Legislation | federal legislation since 1971 | portal; MoJ API marketplace | | | weak candidate |
+| 49 | **Qatar**, Al Meezan | laws since 1961, rulings, opinions | portal, no bulk (2015) | HTML | CC BY (2015) | weak candidate |
+| 50 | **Saudi Arabia**, Bureau of Experts | laws in English translation | Word downloads per law | DOCX | | weak candidate |
+| 51 | **Turkey**, mevzuat.gov.tr | consolidated legislation | site only; HF scrapes | HTML | | weak candidate |
+| 52 | **Israel**, National Legislation Database | laws in force since the Mandate, Hebrew | portal | HTML | | weak candidate |
 
-**Candidates (rows 7-35, surveyed 2026-11-28 by web search, ✗ fetched).** Ranked for
+**Candidates (rows 7-52, surveyed 2026-11-28 by web search, ✗ fetched).** Ranked for
 Ravel by bulk access and structure: Spain, Finland, Taiwan and Norway have keyless bulk or
 list-all endpoints and structured XML; Austria, Switzerland, Italy and the Netherlands
 are structured but need per-document crawling; Poland's text is mostly PDF. Not
@@ -81,15 +98,33 @@ needs its own profile (a judgment is not chunked like a statute).
 | C9 | **UK**, Find Case Law (TNA) | judgments + tribunal decisions | API + Atom feeds; bulk on request | LegalDocML XML | Open Justice Licence; computational use needs a licence | |
 | C10 | **Indonesia**, Direktori Putusan MA | ~10.4M decisions | search portal only; topic datasets (indo-law, 22,630 criminal) | HTML, PDF | to confirm | no bulk; Indonesian like id_reg |
 | C11 | **Japan**, 裁判所 判例検索 | Supreme Court + lower courts | search portal, PDF only | PDF | | national civil-judgment DB planned (Act No. 49 of 2025) |
+| C12 | **Netherlands**, Rechtspraak Open Data | > 500,000 pseudonymised judgments, ECLI, citations | open API, no key; XML dump ended 2023 | XML | CC0 | |
+| C13 | **Switzerland**, entscheidsuche.ch / OpenCaseLaw | > 1M decisions, all 26 cantons + federal | daily Parquet (OpenCaseLaw), REST API | Parquet, HTML | CC0 (reported) | strong bulk |
+| C14 | **Switzerland**, Federal Supreme Court dataset | 127,477 cases 2007-2024 | Zenodo | CSV/TXT | open | |
+| C15 | **Germany**, Open Legal Data (courts) | 423,941 decisions + 7.4M citations (May 2026) | Hugging Face datasets; API (not for bulk) | Parquet, JSON | ODbL | strong bulk; German like de_gii |
+| C16 | **Brazil**, STJ open data portal | case law, precedents, judgment sessions, e-gazette, full text | portal downloads | CSV, JSON | reuse incl. commercial | |
+| C17 | **Brazil**, CNJ DataJud | procedural data, all courts | public API | JSON | | metadata, ✗ full text |
+| C18 | **South Korea**, precedents | ~80K Supreme Court + lower + Constitutional Court | data.go.kr PrecedentInformationService; LBOX OPEN 147K | XML, JSON | precedents not copyrighted | |
+| C19 | **Taiwan**, Judicial Yuan open data | judgments + 800 datasets | opendata.judicial.gov.tw, judgments need membership | JSON | OGDL-Taiwan 1.0 | |
+| C20 | **Mexico**, SCJN Buscador Jurídico | rulings, theses (SJF) | bj.scjn.gob.mx open data section, API listed | JSON | | to confirm |
+| C21 | **Spain**, CENDOJ | Supreme Court + higher courts | search, PDF; reuse by agreement | PDF | | no bulk |
+| C22 | **ICJ**, CD-ICJ corpus | every published ICJ decision | Zenodo | PDF, TXT, CSV | CC0 | ready dataset |
+| C23 | **WTO**, dispute settlement documents | every DSU dispute since 1995 | data.wto.org | HTML, XLSX, DOCX | | |
 | B1 | **US**, GovInfo bulk BILLS / BILLSTATUS | bills, status, public laws, Statutes at Large | govinfo.gov/bulkdata, by Congress | USLM XML | public domain | enrolled bills from the 113th |
 | B2 | **US**, Federal Register + Regulations.gov | rules, proposed rules, notices; dockets + comments | GovInfo bulk XML; Regulations.gov API v4 (1,000/h) + bulk download | XML, JSON | public domain | the rulemaking behind us_cfr |
 | B3 | **UK**, Parliament | bills, divisions, questions, SIs, treaties | developer.parliament.uk REST + SPARQL | JSON, RDF | Open Parliament Licence | |
 | B4 | **EU**, Parliament open data | adopted texts, votes, documents | data.europarl.europa.eu API v2 (500 / 5 min) | JSON-LD | CC BY 4.0 | Parltrack for bulk |
 | B5 | **US states**, Open States (Plural) | bills + votes, 50 states + DC + PR, full bill text in JSON | monthly CSV/JSON per session, PostgreSQL dump | CSV, JSON, SQL | public domain | scraped from state sites |
 | B6 | **US states**, LegiScan | bills, votes, legislators, all states + Congress | weekly dataset snapshots, API key (free) | CSV, JSON | CC BY 4.0 | |
+| B7 | **US**, Congress.gov API | bills, amendments, actions, text | api.congress.gov v3, api.data.gov key | JSON, XML | public domain | |
+| B8 | **US**, United States Code (OLRC) | the whole Code per release point | uscode.house.gov zip per title or whole | USLM XML, XHTML, PDF | public domain | strong bulk |
+| B9 | **Japan**, Diet minutes (国会会議録) | every Diet session since 1947 | NDL API (kokkai.ndl.go.jp/api.html) | XML, JSON | to confirm | |
+| B10 | **Hong Kong**, LegCo Bills Database | bills by session | OData API | XML, JSON | data.gov.hk terms | |
 | G1 | **FAO**, FAOLEX | national legislation on food, agriculture, environment, ~200 countries; constitutions | open data CSV downloads | CSV + links | CC BY-NC-SA 3.0 IGO | metadata + summaries, multilingual |
 | G2 | **WIPO Lex** | > 50,000 IP laws and treaties, 200 jurisdictions | search only, no bulk found | HTML, PDF | | |
 | G3 | **UN Treaty Collection** | UNTS, League of Nations, MTDSG | search only | HTML, PDF | open access | |
+| G4 | **InforMEA** | environmental treaties, decisions, national reports | OData API | JSON | GPL toolkit; harvest by agreement | |
+| G5 | **EUR-Lex-Sum** | 1,500 act/summary pairs per language, 24 languages | Hugging Face `dennlinger/eur-lex-sum` | JSON | CC BY 4.0 | ready dataset |
 
 Sources: open.canada.ca dataset ff56de85-f8b9-4719-8dff-ecf362adf0af ·
 laws-lois.justice.gc.ca/eng/FAQ · research.legislation.gov.uk/data ·
