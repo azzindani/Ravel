@@ -105,7 +105,8 @@ class Units(_Base):
     #: before the number pattern of the unit's heading.
     number_attr: str | None = None
     #: Unit -> attribute -> sources, relative to the unit's element and tried in order:
-    #: `path` (an element's text), `path@attr`, `.@attr` (its own attribute), `=text` (a
+    #: `path` (an element's text), `path@attr`, `.@attr` (its own attribute), `/path` (from
+    #: the document's root: front matter beside the text), `=text` (a
     #: constant, last in a list). `number`, when stated, is the unit's number instead of
     #: the one its heading prints. `marker`, when stated and the heading opens with it, is
     #: the heading's marker and the rest its name (`<enbez>Anhang 1 zu Nummer 3</enbez>`).
@@ -137,6 +138,9 @@ class HeadingRule(_Base):
     - `first`: the first direct child past the `skip` tags, if its tag is one of these;
       any other child ends the search. With `anywhere`, the first child with the tag,
       wherever it sits. Consumed.
+    - `take`: a descendant a `path` or a `join` slot reads is removed once read, so it is
+      not read again as body. Spain's BOE prints an article's heading as a paragraph of
+      its text (`<version><p class="articulo">Artículo 1.</p><p>...`), ✗ in furniture.
     """
 
     path: str | list[str] | None = None
@@ -144,6 +148,8 @@ class HeadingRule(_Base):
     first: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
     anywhere: bool = False
+    # ! Left out of the dump while false: no other dialect's hash moves.
+    take: bool = Field(default=False, exclude_if=lambda v: not v)
 
 
 class LabelRule(_Base):
@@ -185,7 +191,8 @@ class Reserved(_Base):
 class Document(_Base):
     """The file's own front matter: the outermost unit and the edition's date.
 
-    `top` is the root's child read as the outermost unit; without it, the root itself if
+    `top` is the root's child read as the outermost unit, or a path to it (`data/texto`:
+    Spain's BOE prints its metadata beside the text); without it, the root itself if
     it is a unit, else every unit among its children. With `trailing`, units and pages
     printed after `top` as the root's children are read inside it (title 3 prints its
     chapter after an empty TITLE). Children in `ignore` are read nowhere and not counted;
@@ -219,6 +226,11 @@ class Document(_Base):
     #: Paths may cross into linked files (`FMX/DOC.MAIN.PUB/REF.PHYS/ACT/TITLE`), since links
     #: are followed first. ! Left out of the dump while empty: no other dialect's hash moves.
     drop: list[str] = Field(default_factory=list, exclude_if=lambda v: not v)
+    #: Paths, relative to the root, of an element repeated once per edition of the same
+    #: text, oldest first: only the last is read, the earlier ones removed with `drop`.
+    #: Spain's BOE keeps every wording an article has had (`bloque/version`), and only the
+    #: newest is in force. ! Left out of the dump while empty.
+    latest: list[str] = Field(default_factory=list, exclude_if=lambda v: not v)
 
 
 class Text(_Base):
@@ -368,7 +380,7 @@ class XmlDialect(_Base):
         for name in (*self.reserved.never, self.document.dated_unit):
             if name is not None and name not in units:
                 raise ValueError(f"{self.ref}: names unknown unit {name!r}")
-        if self.document.top and self.document.top not in self.units.tags:
+        if self.document.top and self.document.top.rpartition("/")[2] not in self.units.tags:
             raise ValueError(f"{self.ref}: document.top {self.document.top} is not a unit tag")
         if stray := set(self.items) - set(self.containers):
             raise ValueError(f"{self.ref}: item lists must be containers: {sorted(stray)}")

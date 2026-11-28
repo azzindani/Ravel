@@ -1,0 +1,53 @@
+id: es_boe
+title: Spanish consolidated legislation (BOE, state and regional)
+description: >
+  Every law the Agencia Estatal Boletín Oficial del Estado consolidates, state and regional,
+  as the wording in force (docs/sources/SOURCE_ES_BOE.md). Listed and fetched from the BOE's
+  open-data API, one XML per law. Fetched by `ravel sources fetch es_boe`; sources are
+  read-only and not in git.
+
+sources:
+  root: sources/ES_BOE
+  include: ["**/*.xml"]
+  snapshot: current.txt
+
+fetch:
+  kind: json_api
+  # ! The publisher's own index of the collection: every consolidated law, with the date of
+  # its current consolidation, paged by `limit`/`offset` (the API caps a page at 10,000).
+  listing: https://www.boe.es/datosabiertos/api/legislacion-consolidada
+  files: https://www.boe.es/datosabiertos/api/legislacion-consolidada/id/
+  items: data
+  id_field: identificador
+  # A new consolidation is a new file, kept under its date: the fetcher never overwrites.
+  edition_field: fecha_actualizacion
+  item_url: "https://www.boe.es/datosabiertos/api/legislacion-consolidada/id/{id}"
+  item_path: "{id}/{edition}.xml"
+  page_size: 1000
+  # ! The API answers `Accept: */*` with an error body under HTTP 200.
+  accept: application/xml
+  delay_s: 0.5
+  concurrency: 2
+  user_agent: ravel-fetch/1.0
+
+provenance:
+  base_url: https://www.boe.es/datosabiertos/api/legislacion-consolidada/id/
+  # Each file is saved under its id and edition; its URL is the API's, kept here.
+  url_map: fetch.urls.jsonl
+  note: >
+    Agencia Estatal Boletín Oficial del Estado, datos abiertos: legislación consolidada.
+    Reuse under the BOE's open-data conditions (Real Decreto 1495/2011); the consolidated
+    text has no legal value, only the gazette as published does.
+
+extract:
+  profile: es_boe@1.0
+  extractors: [xml]
+  failure_tolerance: 0.001
+
+chunk:
+  chunker: markup
+
+embed:
+  # The one vector space every regulation corpus shares, declared once
+  # (registry/embedders/): one Vera build and one index serve them all.
+  use: qwen3-embedding-0.6b@1.0

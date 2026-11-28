@@ -115,6 +115,7 @@ class FetchSpec(Base):
         "listing",
         "govinfo_tree",
         "sparql",
+        "json_api",
     ]
     listing: str
     """`govinfo_cfr`: the bulk JSON root (`.../bulkdata/json/CFR`). `ecfr`: `titles.json`.
@@ -122,7 +123,9 @@ class FetchSpec(Base):
     `archive_index`: a web server's directory index of dated archives
     (`https://echanges.dila.gouv.fr/OPENDATA/LEGI/`). `archive_url`: the one URL that serves
     the publisher's current archive (e-Gov's `bulkdownload?file_section=1`). `listing`: an
-    index the publisher keeps of every file (Germany's `gii-toc.xml`), read by `links`."""
+    index the publisher keeps of every file (Germany's `gii-toc.xml`), read by `links`.
+    `json_api`: a paged JSON listing of every document (`limit`/`offset`), each item naming
+    the document's id and the date of its current text (Spain's BOE consolidated laws)."""
     files: str
     """URL prefix of the files; their path below it is their path below `sources.root`.
     `github`: `https://raw.githubusercontent.com/owner/name/`, below which each file is
@@ -171,6 +174,25 @@ class FetchSpec(Base):
     timeout_s: float = Field(default=300, gt=0)
     retries: int = Field(default=3, ge=0)
     user_agent: str = "ravel-fetch/1.0"
+    accept: str = "*/*"
+    """The `Accept` header a file is downloaded with. ! A publisher API that negotiates its
+    format answers `*/*` with an error body, under HTTP 200 (the BOE's)."""
+    items: str | None = None
+    """`json_api`: where a listing page keeps its items, as a dotted path (`data`)."""
+    id_field: str | None = None
+    """`json_api`: the item field that is the document's id (`identificador`)."""
+    edition_field: str | None = None
+    """`json_api`: the item field that dates the document's current text
+    (`fecha_actualizacion`), a string that sorts oldest first. A new value is a new file:
+    the fetcher never overwrites, so each edition is kept under its own path."""
+    item_url: str | None = None
+    """`json_api`: the document's URL, a template on `{id}`, under `files`."""
+    item_path: str | None = None
+    """`json_api`: where the document is saved below `sources.root`, a template on `{id}` and
+    `{edition}` (`{id}/{edition}.xml`). Its URL is kept in `provenance.url_map`."""
+    limit_param: str = "limit"
+    offset_param: str = "offset"
+    """`json_api`: the listing's paging parameters; `page_size` items a page."""
 
 
 class ProvenanceSpec(Base):
@@ -652,6 +674,20 @@ class CorpusSpec(Base):
                 )
             if self.provenance.archive_suffix and not self.fetch.paths:
                 raise ValueError("listed archives need fetch.paths, the members unpacked")
+        if self.fetch and self.fetch.kind == "json_api":
+            needed = ("items", "id_field", "item_url", "item_path")
+            missing = [n for n in needed if not getattr(self.fetch, n)]
+            if missing:
+                raise ValueError(f"fetch.kind json_api needs fetch.{', fetch.'.join(missing)}")
+            if "{id}" not in (self.fetch.item_url or "") or "{id}" not in (
+                self.fetch.item_path or ""
+            ):
+                raise ValueError("fetch.item_url and fetch.item_path are templates on {id}")
+            if not self.provenance.url_map:
+                raise ValueError(
+                    "fetch.kind json_api saves a document under its id and edition, not its "
+                    "URL: name provenance.url_map, where each file's URL is kept"
+                )
         if self.fetch and self.fetch.kind == "archive_url":
             if not (self.fetch.archive and self.fetch.paths and self.provenance.archive_suffix):
                 raise ValueError(

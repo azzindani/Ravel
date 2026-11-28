@@ -1,0 +1,138 @@
+id: boe
+version: "1.0"
+title: BOE consolidated legislation XML (Spain, datosabiertos API)
+description: >
+  One file per consolidated Spanish law, state or regional, as the Agencia Estatal Boletín
+  Oficial del Estado serves it from `datosabiertos/api/legislacion-consolidada/id/<id>`
+  (docs/sources/SOURCE_ES_BOE.md). `<response><data>` holds the law's metadata
+  (`metadatos`: rank, number, dates), its analysis (subjects, references), its ELI RDF, and
+  `texto`: the law as a flat run of `<bloque>`s, each typed (`tipo`: `precepto` an article
+  or disposition, `encabezado` a heading, `preambulo`, `firma`, `nota_inicial`) and each
+  holding one `<version>` per wording it has had, oldest first. Paragraphs are `<p>`s named
+  by `class` (`articulo`, `parrafo`, `capitulo_num`, `capitulo_tit`, `seccion` ...). Read by
+  the `xml` extractor; an element not named here is still read for its text and named in
+  `extraction.warnings`.
+
+document:
+  detect: {root: '^response$'}
+  # The law is `texto`: its bloques are the headings and articles, read in order.
+  top: data/texto
+  ignore: [status, data]
+  # `Ley Orgánica 13/1982, de 10 de agosto, de reintegración ...`: the law prints no heading
+  # in its text, and its metadata states the title.
+  compose: [data/metadatos/titulo]
+  number: data/metadatos/numero_oficial
+  date: [data/metadatos/fecha_disposicion]
+  dated_unit: law
+  # ! Every wording a bloque has had is kept, oldest first (130 of 1,533 bloques in 38
+  # sampled laws hold 2-6, all in date order); only the last is in force.
+  latest: [data/texto/bloque/version]
+
+units:
+  tags:
+    texto: law
+  # A bloque's type says what it is. An `encabezado` is a heading, read by `flat` below.
+  by_attr:
+    tag: '^bloque$'
+    attr: tipo
+    values:
+      precepto: article
+      preambulo: preamble
+      firma: signature
+      nota_inicial: note
+      parte_dispositiva: part
+      parte_final: part
+  # A heading bloque opens the division its title names, which runs to the next heading as
+  # deep or shallower. An `encabezado` whose title names none of these (`[Información
+  # relacionada]`, `REGLAMENTO ...`) is read as text.
+  flat:
+    tag: '^bloque$'
+    attr: titulo
+    match: regex
+    values:
+      '(?i)libro\b.*': division1
+      '(?i)t[íi]tulo\b.*': division2
+      '(?i)cap[íi]tulo\b.*': division3
+      '(?i)secci[óo]n\b.*': division4
+      '(?i)subsecci[óo]n\b.*': division5
+      '(?i)anexo\b.*': annex
+      # ! A disposition (`Disposición adicional primera`, `... final`, `... derogatoria`)
+      # follows the articles and belongs to no título or capítulo: read as an article, it
+      # was cited inside the law's last chapter. Each opens a unit of its own at the
+      # annexes' depth, which closes the chapters before it.
+      '(?i)disposici[óo]n\s.*': disposition
+  attrs:
+    law:
+      # `Ley Orgánica`, `Real Decreto`, `Orden`: the rank the law is cited by.
+      type: ['/data/metadatos/rango']
+      number: ['/data/metadatos/numero_oficial']
+      scope: ['/data/metadatos/ambito']
+      department: ['/data/metadatos/departamento']
+      eli: ['/data/metadatos/url_eli']
+
+headings:
+  default:
+    # `CAPÍTULO I` + `De las Instituciones`, two paragraphs; `Sección 2.ª Banco Foral`, one.
+    join:
+      - ['version/p[@class="libro"]', 'version/p[@class="libro_num"]',
+         'version/p[@class="titulo_num"]', 'version/p[@class="titulo"]',
+         'version/p[@class="capitulo_num"]', 'version/p[@class="capitulo"]',
+         'version/p[@class="seccion"]', 'version/p[@class="subseccion"]',
+         'version/p[@class="anexo_num"]', 'version/p[@class="anexo"]']
+      - ['version/p[@class="libro_tit"]', 'version/p[@class="titulo_tit"]',
+         'version/p[@class="capitulo_tit"]', 'version/p[@class="anexo_tit"]']
+    take: true
+  law: {}
+  # `Artículo 4. Regulación registral.`, `Disposición transitoria primera. ...`, `Sexto.`
+  article:
+    path: ['version/p[@class="articulo"]']
+    take: true
+  # ! A disposition is not always headed `articulo`: `DISPOSICIÓN FINAL` alone, as a
+  # chapter-style line, is its first paragraph (Ley 6/1983 de Cantabria). Without a heading
+  # its text was cited as the law.
+  disposition:
+    path: ['version/p[@class="articulo"]', 'version/p[1]']
+    take: true
+  preamble: {}
+  signature: {}
+  note: {}
+  part: {}
+
+labels:
+  default:
+    # `CAPÍTULO I De las Instituciones`, `Sección 2.ª Banco Foral`, `ANEXO II (Sin efecto)`.
+    pattern: '^(?P<marker>\S+(?:\s+\S+?)?)\.?(?:\s+(?P<name>.*))?$'
+    number: '^\S+\s+(?P<number>\S+?)\.?$'
+  law:
+    # `Ley Orgánica 13/1982, de 10 de agosto, de ...` · `Orden SCO/2088/2006, de 15 de junio`
+    # · `Real Decreto de 24 de julio de 1889`: the rank and the number, or the rank and the
+    # date where the law has no number.
+    pattern: '^(?P<marker>.+?(?:\s(?:[A-Z]+/)?\d+/\d{4}|\sde\s\d{1,2}\sde\s\S+\sde\s\d{4}))[,.]?\s*(?P<name>.*)$'
+    number: '(?P<number>(?:[A-Z]+/)?\d+/\d{4})'
+  disposition:
+    # `Disposición transitoria primera`, `Disposición derogatoria única`, `Disposición final`.
+    pattern: '^(?P<marker>Disposici[óo]n\s+[^\s.]+(?:\s+(?!de\b|del\b)[^\s.]+)?)\.?\s*(?P<name>.*)$'
+    number: '^Disposici[óo]n\s+(?P<number>.+)$'
+  article:
+    # `Artículo 28 ter`, `Artículo único`, `Sexto`: the marker; the rest, after its period,
+    # the name.
+    pattern: '^(?P<marker>Art[íi]culo\s+[^\s.]+(?:\s+(?:bis|ter|quater|quinquies|sexies|septies|octies|nonies|decies)\b)?|[^\s.]+)\.?\s*(?P<name>.*)$'
+    number: '^Art[íi]culo\s+(?P<number>.+)$'
+
+# The metadata is read as attributes (`/data/metadatos/...`); analysis and ELI RDF are not text.
+skip: [metadatos, analisis, metadata-eli]
+graphics: [img]
+leaves: [p]
+containers:
+  version: ""
+  blockquote: ""
+  tbody: ""
+  thead: ""
+inline: [a, strong, em, b, i, u, span, sup, sub, br, abbr]
+
+text:
+  superscript: [sup]
+  breaks: [br]
+
+tables:
+  elements: {table: html}

@@ -43,6 +43,8 @@ from spec.corpus import CorpusSpec, FetchSpec
 
 MANIFEST = "fetch.jsonl"
 #: A SPARQL query's prologue: its PREFIX and BASE lines, kept outside the paging wrapper.
+#: An id or edition that is safe as one path segment.
+_SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _PROLOGUE = re.compile(r"\s*(PREFIX|BASE)\b", re.IGNORECASE)
 READ_BLOCK = 1 << 20
 NL = "\n"
@@ -185,6 +187,8 @@ class Fetcher:
             return self._plan_listing()
         if self.spec.kind == "sparql":
             return self._plan_sparql()
+        if self.spec.kind == "json_api":
+            return self._plan_json_api()
         return self._plan_ecfr()
 
     def _relative(self, url: str) -> str:
@@ -395,6 +399,49 @@ class Fetcher:
             f"query {index + 1}": f"newest for {n:,} of {len(newest):,} groups"
             for index, n in sorted(by_query.items())
         }
+
+    def _plan_json_api(self) -> tuple[list[Wanted], dict[str, str]]:
+        """Every document a paged JSON listing names, at its current edition.
+
+        ! The listing is the publisher's own index of the whole collection (the BOE's
+        `legislacion-consolidada` names 12,498 laws), read page by page until a page comes
+        back short: nothing is discovered by following links. An id listed twice keeps its
+        newest edition.
+        """
+        spec = self.spec
+        assert spec.items and spec.id_field and spec.item_url and spec.item_path
+        newest: dict[str, str] = {}
+        offset = 0
+        joiner = "&" if "?" in spec.listing else "?"
+        while True:
+            query = urllib.parse.urlencode(
+                {spec.limit_param: spec.page_size, spec.offset_param: offset}
+            )
+            page: Any = self.get_json(f"{spec.listing}{joiner}{query}")
+            for key in spec.items.split("."):
+                page = page.get(key, []) if isinstance(page, dict) else []
+            rows = page if isinstance(page, list) else []
+            for row in rows:
+                ident = str(row.get(spec.id_field, "")).strip()
+                if not _SAFE_ID.fullmatch(ident):
+                    raise ValueError(f"{spec.listing}: item id {ident!r} is not a file name")
+                edition = str(row.get(spec.edition_field, "")) if spec.edition_field else ""
+                if not _SAFE_ID.fullmatch(edition or "x"):
+                    raise ValueError(f"{ident}: edition {edition!r} is not a file name")
+                if ident not in newest or edition > newest[ident]:
+                    newest[ident] = edition
+            if len(rows) < spec.page_size:
+                break
+            offset += spec.page_size
+        if not newest:
+            raise ValueError(f"{spec.listing}: the listing named no item at {spec.items!r}")
+        wanted = []
+        for ident, edition in sorted(newest.items()):
+            url = spec.item_url.format(id=ident)
+            self._relative(url)  # under the provenance root, or refused
+            path = spec.item_path.format(id=ident, edition=edition or "current")
+            wanted.append(Wanted(path=path, url=url, group=ident))
+        return wanted, {"listing": f"{len(wanted):,} documents"}
 
     def _plan_ecfr(self) -> tuple[list[Wanted], dict[str, str]]:
         listing = self.get_json(self.spec.listing)
@@ -701,7 +748,8 @@ class Fetcher:
             self.spec.kind in ("listing", "sparql")
             and bool(self.corpus.provenance.archive_suffix)
         )
-        if self.spec.kind == "listing" and not archived and report.complete and not dry_run:
+        cited = self.spec.kind in ("listing", "json_api")
+        if cited and not archived and report.complete and not dry_run:
             self._cite({w.path: w.url for w in wanted})
         if archived and report.complete and not dry_run and self.spec.index:
             folders = [(w, self._unpack(w)) for w in wanted]
@@ -764,7 +812,9 @@ class Fetcher:
             return digest.hexdigest(), size
 
         try:
-            digest, size = self._retrying(item.url, write, compressed=self.spec.kind == "ecfr")
+            digest, size = self._retrying(
+                item.url, write, compressed=self.spec.kind == "ecfr", accept=self.spec.accept
+            )
             if item.size is not None and size != item.size:
                 raise OSError(f"got {size:,} bytes, listing says {item.size:,}")
             if size == 0:

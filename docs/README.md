@@ -61,6 +61,7 @@ name alone (`PROFILES.md` §7) is unambiguous; this page says where it lives.
 | [`SOURCE_DE_GII.md`](sources/SOURCE_DE_GII.md) | `de_gii`: Germany's federal laws, gesetze-im-internet | `DE_LAWS_2611` |
 | [`SOURCE_FR_LEGI.md`](sources/SOURCE_FR_LEGI.md) | `fr_legi`: France's codes, laws and decrees in force, DILA LEGI | `FR_LAWS_2611` |
 | [`SOURCE_EU_LEX.md`](sources/SOURCE_EU_LEX.md) | `eu_lex`: EU acts in force, Formex via the Cellar | — |
+| [`SOURCE_ES_BOE.md`](sources/SOURCE_ES_BOE.md) | `es_boe`: Spain's consolidated laws, state and regional, BOE open-data API | — |
 | [`SOURCE_ID_REG_MARKDOWN.md`](sources/SOURCE_ID_REG_MARKDOWN.md) | `id_reg_markdown`: Indonesian regulations, Markdown | `ID_REG_RAG_2611` |
 
 The dataset cards are in [`../datasets/`](../datasets/README.md).

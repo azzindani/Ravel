@@ -1,0 +1,100 @@
+id: es_boe
+version: "1.0"
+title: Spanish consolidated legislation (BOE, state and regional)
+description: >
+  One consolidated Spanish law per document, state or regional, as the BOE's open-data API
+  serves it, read by the `xml` extractor in the `boe` dialect and chunked by `markup`
+  (docs/sources/SOURCE_ES_BOE.md). The text is the wording in force: each article's newest
+  version. The structure is the XML's: libros, títulos, capítulos and secciones head the
+  articles, and annexes follow. Identity is the law's: its rank and number as the BOE states
+  them and the article (`Ley Orgánica 13/1982, Artículo 4`).
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<response\b', '<legislacion|<metadatos\b', '<bloque\b']
+  min_hits: 2
+
+extract:
+  xml:
+    dialects: [boe@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here. An annex, a
+  # preamble or the signatures sit under the law and beside its divisions.
+  from_markup: true
+  units:
+    - {name: law, level: 1, pattern: '^.'}
+    - {name: preamble, level: 2, pattern: '^.', role: article}
+    - {name: note, level: 2, pattern: '^.'}
+    - {name: part, level: 2, pattern: '^.'}
+    - {name: signature, level: 2, pattern: '^.'}
+    - {name: annex, level: 2, pattern: '^.', role: article}
+    # `Disposición adicional primera`: after the articles, under no chapter.
+    - {name: disposition, level: 2, pattern: '^.', role: article}
+    # `LIBRO I`, `TÍTULO II`, `CAPÍTULO III`: the unit a reader names after the law.
+    - {name: division1, level: 3, pattern: '^.', role: chapter}
+    - {name: division2, level: 4, pattern: '^.', role: chapter}
+    - {name: division3, level: 5, pattern: '^.', role: chapter}
+    - {name: division4, level: 6, pattern: '^.'}
+    - {name: division5, level: 7, pattern: '^.'}
+    - {name: article, level: 8, pattern: '^.', role: article}
+
+identity:
+  markup:
+    scope: law
+    facts:
+      # `Ley Orgánica`, `Real Decreto`, `Orden`, `Decreto-ley`, as the BOE ranks the law.
+      regulation_type: "{law.type}"
+      # `13/1982`; a law with no official number has none.
+      regulation_number: "{law.number}"
+      about: "{law.name}"
+      year: "{law.year}"
+      effective_date: "{law.date}"
+      enacting_body: "{law.department}"
+    identifier:
+      # As Spanish practice cites: `Ley Orgánica 13/1982, Artículo 4`; `Real Decreto de 24
+      # de julio de 1889, Artículo 1` where the law has no number.
+      article: "{law.marker}, {article.marker}"
+      annex: ["{law.marker}, {annex.marker}", "{law.marker}, Anexo"]
+      disposition: "{law.marker}, {disposition.marker}"
+      preamble: "{law.marker}, Preámbulo"
+      division1: "{law.marker}, {division1.marker}"
+      division2: "{law.marker}, {division2.marker}"
+      division3: "{law.marker}, {division3.marker}"
+      division4: "{law.marker}, {division4.marker}"
+      division5: "{law.marker}, {division5.marker}"
+      law: "{law.marker}"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per article or annex; a longer one splits into `part n of m` on paragraph
+    # boundaries. The budget is the standard's, in the embedder's own tokens
+    # (docs/pipeline/STANDARD.md §2); a profile states it and never another.
+    max_tokens: 4096
+    min_tokens: 8
+  derive:
+    #   Citation: Ley Orgánica 13/1982, Artículo 4
+    #   Location: Ley Orgánica 13/1982, de 10 de agosto, ... › TÍTULO PRELIMINAR ... › Artículo 4. ...
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    # Laws cited in the text, in the forms the BOE prints.
+    regulation_references:
+      - {pattern: '\b(?P<kind>Ley(?: Orgánica)?|Real Decreto(?:-ley| Legislativo)?|Decreto(?:-ley| Legislativo)?|Orden)\s+(?P<n>\d+/\d{4})', format: '{kind} {n}'}
+  outline:
+    # `1.`, `a)`, `1.º`: apartado, letra.
+    marker: '^((?:\d{1,3}\.(?:º|ª)?\s|[a-zñ]\)\s)+)'
+    levels: [digit, lower]
+    scope: identifier

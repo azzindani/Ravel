@@ -174,6 +174,8 @@ class _Walk:
     #: ! ✗ `page`: a break printed inside a paragraph never reaches it (`PRTPAGE` in `P`,
     #: 534 of 785 in three Federal Register issues), so it lags the page actually in force.
     page_at: dict[int, int | None] = field(default_factory=dict)
+    #: The document's root, which a unit attribute `/path` is read from.
+    root: ET.Element | None = None
 
 
 @dataclass
@@ -219,7 +221,7 @@ class XmlExtractor:
         assembled, lost = (
             _assemble(root, path, dialect, members) if dialect.links else (None, 0)
         )
-        state = _Walk(compiled)
+        state = _Walk(compiled, root=root)
         self._document(root, state)
 
         if not any(b.type is not BlockType.HEADING for b in state.builder.blocks):
@@ -306,6 +308,12 @@ class XmlExtractor:
                 for child in parent.findall(tag):
                     parent.remove(child)
                     state.skipped[f"dropped: {path}"] += 1
+        for path in rule.latest:
+            parent_path, _, tag = path.rpartition("/")
+            for parent in root.iterfind(parent_path or "."):
+                for child in parent.findall(tag)[:-1]:
+                    parent.remove(child)
+                    state.skipped[f"superseded: {path}"] += 1
 
         if rule.top is None:
             top = [root] if d.unit_of(root) else [c for c in root if d.unit_of(c)]
@@ -379,7 +387,8 @@ class XmlExtractor:
             if d.is_page(child):
                 self._child(child, state, dated)
                 consumed.add(index)
-        attrs = self._attrs(unit, heading, element, d, page=state.page_at.get(id(element))) | (
+        page = state.page_at.get(id(element))
+        attrs = self._attrs(unit, heading, element, d, page=page, root=state.root) | (
             extra or {}
         )
         state.open_units.append((unit, attrs["number"]))
@@ -420,6 +429,8 @@ class XmlExtractor:
             found = element.find(path)
             text = self._text(found, state.d) if found is not None else ""
             if text:
+                if rule.take and found is not None:
+                    _take(element, path, found)
                 return text, set()
         if rule.join:
             used: list[int] = []
@@ -433,6 +444,8 @@ class XmlExtractor:
                 )
                 if inner is not None:
                     parts.append(self._text(inner, state.d))
+                    if rule.take:
+                        _take(element, next(t for t in slot if element.find(t) is inner), inner)
                     continue
                 index = next(
                     (i for tag in slot for i, c in enumerate(children) if c.tag == tag), None
@@ -458,8 +471,13 @@ class XmlExtractor:
         d: _Compiled,
         *,
         page: int | None = None,
+        root: ET.Element | None = None,
     ) -> dict[str, str]:
         """What the markup states about a unit: its number, its name, its marker.
+
+        A source `/path` is read from the document's root: front matter printed beside the
+        text and not in any unit (Spain's BOE states a law's rank and number in
+        `data/metadatos`, beside `data/texto`).
 
         The source `@page` is the page the unit opens on: its own first page break when that
         comes before any of its text, else the page in force where it starts (`page`). A
@@ -471,6 +489,8 @@ class XmlExtractor:
         def value_of(source: str) -> str | None:
             if source == "@page":
                 return _opening_page(element, d, page)
+            if source.startswith("/"):
+                return _source(root, source[1:], d) if root is not None else None
             return _source(element, source, d)
 
         stated = {
@@ -503,7 +523,7 @@ class XmlExtractor:
         heading, consumed = self._heading(child, unit, state)
         state.units[unit] += 1
         if heading:
-            attrs = self._attrs(unit, heading, child, d)
+            attrs = self._attrs(unit, heading, child, d, root=state.root)
             self._flush_label(state)
             state.builder.add(
                 BlockType.HEADING, heading, level=level, page=state.page, attrs=attrs
@@ -1111,3 +1131,11 @@ if TYPE_CHECKING:
 
 
 registry.register(XmlExtractor())
+
+
+def _take(element: ET.Element, path: str, found: ET.Element) -> None:
+    """Remove `found`, which `path` reached from `element`, so the body does not read it."""
+    parent_path = path.rpartition("/")[0]
+    parent = element.find(parent_path) if parent_path else element
+    if parent is not None and found in list(parent):
+        parent.remove(found)
