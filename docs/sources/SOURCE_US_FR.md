@@ -82,3 +82,30 @@ space and one way of being read.
 
 2 of 357 documents state no FR Doc number in a form the pattern reads (Federal Acquisition
 Regulation compilations); the profile expects 95% coverage.
+
+## 6. Built: 2025 (2026-11-28)
+
+```
+ravel sources fetch us_fr                          # 247 issues, 548.7 MB, 2,748 s
+ravel extract us_fr --workspace work/us_fr/2025    # 247 documents, 0 failed, 126.5 s
+ravel chunk us_fr --workspace work/us_fr/2025      # 122,923 chunks, 70.7 s
+```
+
+| | |
+|---|---|
+| issues · Federal Register documents | 247 · 23,642 |
+| chunks | 122,923, median 919 tokens; 100.0% with identifier and locator |
+| over 1,024 tokens · over 8,192 | 7,242 (tables kept whole) · 7 (0.006%, under the profile's 0.1%) |
+| chunks with no agency | 520 (presidential documents name the President instead) |
+
+A year is a third of the CFR (366,005 chunks), so the scaling steps are years:
+2023-2025 is 1x the CFR beside it, 2017-2025 is 3x. ✗ embedded yet: the GPU was held by
+another extraction.
+
+**One domain with the CFR: `us_federal`.** A Vera domain is one schema and one BM25
+vocabulary, so the two corpora are read as one: root `sources/GOVINFO` with `CFR/` and
+`FR/` (govinfo's own layout; on Windows, junctions to `sources/US_CFR` and
+`sources/US_FR`), `snapshots: [CFR/current.txt, FR/current.txt]` so each keeps the
+edition its own fetch chose, provenance the govinfo bulk root, and `profile: auto`
+(`CFRDOC` -> `us_cfr@1.1`, `FEDREG` -> `us_fr@1.0`). `ravel embed --reuse` takes the
+CFR's vectors from its own build instead of embedding them again.

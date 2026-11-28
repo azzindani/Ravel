@@ -17,8 +17,18 @@ fetch:
   listing: https://www.govinfo.gov/bulkdata/json/FR
   files: https://www.govinfo.gov/bulkdata/FR/
   # ! The edition is the globs: daily issues never change once listed, so a year is a
-  # fixed set of files. Widen one year at a time; each step is a measured size.
-  paths: ["2025/*/FR-2025-??-??.xml"]
+  # fixed set of files. 2025 alone is 247 issues, 122,923 chunks (SOURCE_US_FR.md §5);
+  # 2017-2025 is the 4x step of the scaling curve (us_cfr is 366,005 chunks).
+  paths:
+    - "2017/*/FR-2017-??-??.xml"
+    - "2018/*/FR-2018-??-??.xml"
+    - "2019/*/FR-2019-??-??.xml"
+    - "2020/*/FR-2020-??-??.xml"
+    - "2021/*/FR-2021-??-??.xml"
+    - "2022/*/FR-2022-??-??.xml"
+    - "2023/*/FR-2023-??-??.xml"
+    - "2024/*/FR-2024-??-??.xml"
+    - "2025/*/FR-2025-??-??.xml"
   delay_s: 1.0
 
 provenance:
