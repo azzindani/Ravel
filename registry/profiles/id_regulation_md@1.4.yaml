@@ -437,6 +437,9 @@ pipeline:
     # identifier path resolves to; splitting it into ayat made 90,052 chunks of 36,993 on the
     # sample, most of them too short to say anything alone. Pasals longer than the budget are
     # still split, into `part n of m`.
+    # ! A corpus that states its own budget wins (`ChunkSpec.to_config`): `id_reg_markdown`
+    # states 512, so 4096 applies only to a corpus that states none. 512 is the measured one
+    # (p50 147, p90 507 tokens, 0 chunks past the model's 8,192).
     max_tokens: 4096
     min_tokens: 8
     params:
