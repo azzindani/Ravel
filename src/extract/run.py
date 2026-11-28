@@ -33,7 +33,7 @@ from runtime.shards import (
     generation_of,
     newest_generation,
 )
-from sources import SourceFile, guess_mime, read_list, scan
+from sources import SourceFile, guess_mime, scan
 from spec import Profile, Registry, default_registry
 from spec.corpus import CorpusSpec
 
@@ -346,12 +346,11 @@ class Extraction:
         report = RunReport(corpus=self.corpus.id)
         started = time.time()
 
-        listed = self.corpus.sources.snapshot
         files, scanned = scan(
             root,
             self.corpus.sources.include,
             skip_hidden=self.corpus.sources.skip_hidden,
-            only=read_list(root, listed) if listed else None,
+            only=self.corpus.sources.listed(),
         )
         # ! A snapshot that names a file it does not have is a partial corpus. Counted as
         # failures, so the tolerance check sees them.

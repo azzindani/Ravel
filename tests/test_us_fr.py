@@ -183,3 +183,43 @@ def test_the_corpus_definition_loads() -> None:
     spec = CorpusSpec.find("us_fr")
     assert spec.fetch is not None and spec.fetch.kind == "govinfo_tree"
     assert spec.fetch.files == spec.provenance.base_url
+
+
+def test_composed_snapshots_read_each_list_under_its_own_folder(tmp_path: Path) -> None:
+    """`us_federal` reads the CFR's and the Federal Register's own snapshot lists as one:
+    each names paths relative to its folder, and keeps the edition its own fetch chose."""
+    (tmp_path / "CFR").mkdir()
+    (tmp_path / "FR").mkdir()
+    (tmp_path / "CFR/current.txt").write_text(
+        "# us_cfr\n2026/title-1/a.xml\n", encoding="utf-8"
+    )
+    (tmp_path / "FR/current.txt").write_text("2025/01/FR-2025-01-02.xml\n", encoding="utf-8")
+    spec = CorpusSpec.model_validate(
+        {
+            "id": "both",
+            "title": "t",
+            "sources": {
+                "root": str(tmp_path),
+                "include": ["CFR/**/*.xml", "FR/**/FR-*.xml"],
+                "snapshots": ["CFR/current.txt", "FR/current.txt"],
+            },
+            "provenance": {"base_url": f"{G}/"},
+        }
+    )
+    assert spec.sources.listed() == ["CFR/2026/title-1/a.xml", "FR/2025/01/FR-2025-01-02.xml"]
+    assert spec.url_for("FR/2025/01/FR-2025-01-02.xml") == f"{G}/FR/2025/01/FR-2025-01-02.xml"
+
+
+def test_snapshot_and_snapshots_are_one_or_the_other() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="not both"):
+        CorpusSpec.model_validate(
+            {
+                "id": "x",
+                "title": "t",
+                "sources": {"root": ".", "snapshot": "a.txt", "snapshots": ["b/c.txt"]},
+                "provenance": {"base_url": f"{G}/"},
+            }
+        )

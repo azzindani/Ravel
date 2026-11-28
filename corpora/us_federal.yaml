@@ -1,0 +1,34 @@
+id: us_federal
+title: US federal regulations with their rulemaking (CFR + Federal Register)
+description: >
+  us_cfr and us_fr read as one corpus, so one Vera domain serves both: the CFR in force and
+  the Federal Register that made it (docs/sources/SOURCE_US_FR.md §6). Nothing is fetched
+  here. The root is govinfo's own layout, `CFR/` and `FR/`, each a folder the two corpora
+  fetch into (on Windows, junctions to sources/US_CFR and sources/US_FR), and each keeps the
+  edition its own fetch chose: the snapshot is their two lists read as one.
+
+sources:
+  root: sources/GOVINFO
+  include: ["CFR/**/*.xml", "FR/**/FR-*.xml"]
+  snapshots: [CFR/current.txt, FR/current.txt]
+
+provenance:
+  # ! govinfo's bulk root, of which us_cfr's and us_fr's base_urls are the CFR/ and FR/
+  # folders: a file's path below sources.root is still its path below this.
+  base_url: https://www.govinfo.gov/bulkdata/
+  note: >
+    GPO govinfo bulk data: the CFR annual edition (one XML per volume) and the Federal
+    Register (one XML per daily issue). Public domain.
+
+extract:
+  # Each file is read by the profile its root element names: CFRDOC -> us_cfr@1.1,
+  # FEDREG -> us_fr@1.0.
+  profile: auto
+  extractors: [xml]
+  failure_tolerance: 0.0
+
+chunk:
+  chunker: markup
+
+embed:
+  use: qwen3-embedding-0.6b@1.0

@@ -39,6 +39,34 @@ class SourcesSpec(Base):
     """A snapshot list under `root` (relative paths, one per line) that the scan reads
     instead of walking: `current.txt`, written by `ravel sources fetch`. A fetched mirror
     keeps every edition it ever downloaded, and a corpus is built from one of them."""
+    snapshots: list[str] = Field(default_factory=list)
+    """Several snapshot lists read as one, each under `root`, and each naming paths relative
+    to its own folder: `CFR/current.txt` names `2026/title-1/...`, read as
+    `CFR/2026/title-1/...`. For a corpus composed of other corpora's fetched folders
+    (`us_federal`: the CFR and the Federal Register under one govinfo root), each of which
+    keeps the edition its own fetch chose. ✗ beside `snapshot`."""
+
+    @model_validator(mode="after")
+    def _one_kind_of_snapshot(self) -> Self:
+        if self.snapshot and self.snapshots:
+            raise ValueError("sources: snapshot or snapshots, not both")
+        return self
+
+    def listed(self) -> list[str] | None:
+        """The paths the snapshot lists name, relative to `root`; None when there are none."""
+        from sources import read_list
+
+        root = Path(self.root)
+        if self.snapshot:
+            return read_list(root, self.snapshot)
+        if not self.snapshots:
+            return None
+        paths: list[str] = []
+        for name in self.snapshots:
+            folder = Path(name).parent.as_posix()
+            prefix = "" if folder == "." else f"{folder}/"
+            paths.extend(f"{prefix}{p}" for p in read_list(root, name))
+        return paths
 
 
 class IndexSpec(Base):
