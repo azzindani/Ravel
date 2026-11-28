@@ -1086,3 +1086,35 @@ def test_an_api_embedder_cuts_what_an_engine_would_reject() -> None:
     short, fits, boundary, huge = sent[0]
     assert short == "short" and fits == "x" * 15  # untouched
     assert len(boundary) == 15 and len(huge) == 15  # cap 16 minus the closing token
+
+
+def test_a_routed_corpus_shows_each_chunk_as_its_own_profile_does(
+    corpus: CorpusSpec, tmp_path: Path
+) -> None:
+    """! `extract.profile: auto` pins no profile. Each chunk names the one that made it, and
+    is embedded with that profile's template: pinned to none, every chunk was embedded as its
+    bare body, which no query in the profile's own space was ever written against."""
+    from embed.run import locate_vectors
+
+    raw = corpus.model_dump()
+    raw["extract"]["profile"] = "auto"
+    routed = CorpusSpec.model_validate(raw)
+    ws = tmp_path / "routed"
+    Extraction(routed, workspace=ws).run()
+    Chunking(routed, workspace=ws).run()
+    run = stage(routed, ws)
+    assert run.profile is None and run.routed
+    run.run()
+
+    registry = default_registry()
+    reference = HashEmbedder(run.embedder.spec)
+    vectors = vectors_of(run)
+    chunks = list(iter_chunk_shards(ws, "fixture"))
+    assert chunks and all(c.profile for c in chunks)
+    shown = [embed_text(c, registry.get(c.profile)) for c in chunks]
+    assert any(text != c.body for text, c in zip(shown, chunks, strict=True))
+    for chunk, text in zip(chunks, shown, strict=True):
+        expected = np.asarray(reference.embed_documents([text])[0])
+        assert np.allclose(vectors[chunk.id], expected, atol=1e-2), chunk.id
+    # The bundle finds the vectors where the run wrote them.
+    assert locate_vectors(routed, workspace=ws)[1] == run.vector_dir

@@ -127,20 +127,27 @@ def sample_chunk_texts(
     """
     from chunk import iter_chunk_shards
     from chunk.derive import embed_text
+    from embed.run import profile_named
     from spec import default_registry
 
     ref = corpus.extract.profile
     reg = registry or default_registry()
-    profile = reg.get(ref) if ref else None
+    # A routed corpus (`auto`): each chunk as its own profile shows it, as `embed` does.
+    routed = ref == "auto"
+    profile = reg.get(ref) if ref and not routed else None
+
+    def shown(chunk: Any) -> str:
+        return embed_text(chunk, profile_named(reg, chunk.profile) if routed else profile)
+
     texts: list[str] = []
     for index, chunk in enumerate(iter_chunk_shards(Path(workspace), corpus.id)):
         if index % 53 == 0:
-            texts.append(embed_text(chunk, profile))
+            texts.append(shown(chunk))
         if len(texts) >= count:
             break
     if not texts:  # a corpus smaller than the stride
         texts = [
-            embed_text(c, profile)
+            shown(c)
             for _, c in zip(
                 range(count), iter_chunk_shards(Path(workspace), corpus.id), strict=False
             )

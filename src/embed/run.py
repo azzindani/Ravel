@@ -122,6 +122,24 @@ def check_vectors(
             )
 
 
+def routed_template_hash(registry: Registry) -> str:
+    """The templates a routed corpus may show the model: every profile's in the registry,
+    by ref. ! Any of them changing is a new generation, since any could have made a chunk."""
+    templates = {
+        p.ref: (d.model_dump(mode="json") if (d := p.spec.pipeline.derive.embed_text) else None)
+        for p in registry
+    }
+    return hashlib.sha256(json.dumps(templates, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def profile_named(registry: Registry, ref: str | None) -> Profile | None:
+    """A chunk's own profile. ! A chunk naming a profile this registry does not hold
+    fails: shown bare it would be another text, embedded as if it were the same."""
+    if not ref:
+        return None
+    return registry.get(ref)
+
+
 def template_hash_of(profile: Profile | None) -> str:
     """Hash of the `embed_text` template alone (what `Embedding.template_hash` is)."""
     derived = profile.spec.pipeline.derive.embed_text if profile else None
@@ -164,7 +182,7 @@ def locate_vectors(
     generation = generation_of(
         found.name,
         fingerprint or spec_of(corpus.embed).fingerprint(),
-        template_hash_of(profile),
+        routed_template_hash(reg) if ref == "auto" else template_hash_of(profile),
     )
     return found, Path(workspace) / "vectors" / corpus.id / variant / generation
 
@@ -260,6 +278,10 @@ class Embedding:
         self.variant = variant
         self.registry = registry or default_registry()
         self.profile = self._pinned()
+        #: A corpus that routes each document to its own profile (`extract.profile: auto`):
+        #: each chunk is shown to the model with the template of the profile that made it.
+        #: ! Pinned to none, every chunk was embedded as its bare body, ✗ as its profile says.
+        self.routed = corpus.extract.profile == "auto"
 
         base = self.workspace / "chunks" / corpus.id / variant
         found = base / chunk_generation if chunk_generation else newest_generation(base)
@@ -288,6 +310,7 @@ class Embedding:
             self.reuse = VectorReuse(
                 sources,
                 profile=self.profile,
+                routed=self.routed,
                 fingerprint=spec.fingerprint(),
                 template_hash=self.template_hash,
                 dim=spec.dim,
@@ -311,7 +334,15 @@ class Embedding:
         ! `search_normalize` and the rest of `derive` are not here: they feed the keyword
         index, and changing them must not re-embed anything.
         """
+        if self.routed:
+            return routed_template_hash(self.registry)
         return template_hash_of(self.profile)
+
+    def profile_of(self, chunk: Any) -> Profile | None:
+        """The profile whose `embed_text` template this chunk is shown with."""
+        if not self.routed:
+            return self.profile
+        return profile_named(self.registry, chunk.profile)
 
     @property
     def output_generation(self) -> str:
@@ -517,7 +548,7 @@ class Embedding:
                 with tracker.phase("read"):
                     chunks = list(iter_chunk_range(str(shard), begin, end))
                 with tracker.phase("prepare"):
-                    texts = [embed_text(c, self.profile) for c in chunks]
+                    texts = [embed_text(c, self.profile_of(c)) for c in chunks]
                 matrix = self._vectors(texts, tracker, report)
                 with tracker.phase("write"):
                     check_vectors(

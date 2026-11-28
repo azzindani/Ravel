@@ -1666,12 +1666,19 @@ def hardware_tune(
         raise typer.Exit(1)
     probe = probe_device()
     base = estimate(probe)
-    profile = default_registry().get(spec.extract.profile) if spec.extract.profile else None
+    from embed.run import profile_named
+
+    registry = default_registry()
+    routed = spec.extract.profile == "auto"
+    profile = (
+        registry.get(spec.extract.profile) if spec.extract.profile and not routed else None
+    )
     texts: list[str] = []
     stride = 1
     for index, chunk in enumerate(iter_chunk_shards(workspace, spec.id)):
         if index % stride == 0:
-            texts.append(embed_text(chunk, profile))
+            shown = profile_named(registry, chunk.profile) if routed else profile
+            texts.append(embed_text(chunk, shown))
         if len(texts) >= sample:
             break
         if index == 5000 and len(texts) < sample // 4:

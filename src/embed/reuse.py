@@ -76,6 +76,7 @@ class VectorReuse:
         template_hash: str,
         dim: int,
         registry: Registry | None = None,
+        routed: bool = False,
     ) -> None:
         self.dim = dim
         self.registry = registry
@@ -104,11 +105,23 @@ class VectorReuse:
                 )
             earlier = profile
             if meta["template_hash"] != template_hash:
+                if routed:
+                    # ! A routed run's texts are each chunk's own profile's: one changed
+                    # template among them cannot be told from the hash, so none is rebuilt.
+                    raise ReuseError(
+                        f"{vector_dir}: embed_text templates {meta['template_hash']}, this "
+                        f"run's {template_hash} · a routed corpus reuses only a run made "
+                        "with the same registry templates"
+                    )
                 earlier = self._made_with(vector_dir, meta, profile)
+            from embed.run import profile_named
+
+            reg = self.registry or default_registry()
             digest_of: dict[str, bytes] = {}
             for shard in sorted(chunk_dir.glob("part-*.parquet")):
                 for chunk in iter_chunks(str(shard)):
-                    digest_of[chunk.id] = text_digest(embed_text(chunk, earlier))
+                    shown = profile_named(reg, chunk.profile) if routed else earlier
+                    digest_of[chunk.id] = text_digest(embed_text(chunk, shown))
             for path in sorted(vector_dir.glob("part-*.parquet")):
                 ids = pq.read_table(str(path), columns=["chunk_id"]).column(0).to_pylist()
                 slot = len(self.paths)
