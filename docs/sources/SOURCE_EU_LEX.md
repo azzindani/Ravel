@@ -75,12 +75,14 @@ documents of their own, an annex could not be cited: the annex file states no ac
      Directives and decisions put the year first and regulations the number first. Years
      before 1999 print with two digits;
   4. `Regulation No 1` style titles;
-  5. the CELEX number.
+  5. the CELEX number;
+  6. the Journal reference the descriptor prints (`1961/P 65/01`), for an act that states
+     neither.
 - **CELEX** is kept as `celex`. ! A descriptor may state none: 183 of 900 acts as adopted
   in one sample, published 2004–2005.
 
 On 612 packages read from the fetch: 603 cite by number and 9 by CELEX. That gave 9,706
-chunks, median 189 tokens, 60 without an identifier. No package failed. One package of
+chunks, median 189 tokens, all with an identifier (60 lacked one before source 6). No package failed. One package of
 1,621 keeps its files in folders the descriptor does not name (`0005/05/DOC_2/`). It fails
 by name, which is why `failure_tolerance` is 0.0005.
 

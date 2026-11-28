@@ -246,3 +246,29 @@ def test_a_consolidation_is_the_act_and_states_its_version(
     assert "Regulation No 1" not in [
         b.text for b in alone.blocks if b.type is BlockType.PARAGRAPH
     ]
+
+
+def test_an_act_with_no_number_is_cited_by_its_journal_reference(
+    tmp_path: Path, profile: Any
+) -> None:
+    """A 1961 Euratom decision states no CELEX, no `NO.DOC` of its own and no number in
+    its title: its descriptor's Journal reference is all that names it."""
+    path = package(tmp_path, title="Decision on the establishment of a Joint Undertaking")
+    act = tmp_path / "L_1993001EN.01000101.xml"
+    act.write_text(
+        ACT.replace('<NO.DOC FORMAT="YN" TYPE="OJ"><NO.CURRENT>626</NO.CURRENT>', "<X>")
+        .replace("<YEAR>1993</YEAR><COM>EEC</COM>\n</NO.DOC>", "</X>")
+        .replace("<X></X>", ""),
+        encoding="utf-8",
+    )
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            '<NO.DOC TYPE="OJ" FORMAT="YN"><NO.CURRENT>626</NO.CURRENT><YEAR>1993</YEAR>\n'
+            "<COM>EEC</COM></NO.DOC>",
+            '<NO.DOC TYPE="OJ"><TXT>1961/P 65/01</TXT></NO.DOC>',
+        ),
+        encoding="utf-8",
+    )
+    doc = read(path, profile)
+    assert doc.blocks[0].attrs["number"] == "1961/P 65/01"
+    assert "Decision 1961/P 65/01, Article 2" in {c.identifier for c in chunked(doc, profile)}

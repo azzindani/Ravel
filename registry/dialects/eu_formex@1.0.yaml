@@ -109,6 +109,9 @@ units:
         - 'FMX/DOC.MAIN.PUB/NO.CELEX'
         - 'FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/CONS.DOC/FAM.COMP/BIB.DATA/NO.CELEX'
         - 'CONS.DOC/FAM.COMP/BIB.DATA/NO.CELEX'
+        # ! Last: an act with no CELEX and no number of its own (1961 Euratom decisions) is
+        # still cited by the Journal reference its descriptor prints, `1961/P 65/01`.
+        - 'BIB.DOC/NO.DOC/TXT'
       # A consolidation: the day the version it prints applies from, and its reference.
       version_date: ['FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/INFO.CONSLEG@START.DATE', 'INFO.CONSLEG@START.DATE']
       consolidated: ['FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/INFO.CONSLEG@CONSLEG.DATE', 'INFO.CONSLEG@CONSLEG.DATE']
