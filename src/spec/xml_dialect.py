@@ -212,6 +212,13 @@ class Document(_Base):
     #: notice whose text is the law it names): counted as empty, ✗ as a failure. A file with
     #: text there that still reads as nothing fails.
     empty_when_bare: list[str] = Field(default_factory=list)
+    #: Paths, relative to the root, of elements removed once the date is read and before
+    #: anything else is: front matter whose tag is also text elsewhere. Formex prints a
+    #: descriptor's `DATE` beside the act it links, and the same `DATE` inline in the act's
+    #: sentences (`of <DATE>20 May 1996</DATE>`); a tag rule would lose one or read the other.
+    #: Paths may cross into linked files (`FMX/DOC.MAIN.PUB/REF.PHYS/ACT/TITLE`), since links
+    #: are followed first. ! Left out of the dump while empty: no other dialect's hash moves.
+    drop: list[str] = Field(default_factory=list, exclude_if=lambda v: not v)
 
 
 class Text(_Base):
@@ -284,9 +291,10 @@ class Label(_Base):
 class Tables(_Base):
     """Table elements and the grid layout each is read with. Layouts are code: they are
     the format's mechanics (`gpo`: BOXHD/CHED/ROW/ENT, `html`: TR/TD/TH with spans,
-    `cals`: OASIS tgroup/colspec/thead/tbody/row/entry with namest/nameend/morerows)."""
+    `cals`: OASIS tgroup/colspec/thead/tbody/row/entry with namest/nameend/morerows,
+    `formex`: the Publications Office's TBL/CORPUS/ROW/CELL with COL/COLSPAN/ROWSPAN)."""
 
-    elements: dict[str, Literal["gpo", "html", "cals"]] = Field(default_factory=dict)
+    elements: dict[str, Literal["gpo", "html", "cals", "formex"]] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
     note_kind: str = "table_note"
 

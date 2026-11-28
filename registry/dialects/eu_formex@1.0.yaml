@@ -1,0 +1,255 @@
+id: eu_formex
+version: "1.0"
+title: EUR-Lex acts in Formex 4 (the Publications Office's XML), read through their descriptor
+description: >
+  One act per Cellar manifestation (docs/sources/SOURCE_EU_LEX.md). The package's
+  `.doc.xml` descriptor (`<DOC>`) is the document: it states the act's CELEX number, its
+  legal value and date, its title as printed in the Official Journal, and the files that
+  hold its text in reading order: the act (`DOC.MAIN.PUB`), then each annex, agreement or
+  attached text (`DOC.SUB.PUB`). Each is linked in where the descriptor names it, so an
+  annex is read, and cited, as part of its act. The act is an `ACT` as adopted, or a
+  `CONS.ACT`, the Publications Office's consolidation. Read by the `xml` extractor; an
+  element not named here is still read for its text and named in `extraction.warnings`.
+
+document:
+  # ! A few packages swap the names (6 of 1,398): the `.doc.xml` holds the consolidation
+  # itself, which is then read as the act, with its own front matter.
+  detect: {root: '^(?:DOC|CONS\.ACT)$'}
+  # The act's date as adopted (`DOC.MAIN.PUB/DATE`); a consolidation states the date of the
+  # version it prints on the act as `version_date` (units.attrs).
+  date: ['FMX/DOC.MAIN.PUB/DATE@ISO', 'CONS.DOC/FAM.COMP/BIB.DATA/DATE@ISO']
+  dated_unit: act
+  # ! The descriptor's `DATE` is front matter and Formex's `DATE` is also inline text, so it
+  # is dropped by path, ✗ by tag. The act's own `TITLE` repeats the descriptor's title,
+  # which is the act's heading.
+  drop:
+    - FMX/DOC.MAIN.PUB/DATE
+    - FMX/DOC.MAIN.PUB/REF.PHYS/ACT/TITLE
+    - FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/CONS.DOC/TITLE
+    - CONS.DOC/TITLE
+
+links:
+  base: "."
+  rules:
+    # `<REF.PHYS FILE="L_1996122EN.01000201.xml" TYPE="DOC.XML"/>`: a file of the package.
+    # A PDF or an image named the same way is not text.
+    - element: REF.PHYS
+      attr: FILE
+      file: "{value}"
+      pattern: '.+\.xml'
+      parents: [DOC.MAIN.PUB, DOC.SUB.PUB]
+
+units:
+  tags:
+    DOC: act
+    CONS.ACT: act
+    DIVISION: division1
+    ARTICLE: article
+    ANNEX: annex
+    CONS.ANNEX: annex
+    # Texts published with the act: an agreement it concludes, a resolution it adopts.
+    # Their articles are numbered from 1 again, so they are units of their own.
+    AGR: agreement
+    GENERAL: attachment
+  inside:
+    # The consolidation a descriptor links is the act's text, ✗ a second act: a unit with no
+    # heading of its own.
+    act: {act: consolidation}
+    # `TITLE I` > `CHAPTER 1` > `Section 1`: Formex nests one tag at every depth.
+    division1: {division1: division2}
+    division2: {division1: division3}
+    division3: {division1: division4}
+    division4: {division1: division5}
+    # An annex's own articles (rules of procedure, model clauses) are not the act's, and a
+    # consolidation nests an annex's appendices as annexes.
+    annex: {annex: appendix, article: annex_article}
+    appendix: {annex: appendix, article: annex_article}
+    agreement: {article: agreement_article, annex: agreement_annex}
+    agreement_annex: {article: agreement_article}
+    attachment: {article: attachment_article}
+  attrs:
+    act:
+      # Each source names the descriptor's path first, then the consolidation's own front
+      # matter, for the packages that swap the names.
+      # ! A descriptor may state none (183 of 900 acts as adopted, published 2004-2005): the
+      # number is then read from the act's own `NO.DOC`.
+      celex:
+        - FMX/DOC.MAIN.PUB/NO.CELEX
+        - FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/CONS.DOC/FAM.COMP/BIB.DATA/NO.CELEX
+        - CONS.DOC/FAM.COMP/BIB.DATA/NO.CELEX
+      # `REG`, `DIR`, `DEC`: the Publications Office's legal value.
+      legal_value: [FMX/DOC.MAIN.PUB/LEGAL.VALUE, INFO.CONSLEG@LEG.VAL]
+      # The kind of act as its title names it first: `Commission Implementing Regulation`,
+      # `Common Position of 25 May 1998 ... on the basis of ... the Treaty`. A title printed
+      # in lower case (`Commission regulation (EC) No 3295/93`) gives the word as printed.
+      type:
+        - 'PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE/TI~\b(?P<value>Common Position|Joint Action|Framework Decision|Regulation|Directive|Decision|Recommendation|Guideline|Agreement|Convention|Protocol|Resolution|Rules of Procedure|Statute|Act|Treaty)\b'
+        - 'CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI~\b(?P<value>Common Position|Joint Action|Framework Decision|Regulation|Directive|Decision|Recommendation|Guideline|Agreement|Convention|Protocol|Resolution|Rules of Procedure|Statute|Act|Treaty)\b'
+        - 'PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE/TI~(?i)\b(?P<value>regulation|directive|decision)\b'
+        - 'CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI~(?i)\b(?P<value>regulation|directive|decision)\b'
+        - 'FMX/DOC.MAIN.PUB/LEGAL.VALUE'
+        - 'INFO.CONSLEG@LEG.VAL'
+      # The number as the act is cited: `(EU) 2016/679`, `(EC) No 1907/2006`, `2006/112/EC`,
+      # printed after the first kind named; else the number older acts print last in
+      # brackets (`... exhaust system of motor vehicles (70/157/EEC)`); else the number the
+      # act states in parts (`NO.DOC`): year first for a directive or decision
+      # (`93/626/EEC`, `1999/44/EC`: two digits before 1999), number first for a regulation
+      # (`(EEC) No 2658/87`), or as one text for a notice (`2004/C 116/06`); else the CELEX.
+      number:
+        - 'PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE/TI~^\W*(?:(?:[A-Z][\w-]*|and|of\s+the)\s+){0,8}?(?i:regulation|directive|decision)\s+(?P<value>(?:\([A-Z][A-Za-z]*(?:,\s*[A-Z][A-Za-z]*)*\)\s+)?(?:No\s+)?\d+/\d+(?:/[A-Z]+(?:,\s*[A-Z]+)*)?)'
+        - 'CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI~^\W*(?:(?:[A-Z][\w-]*|and|of\s+the)\s+){0,8}?(?i:regulation|directive|decision)\s+(?P<value>(?:\([A-Z][A-Za-z]*(?:,\s*[A-Z][A-Za-z]*)*\)\s+)?(?:No\s+)?\d+/\d+(?:/[A-Z]+(?:,\s*[A-Z]+)*)?)'
+        - 'PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE/TI~^.*\((?P<value>\d{2,4}/\d+/[A-Z]+(?:,\s*[A-Z][A-Za-z]*)*)\)'
+        - 'CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI~^.*\((?P<value>\d{2,4}/\d+/[A-Z]+(?:,\s*[A-Z][A-Za-z]*)*)\)'
+        - '+{FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC[@FORMAT="YN"]/YEAR~^(?:19(?!99))?(?P<value>\d+)$}/{FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC[@FORMAT="YN"]/NO.CURRENT}/{FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC[@FORMAT="YN"]/COM}'
+        - '+({FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC[@FORMAT="NY"]/COM}) No {FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC[@FORMAT="NY"]/NO.CURRENT}/{FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC[@FORMAT="NY"]/YEAR~^(?:19(?!99))?(?P<value>\d+)$}'
+        - 'FMX/DOC.MAIN.PUB/REF.PHYS/*/BIB.INSTANCE/NO.DOC/TXT'
+        # The first regulations print no year: `Regulation No 1 determining the languages`.
+        - 'PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE/TI~^\W*(?:(?:[A-Z][\w-]*|and|of\s+the)\s+){0,8}?Regulation\s+(?P<value>No\s+\d+)\b'
+        - 'CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI~^\W*(?:(?:[A-Z][\w-]*|and|of\s+the)\s+){0,8}?Regulation\s+(?P<value>No\s+\d+)\b'
+        - 'FMX/DOC.MAIN.PUB/NO.CELEX'
+        - 'FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/CONS.DOC/FAM.COMP/BIB.DATA/NO.CELEX'
+        - 'CONS.DOC/FAM.COMP/BIB.DATA/NO.CELEX'
+      # A consolidation: the day the version it prints applies from, and its reference.
+      version_date: ['FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/INFO.CONSLEG@START.DATE', 'INFO.CONSLEG@START.DATE']
+      consolidated: ['FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/INFO.CONSLEG@CONSLEG.DATE', 'INFO.CONSLEG@CONSLEG.DATE']
+
+headings:
+  # `<TITLE><TI><P>CHAPTER I</P></TI><STI><P>General provisions</P></STI></TITLE>`, after
+  # the annex's own `BIB.INSTANCE`.
+  default: {first: [TITLE], skip: [BIB.INSTANCE]}
+  # The title the Official Journal prints, in one line.
+  act:
+    path:
+      - PAPER/VOLUME.PAPER/ITEM.VOLUME/TITLE/TI
+      - FMX/DOC.MAIN.PUB/REF.PHYS/CONS.ACT/CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI
+      - CONS.DOC/FAM.COMP/BIB.DATA/TITLE/TI
+  consolidation: {first: []}
+  # `Article 6` + `Lawfulness of processing`.
+  article: &article {join: [[TI.ART], [STI.ART]]}
+  annex_article: *article
+  agreement_article: *article
+  attachment_article: *article
+
+labels:
+  default:
+    # `CHAPTER IV`, `ANNEX IIa`, `Section 2`, `TITLE VI`. `ANNEX HARMONISED PROVISIONS ...`
+    # is an annex with no number, and a name.
+    pattern: '^(?P<marker>(?i:title|part|chapter|section|subsection|annex|appendix|attachment|schedule|protocol)(?:\s+(?:[IVXLCDM]+[a-z]?|\d+[a-z]?(?:\.\d+)*|[A-Z]))?)(?=[\s.:–—-]|$)[\s.:–—-]*(?P<name>.*)$'
+    number: '\s(?P<number>\S+)$'
+  act:
+    pattern: '^(?P<marker>)(?P<name>.*)$'      # all name; the number is stated (units.attrs)
+  agreement:
+    pattern: '^(?P<marker>)(?P<name>.*)$'
+  attachment:
+    pattern: '^(?P<marker>)(?P<name>.*)$'
+  article: &article_label
+    # `Article 6`, `Article 6a`, `Article 29 a`, `Sole Article`.
+    pattern: '^(?P<marker>(?i:(?:sole|single)\s+article|article\s+\d+\s?[a-z]{0,2}\b|article\s+[\w.\-]+))\s*(?P<name>.*)$'
+    number: '^(?i:article\s+)?(?P<number>\d+\s?[a-z]{0,2}|[\w.\-]+)$'
+  annex_article: *article_label
+  agreement_article: *article_label
+  attachment_article: *article_label
+
+reserved:
+  # A consolidation prints a deleted provision as `Article 4` + `deleted`: kept, it is the
+  # law's state.
+  pattern: '^\[\s*reserved\s*\]$'
+  never: [act]
+
+skip:
+  # Bibliographic front matter: the descriptor's and each file's own. The act's identity
+  # is read from the descriptor (units.attrs), never from these.
+  [BIB.DOC, PUBLICATION.REF, PAPER, PDF, LG.DOC, LEGAL.VALUE, NO.CELEX, PAGE.FIRST,
+   PAGE.LAST, PAGE.TOTAL, PAGE.SEQ, BIB.INSTANCE, INFO.CONSLEG, INFO.PROD, FAM.COMP,
+   # Tables of contents: repeated by the headings they list.
+   TOC]
+# `<INCL.ELEMENT TYPE="TIFF">`: a picture the Journal prints. One of TYPE `FORMEX.DOC`
+# names a file the descriptor already links.
+graphics: [INCL.ELEMENT]
+leaves: [TI.BLK, NO.GR.SEQ, NO.P, NO.PARAG, NO.ITEM, PREAMBLE.INIT, PREAMBLE.FINAL,
+         GR.CONSID.INIT, FULL.POWER.INIT, TERM, PREFIX, CAPTION, EEA, ADDR, LV, TI.ART, STI.ART]
+containers:
+  FMX: ""
+  DOC.MAIN.PUB: ""
+  DOC.SUB.PUB: ""
+  REF.PHYS: ""
+  ACT: ""
+  CONS.DOC: ""
+  CONS.DOC.GEN: ""
+  CONS.OTH: ""
+  CONS.OTH.DOC: ""
+  PROLOG: preamble
+  ACT.GEN: ""
+  PREAMBLE.GEN: preamble
+  SUBDIV: ""
+  TITLE: ""
+  TI: ""
+  STI: ""
+  PREAMBLE: preamble
+  GR.VISA: preamble
+  VISA: preamble
+  GR.CONSID: recital
+  DIV.CONSID: recital
+  CONSID: recital
+  FULL.POWER: preamble
+  ENACTING.TERMS: ""
+  CONTENTS: ""
+  PARAG: ""
+  ALINEA: ""
+  P: ""
+  NP: ""
+  TXT: ""
+  LIST: ""
+  ITEM: ""
+  ITEM.CONT: ""
+  DLIST: ""
+  DLIST.ITEM: ""
+  DEFINITION: ""
+  GR.SEQ: ""
+  GR.TBL: ""
+  IMG.CNT: ""
+  FORMULA.S: ""
+  ADDR.S: ""
+  # Text quoted by an amendment: what it inserts or substitutes.
+  QUOT.S: quoted_text
+  GR.ANNOTATION: annotation
+  ANNOTATION: annotation
+  GR.NOTES: footnote
+  FINAL: final
+  SIGNATURE: signature
+  SIGNATORY: signature
+  PL.DATE: signature
+  PLENIPOTENTIARY: signature
+  FULL.POWER.FINAL: signature
+  COLL.LETTERS: ""
+  LETTER: ""
+  GR.CORRIG: corrigendum
+  CORRIG: corrigendum
+inline:
+  [HT, FT, IE, DATE, NOTE, REF.DOC.OJ, LINK, QUOT.START, QUOT.END, FMT.VALUE, NO.DOC.C,
+   # Mathematics, printed inline.
+   FORMULA, EXPR, OP.CMP, OP.MATH, IND, EXPONENT, OVER, UNDER, ROOT, FRACTION, DIVIDEND,
+   DIVISOR, SUM, ITEM.REF]
+quoted: [QUOT.S]
+# Formex marks every quote's start and end, and nests a quote in its element.
+quotes_run_on: false
+
+text:
+  # ! A footnote is printed where it is called (`Regulation (EEC) No 2658/87<NOTE>OJ L 256,
+  # 7.9.1987, p. 1.</NOTE>`): read in place as `^...`, so its text stays and is marked.
+  superscript: [NOTE]
+  # `<TI><P>ANNEX</P></TI><STI><P>SPECIAL PROVISIONS</P></STI>`: lines, read apart.
+  breaks: [P, TI, STI, NO.P, NO.PARAG, TXT, TI.BLK, NO.GR.SEQ, ITEM, NP, ALINEA, CELL,
+           TERM, DEFINITION]
+emphasis:
+  # `<HT TYPE="ITALIC">`: Formex sets a defined term in italics only as typography, so no
+  # rule reads it as one.
+  elements: {}
+label:
+  # `1.`, `(a)`, `(ii)`: a provision's number opens the text that follows it.
+  tags: [NO.P, NO.PARAG, NO.GR.SEQ, NO.ITEM]
+  suffix: ""
+  max_chars: 24
+tables:
+  elements: {TBL: formex}
+  notes: [GR.NOTES]

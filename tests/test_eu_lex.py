@@ -56,10 +56,18 @@ class FakeCellar:
             ],
         }
         self.packages = {
-            f"{C}/a1.0006.01/zip": package("L_2016119EN.01000101.xml", "L.doc.xml"),
-            f"{C}/a2.0006.01/zip": package("L_2019001EN.01000101.xml", "L.doc.xml"),
-            f"{C}/c2.0022.01/zip": package("CL2016R0679EN0000020.0001.xml", "CL.doc.xml"),
-            f"{C}/c3.0006.01/zip": package("CL1958R0001EN0030010.0001.xml", "CL.doc.xml"),
+            f"{C}/a1.0006.01/zip": package(
+                "L_2016119EN.01000101.xml", "L_2016119EN.01000101.doc.xml"
+            ),
+            f"{C}/a2.0006.01/zip": package(
+                "L_2019001EN.01000101.xml", "L_2019001EN.01000101.doc.xml"
+            ),
+            f"{C}/c2.0022.01/zip": package(
+                "CL2016R0679EN0000020.0001.xml", "CL2016R0679EN0000020.0001.doc.xml"
+            ),
+            f"{C}/c3.0006.01/zip": package(
+                "CL1958R0001EN0030010.0001.xml", "CL1958R0001EN0030010.0001.doc.xml"
+            ),
         }
         self.requested: list[str] = []
 
@@ -92,7 +100,7 @@ def eu_corpus(root: Path) -> CorpusSpec:
                 "queries": [ACTS, CONSOLIDATIONS],
                 "page_size": 2,
                 "paths": ["*.xml"],
-                "documents": ["*[0-9].xml"],
+                "documents": ["*.doc.xml"],
             },
             "provenance": {"base_url": f"{C}/", "archive_suffix": "/zip"},
         }
@@ -112,9 +120,9 @@ def test_the_newest_text_of_every_act_in_force_and_nothing_else(tmp_path: Path) 
     assert downloaded == {f"{C}/a2.0006.01/zip", f"{C}/c2.0022.01/zip", f"{C}/c3.0006.01/zip"}
     snapshot = (tmp_path / "current.txt").read_text(encoding="utf-8").splitlines()
     assert [s for s in snapshot if not s.startswith("#")] == [
-        "a2.0006.01/L_2019001EN.01000101.xml",
-        "c2.0022.01/CL2016R0679EN0000020.0001.xml",
-        "c3.0006.01/CL1958R0001EN0030010.0001.xml",
+        "a2.0006.01/L_2019001EN.01000101.doc.xml",
+        "c2.0022.01/CL2016R0679EN0000020.0001.doc.xml",
+        "c3.0006.01/CL1958R0001EN0030010.0001.doc.xml",
     ]
 
 

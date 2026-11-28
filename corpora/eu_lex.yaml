@@ -55,10 +55,12 @@ fetch:
         BIND(REPLACE(SUBSTR(STR(?celex), 2), "-[0-9]{8}$", "") AS ?group)
         BIND(STRAFTER(STR(?celex), "-") AS ?edition)
       } ORDER BY ?man
-  # The package's XML: the act, its annexes, and the `.doc.xml` descriptor, which only the
-  # snapshot leaves out (`documents`). Images (.tif, .jpg) are never unpacked.
+  # The package's XML: the act, its annexes, and the `.doc.xml` descriptor. ! The descriptor
+  # is the document (`eu_formex` dialect): it names the act and each annex in reading order
+  # and links them in, so an annex is read and cited as part of its act, ✗ as a document
+  # with no act. Images (.tif, .jpg) are never unpacked.
   paths: ["*.xml"]
-  documents: ["*[0-9].xml"]
+  documents: ["*.doc.xml"]
   delay_s: 1.0
   concurrency: 4
   user_agent: ravel-fetch/1.0
@@ -76,7 +78,11 @@ provenance:
 extract:
   profile: eu_lex@1.0
   extractors: [xml]
-  failure_tolerance: 0.0
+  # ! One package of 1,621 sampled keeps its files in folders (`0005/05/DOC_2/...`) while
+  # its descriptor names them bare, so the act is not found and the document fails, loudly
+  # and by name in the report. 0.0005 is 15 of ~29,400: a few such packages, never a
+  # dialect that reads nothing.
+  failure_tolerance: 0.0005
 
 chunk:
   chunker: markup

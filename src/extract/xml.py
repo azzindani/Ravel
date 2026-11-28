@@ -51,6 +51,8 @@ VERSION = "1.1"
 _SPACE = re.compile(r"\s+")
 #: Where `split_at` cuts a leaf: a character no text holds.
 _CUT = "\x00"
+#: A part of a composed source (`+{NO.DOC/YEAR}/{NO.DOC/NO.CURRENT}`): no braces inside.
+_COMPOSED = re.compile(r"\{([^{}]+)\}")
 _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 _DATE = re.compile(r"([A-Z][a-z]{2})[a-z]*\.?\s+(\d{1,2}),\s+(\d{4})")
 
@@ -68,6 +70,12 @@ def iso_date(text: str | None) -> str | None:
         return None
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text.strip()):
         return text.strip()
+    # Formex states `ISO="19931025"`: compact, and a date only if it is one (✗ `99999999`).
+    if compact := re.fullmatch(r"(\d{4})(\d{2})(\d{2})", text.strip()):
+        year, month, day = (int(g) for g in compact.groups())
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            return f"{year:04d}-{month:02d}-{day:02d}"
+        return None
     match = _DATE.search(text)
     if not match or match.group(1).lower() not in _MONTHS:
         return None
@@ -292,6 +300,12 @@ class XmlExtractor:
             state.page_at = _pages_in_force(root, d)
         date = next((v for s in rule.date if (v := iso_date(_source(root, s, d)))), None)
         dated = {"date": date, "year": date[:4]} if date else {}
+        for path in rule.drop:
+            parent_path, _, tag = path.rpartition("/")
+            for parent in root.iterfind(parent_path or "."):
+                for child in parent.findall(tag):
+                    parent.remove(child)
+                    state.skipped[f"dropped: {path}"] += 1
 
         if rule.top is None:
             top = [root] if d.unit_of(root) else [c for c in root if d.unit_of(c)]
@@ -710,7 +724,12 @@ class XmlExtractor:
     def _table(self, element: ET.Element, state: _Walk, *, kind: str) -> None:
         d = state.d
         layout = d.dialect.tables.elements[element.tag]
-        reader = {"gpo": _gpo_table, "html": _html_table, "cals": _cals_table}[layout]
+        reader = {
+            "gpo": _gpo_table,
+            "html": _html_table,
+            "cals": _cals_table,
+            "formex": _formex_table,
+        }[layout]
         rows, header_rows, caption = reader(element, lambda e: self._text(e, d))
         if not rows:
             return
@@ -878,8 +897,24 @@ def _source(root: ET.Element, source: str, d: _Compiled) -> str | None:
     in the pattern takes that group only."""
     if source.startswith("="):
         return source[1:] or None
+    if source.startswith("+"):
+        # `+{a}/{b}/{c}`: the sources inside braces, each read as above, put into the text
+        # around them; any of them missing and the whole is missing, ✗ a partial number.
+        # Formex states `93/626/EEC` as its parts: `NO.DOC/YEAR`, `NO.CURRENT`, `COM`.
+        values: list[str] = []
+
+        def part(match: re.Match[str]) -> str:
+            value = _source(root, match.group(1), d) or ""
+            values.append(value)
+            return value
+
+        composed = _COMPOSED.sub(part, source[1:])
+        return composed if values and all(values) else None
     source, _, pattern = source.partition("~")
-    path, _, attr = source.partition("@")
+    # `NO.DOC[@FORMAT="YN"]/YEAR` names an attribute in a predicate, ✗ the one to read.
+    path, at, attr = source.rpartition("@")
+    if not at or "]" in attr:
+        path, attr = source, ""
     found = root.find(path)
     if found is None:
         return None
@@ -1008,6 +1043,59 @@ def _html_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], in
             and r == header_rows
         ):
             header_rows += 1
+    if not grid:
+        return [], 0, caption
+    n_rows = max(r for r, _ in grid) + 1
+    n_cols = max(c for _, c in grid) + 1
+    rows = [[grid.get((r, c), "") for c in range(n_cols)] for r in range(n_rows)]
+    return rows, header_rows, caption
+
+
+def _formex_table(element: ET.Element, text: _TextOf) -> tuple[list[list[str]], int, str]:
+    """A Formex table (`TBL`): `CORPUS` holds `ROW`s, or `BLK`s of them under a `TI.BLK`
+    title read as a row of its own. A `CELL` states its column (`COL`, from 1) and its spans
+    (`COLSPAN`, `ROWSPAN`); a `ROW TYPE="HEADER"` opening the table is a header row. ! A table
+    nested in a cell is that cell's text, never rows of this one."""
+    title = element.find("TITLE")
+    caption = text(title) if title is not None else ""
+    grid: dict[tuple[int, int], str] = {}
+    header_rows = 0
+    r = 0
+
+    def rows_of(holder: ET.Element) -> list[ET.Element]:
+        out: list[ET.Element] = []
+        for child in holder:
+            if child.tag in ("ROW", "TI.BLK"):
+                out.append(child)
+            elif child.tag == "BLK":
+                out.extend(rows_of(child))
+        return out
+
+    for corpus in element.findall("CORPUS"):
+        for row in rows_of(corpus):
+            if row.tag == "TI.BLK":
+                while (r, 0) in grid:
+                    r += 1
+                grid[(r, 0)] = text(row)
+                r += 1
+                continue
+            c = 0
+            for cell in row.findall("CELL"):
+                stated = cell.get("COL", "")
+                start = int(stated) - 1 if stated.isdigit() and int(stated) > 0 else c
+                c = start if start >= c else c
+                while (r, c) in grid:
+                    c += 1
+                span_c = max(1, int(cell.get("COLSPAN") or 1))
+                span_r = max(1, int(cell.get("ROWSPAN") or 1))
+                value = text(cell)
+                for dr in range(span_r):
+                    for dc in range(span_c):
+                        grid[(r + dr, c + dc)] = value if (dr, dc) == (0, 0) else ""
+                c += span_c
+            if row.get("TYPE") == "HEADER" and r == header_rows:
+                header_rows += 1
+            r += 1
     if not grid:
         return [], 0, caption
     n_rows = max(r for r, _ in grid) + 1

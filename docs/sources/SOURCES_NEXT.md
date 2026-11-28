@@ -22,7 +22,7 @@ had a third-party route now names the official one, even where that is a web cra
 | 3 | **France**, DILA LEGI | codes, lois, décrets, consolidated since 1945 | echanges.dila.gouv.fr, daily | XML, DTD LEGIFRANCE | Licence Ouverte 2.0 | 121,463 texts, 841,034 chunks; published with embeddings as `Azzindani/FR_LAWS_2611` (`SOURCE_FR_LEGI.md`) |
 | 4 | **Japan**, e-Gov | all laws and ordinances | XML bulk zip, Law API v2 | law standard XML schema | government open data | 8,994 laws, 603,782 chunks; published with embeddings as `Azzindani/JP_LAWS_2611` (`SOURCE_JP_EGOV.md`) |
 | 5 | **Germany**, gesetze-im-internet | > 6,000 federal laws + Verordnungen | `gii-toc.xml` index, one `xml.zip` per law | XML, `gii-norm.dtd` | free use; ✗ not the official text | 6,146 laws, 136,284 chunks; published with embeddings as `Azzindani/DE_LAWS_2611` (`SOURCE_DE_GII.md`) |
-| 6 | **EU**, EUR-Lex | acts in force (CELEX sector 3), per language | data dump, needs EU Login | Formex XML | free reuse | |
+| 6 | **EU**, EUR-Lex | acts in force (CELEX sector 3), per language | data dump, needs EU Login | Formex XML | free reuse | taken through row 17 instead, no EU Login: `eu_lex` (`SOURCE_EU_LEX.md`) |
 | 7 | **Spain**, BOE legislación consolidada | consolidated state laws, every version since first publication | open REST API `boe.es/datosabiertos/api/legislacion-consolidada`, `limit=-1` lists all | XML or JSON, ELI metadata, per-block text | BOE reuse conditions | candidate |
 | 8 | **Finland**, Finlex open data | statutes from 1987, treaties, authority regulations | keyless REST API `opendata.finlex.fi`, dataset zips | Akoma Ntoso XML | reported CC BY 4.0, to confirm | candidate |
 | 9 | **Taiwan**, 全國法規資料庫 | all central laws and orders (法律 + 命令) | data.gov.tw datasets 18289 / 18290, monthly | XML in ZIP | Open Government Data Licence v1 | candidate |
@@ -33,7 +33,7 @@ had a third-party route now names the official one, even where that is a web cra
 | 14 | **Italy**, Normattiva | state legislation | Normattiva Open Data portal `dati.normattiva.it` (async API) | Akoma Ntoso XML | IODL 2.0 | candidate |
 | 15 | **Netherlands**, BWB | ~40,000 national regulations | SRU service + KOOP repository, per-regulation `toestand` XML | BWB XML | CC0 | candidate; bulk path to confirm |
 | 16 | **South Korea**, law.go.kr | all statutes, article by article | Open API (OC key), data.go.kr | XML | free use | candidate; no dump, list + detail |
-| 17 | **EU**, Cellar SPARQL | EUR-Lex acts, all languages | `publications.europa.eu/webapi/rdf/sparql` lists item URLs, no EU Login reported | Formex XML, XHTML | free reuse | candidate; alternative to row 6 |
+| 17 | **EU**, Cellar SPARQL | EUR-Lex acts, all languages | `publications.europa.eu/webapi/rdf/sparql` lists item URLs, no EU Login reported | Formex XML, XHTML | free reuse | **in build**: `eu_lex`, 29,396 English Formex packages (`SOURCE_EU_LEX.md`) |
 | 18 | **Brazil**, LexML / Normas.leg.br | federal norms since the Empire | Senate open data, LexML sitemap | LexML XML | open | candidate; bulk text to confirm |
 | 19 | **New Zealand**, PCO | Acts, regulations | developer API (key), `.xml` per item | NZ legislation XML | API terms of use, to confirm | candidate |
 | 20 | **Argentina**, InfoLEG | national laws, decrees, resolutions, dispositions | datos.gob.ar "Base Infoleg Normativa Nacional", zip + CSV; provincial norms in SAIJ set | CSV + text | open data | candidate; bulk zip |

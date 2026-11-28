@@ -1,0 +1,121 @@
+id: eu_lex
+version: "1.0"
+title: EU legal acts in force (EUR-Lex Formex, English)
+description: >
+  One EU act per document: its Cellar package's `.doc.xml` descriptor, with the act and
+  every annex it publishes linked in, read by the `xml` extractor in the `eu_formex` dialect
+  and chunked by `markup` (docs/sources/SOURCE_EU_LEX.md). The text is the act as adopted,
+  or its newest consolidation where the Publications Office made one. The structure is the
+  XML's: titles, chapters and sections nest the articles, and annexes follow. Identity is
+  the act's: its kind and number as its title prints them and the article
+  (`Regulation (EU) 2016/679, Article 6`), with the CELEX number where the title states no
+  number.
+
+match:
+  mime: [text/xml, application/xml]
+  content: ['<DOC\b', '<DOC\.MAIN\.PUB\b', 'formex\.publications\.europa\.eu']
+  min_hits: 2
+
+extract:
+  xml:
+    dialects: [eu_formex@1.0]
+
+structure:
+  # ! The `xml` extractor gives each unit's heading the level declared here. An annex, an
+  # agreement or an attached text sits under the act and beside its articles.
+  from_markup: true
+  units:
+    - {name: act, level: 1, pattern: '^.'}
+    # The consolidation a descriptor links: no heading of its own.
+    - {name: consolidation, level: 2, pattern: '^.'}
+    - {name: annex, level: 2, pattern: '^.', role: article}
+    - {name: agreement, level: 2, pattern: '^.'}
+    - {name: attachment, level: 2, pattern: '^.'}
+    - {name: appendix, level: 3, pattern: '^.', role: article}
+    - {name: agreement_annex, level: 3, pattern: '^.', role: article}
+    # `TITLE II`, `CHAPTER III`: the unit a reader names after the act.
+    - {name: division1, level: 4, pattern: '^.', role: chapter}
+    - {name: division2, level: 5, pattern: '^.'}
+    - {name: division3, level: 6, pattern: '^.'}
+    - {name: division4, level: 7, pattern: '^.'}
+    - {name: division5, level: 8, pattern: '^.'}
+    - {name: article, level: 9, pattern: '^.', role: article}
+    - {name: annex_article, level: 9, pattern: '^.', role: article}
+    - {name: agreement_article, level: 9, pattern: '^.', role: article}
+    - {name: attachment_article, level: 9, pattern: '^.', role: article}
+
+identity:
+  markup:
+    scope: act
+    facts:
+      # `Regulation`, `Directive`, `Decision`, as the title names the act.
+      regulation_type: "{act.type}"
+      # `(EU) 2016/679`, `2006/112/EC`, else the CELEX number (`31958R0001`).
+      regulation_number: "{act.number}"
+      about: "{act.name}"
+      year: "{act.year}"
+      # The act's date as adopted; a consolidation's own date is `version_date`.
+      effective_date: "{act.date}"
+    identifier:
+      # Written as EU practice cites them: `Regulation (EU) 2016/679, Article 6`.
+      article: "{act.type} {act.number}, Article {article.number}"
+      annex: ["{act.type} {act.number}, Annex {annex.number}", "{act.type} {act.number}, Annex"]
+      appendix:
+        - "{act.type} {act.number}, Annex {annex.number}, Appendix {appendix.number}"
+        - "{act.type} {act.number}, Annex {annex.number}, Appendix"
+        - "{act.type} {act.number}, Annex, Appendix {appendix.number}"
+        - "{act.type} {act.number}, Annex, Appendix"
+      annex_article:
+        - "{act.type} {act.number}, Annex {annex.number}, Article {annex_article.number}"
+        - "{act.type} {act.number}, Annex, Article {annex_article.number}"
+      agreement: "{act.type} {act.number}, {agreement.name}"
+      agreement_article: "{act.type} {act.number}, {agreement.name}, Article {agreement_article.number}"
+      agreement_annex:
+        - "{act.type} {act.number}, {agreement.name}, Annex {agreement_annex.number}"
+        - "{act.type} {act.number}, {agreement.name}, Annex"
+      attachment: "{act.type} {act.number}, {attachment.name}"
+      attachment_article: "{act.type} {act.number}, {attachment.name}, Article {attachment_article.number}"
+      division1: "{act.type} {act.number}, {division1.marker}"
+      division2: "{act.type} {act.number}, {division2.marker}"
+      division3: "{act.type} {act.number}, {division3.marker}"
+      division4: "{act.type} {act.number}, {division4.marker}"
+      division5: "{act.type} {act.number}, {division5.marker}"
+      act: "{act.type} {act.number}"
+
+pipeline:
+  chunk:
+    chunker: markup
+    # One chunk per article or annex; longer ones split into `part n of m` on paragraph
+    # boundaries. ! Determined, ✗ measured: no EU eval set exists yet.
+    max_tokens: 1024
+    min_tokens: 0
+  derive:
+    #   Citation: Regulation (EU) 2016/679, Article 6
+    #   Location: Regulation (EU) 2016/679 of the European Parliament ... › CHAPTER II ... › Article 6 Lawfulness of processing
+    embed_text:
+      separator: "\n"
+      context:
+        - "Citation: {identifier}"
+        - "Location: {heading_path}"
+  expected:
+    coverage:
+      identifier: 0.99
+      regulation_number: 0.99
+      heading_path: 0.99
+    max_row_tokens: 8192
+    oversize_share: 0.001
+
+signals:
+  lists:
+    # Acts cited in the text, in the forms the Official Journal prints.
+    regulation_references:
+      - {pattern: '\b(?P<kind>Regulation|Directive|Decision)\s+(?P<n>(?:\([A-Z][A-Za-z]*(?:,\s*[A-Z][A-Za-z]*)*\)\s+)?(?:No\s+)?\d+/\d+(?:/[A-Z]+)?)', format: '{kind} {n}'}
+  definitions:
+    # `'personal data' means ...`, as EU acts print a definition.
+    pattern: '^(?:\(\s?(?:[a-z]{1,3}|\d{1,3})\s?\)\s*)*[‘''"“]?(?P<term>[A-Za-z][^.;:’''"”]{0,80}?)[’''"”]?\s+(?:means|has the (?:same )?meaning|includes|refers to|shall mean)\b'
+    emphasised: false
+  outline:
+    # 6(1)(a)(i): paragraph, point, sub-point.
+    marker: '^((?:\d{1,3}\.\s|\((?:[a-z]{1,3}|\d{1,3}|[ivxlcdm]+)\)\s?)+)'
+    levels: [digit, lower, roman]
+    scope: identifier
